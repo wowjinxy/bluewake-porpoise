@@ -205,6 +205,19 @@ class TrainingTest(unittest.TestCase):
         receipt = json.loads((app / "BuilderProvenance.json").read_text())
         self.assertTrue(receipt["local_training"])
         self.assertEqual(receipt["composite_profile_sha256"], bw.sha256_file(self.b.profile))
+        sdk = self.root / "sdk"; sdk.mkdir()
+        (sdk / "LICENSE").write_text("synthetic MIT notice")
+        self.b.libporpoise = sdk
+        self.b.args.libporpoise = True
+        self.b.libporpoise_inputs = lambda: {"sha": "d" * 40} if self.b.args.libporpoise else None
+        self.b.package(module)
+        self.assertEqual((app / "licenses/libPorpoise-MIT.txt").read_text(), "synthetic MIT notice")
+        receipt = json.loads((app / "BuilderProvenance.json").read_text())
+        self.assertTrue(receipt["libporpoise"])
+        self.assertEqual(receipt["libporpoise_sha"], "d" * 40)
+        self.b.args.libporpoise = False
+        self.b.package(module)
+        self.assertFalse((app / "licenses/libPorpoise-MIT.txt").exists())
 
     def test_fingerprint_tracks_prepared_source_runtime_options_and_host(self):
         self.b.git = lambda *a: "runtime1"

@@ -22,6 +22,17 @@ DolRecompFunction bw_find_chunk(u32 address) {
 
 #ifdef BLUEWAKE_NATIVE_MATH_CACHED
 #include "native_math.h"
+#if defined(BLUEWAKE_LIBPORPOISE)
+static void native_porpoise_identity(CPUState* cpu) {
+    if (!bluewake_native_math_try(cpu, 0x8030D09Cu)) func_803096E0(cpu);
+}
+static void native_porpoise_trans(CPUState* cpu) {
+    if (!bluewake_native_math_try(cpu, 0x8030D618u)) func_803096E0(cpu);
+}
+static void native_porpoise_scale(CPUState* cpu) {
+    if (!bluewake_native_math_try(cpu, 0x8030D698u)) func_803096E0(cpu);
+}
+#endif
 static void native_matrix_copy(CPUState* cpu) {
     if (!bluewake_native_math_try(cpu, 0x8030D0C8u)) func_803096E0(cpu);
 }
@@ -37,6 +48,11 @@ static void native_matrix_array(CPUState* cpu) {
 static DolRecompFunction bluewake_native_math_find(u32 address) {
     /* Cached wrappers always recheck the host handshake, including after disable. */
     switch (address) {
+#if defined(BLUEWAKE_LIBPORPOISE)
+    case 0x8030D09Cu: return native_porpoise_identity;
+    case 0x8030D618u: return native_porpoise_trans;
+    case 0x8030D698u: return native_porpoise_scale;
+#endif
     case 0x8030D0C8u: return native_matrix_copy;
     case 0x8030D0FCu: return native_matrix_concat;
     case 0x8030DA44u: return native_matrix_vec;

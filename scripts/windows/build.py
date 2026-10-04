@@ -161,6 +161,7 @@ class Builder:
         self.logs = self.out / "logs"
         self.env = None
         self.recompcore = ROOT / "ref/recompcore"
+        self.libporpoise = ROOT / "ref/libporpoise"
         self.iso = None
         self.profile = None
 
@@ -385,6 +386,46 @@ int main(void) {
                 self.git("status", "--porcelain", "--untracked-files=no", cwd=sub):
             die(f"{rc} has local changes; the build must use the pinned source exactly")
         print(f"RecompCore {sha}, DolRecomp {dolrecomp_sha}")
+        if getattr(self.args, "libporpoise", False):
+            self.libporpoise_dependency()
+
+    def libporpoise_dependency(self):
+        """Fetch only the pinned SDK source; no renderer or SDL dependency is needed."""
+        root = self.libporpoise
+        sha, url = profile_value("LIBPORPOISE_SHA"), profile_value("LIBPORPOISE_URL")
+        if not (root / ".git").exists():
+            if root.exists() and any(root.iterdir()):
+                die(f"{root} exists but is not a git checkout: move it aside and rerun")
+            root.mkdir(parents=True, exist_ok=True)
+            subprocess.check_call(["git", "init", "-q"], cwd=root)
+            subprocess.check_call(["git", "config", "core.autocrlf", "false"], cwd=root)
+            subprocess.check_call(["git", "config", "core.longpaths", "true"], cwd=root)
+        if self.git("status", "--porcelain", cwd=root):
+            die(f"{root} has local changes; libPorpoise must use the pinned source exactly")
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
+                              capture_output=True, text=True).stdout.strip()
+        if head != sha:
+            print(f"fetching libPorpoise {sha}")
+            self.run("libporpoise-fetch", ["git", "-C", root, "fetch", "--recurse-submodules=no",
+                                          "--depth", "1", url, sha], env=os.environ)
+            subprocess.check_call(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=root)
+        self.libporpoise_inputs()
+        print(f"libPorpoise {sha} (matrix SDK only)")
+
+    def libporpoise_inputs(self):
+        """Bind preparation and training to the exact imported matrix sources."""
+        if not getattr(self.args, "libporpoise", False):
+            return None
+        root, sha = self.libporpoise, profile_value("LIBPORPOISE_SHA")
+        if self.git("rev-parse", "HEAD", cwd=root) != sha or self.git("status", "--porcelain", cwd=root):
+            die(f"{root} must be a clean libPorpoise checkout at {sha}")
+        sources = [root / "LICENSE", root / "include/dolphin/types.h", root / "include/dolphin/mtx.h",
+                   root / "include/dolphin/vec.h", root / "include/dolphin/os/OSVersion.h"]
+        sources += sorted((root / "include/dolphin/mtx").glob("*.h"))
+        sources += sorted((root / "src/mtx").glob("*.c"))
+        if any(not p.is_file() for p in sources) or not (root / "src/mtx/mtx.c").is_file():
+            die(f"{root} is missing the pinned libPorpoise matrix sources or license")
+        return {"sha": sha, "sources": {p.relative_to(root).as_posix(): sha256_file(p) for p in sources}}
 
     # --- 3 disc ----------------------------------------------------------
     def disc(self):
@@ -550,7 +591,9 @@ int main(void) {
         inputs = hashlib.sha256()
         inputs.update((f"{digest}\n{int(self.mods)}\n{int(self.args.prepared_blocks)}\n"
                        f"{int(self.args.fixed_cpu)}\n{int(self.args.fixed_mem1)}\n{int(self.args.inline_fp)}\n{int(self.args.gather_pipe)}\n{int(self.args.direct_calls)}\n{int(self.args.inline_gpr)}\n{int(self.args.native_j3d)}\n{int(self.args.native_vec)}\n{int(self.args.native_math)}\n{int(self.args.native_skin)}\n{int(self.args.native_game_math)}\n"
-                       f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n").encode())
+                       f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n"
+                       f"{int(getattr(self.args, 'libporpoise', False))}\n").encode())
+        inputs.update(json.dumps(self.libporpoise_inputs(), sort_keys=True).encode())
         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", ROOT / "scripts/windows/fast_blocks.py",
                      ROOT / "scripts/windows/global_guest_cpu.py", ROOT / "scripts/windows/chunk_headers.py",
@@ -569,6 +612,8 @@ int main(void) {
                      ROOT / "cmake/composite/native_fifo.h", ROOT / "cmake/composite/native_bg.c",
                      ROOT / "cmake/composite/native_bg.h", ROOT / "cmake/composite/native_mtxcalc.c",
                      ROOT / "cmake/composite/native_mtxcalc.h", ROOT / "scripts/windows/lean_memory.py",
+                     ROOT / "cmake/composite/porpoise_mtx.h", ROOT / "cmake/libporpoise/CMakeLists.txt",
+                     ROOT / "scripts/dependencies/prepare_libporpoise_math.py",
                      ROOT / "scripts/windows/inline_save_restore_gpr.py", Path(__file__)]):
             if f.is_file():
                 inputs.update(f.read_bytes())
@@ -599,7 +644,7 @@ int main(void) {
                     prepared = {}
                 selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
-                              "native_entries", "lean_memory")
+                              "native_entries", "lean_memory", "libporpoise")
                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
                                             prepared.get("final_digest") == saved and
                                             prepared.get("enabled") == self.args.prepared_blocks and
@@ -711,7 +756,8 @@ int main(void) {
         if self.args.native_vec:
             self.source_step("native-vec", "scripts/mods/prepare_native_vec.py", o / "composite-src")
         if self.args.native_math:
-            self.source_step("native-math", "scripts/mods/prepare_native_math.py", o / "composite-src")
+            self.source_step("native-math", "scripts/mods/prepare_native_math.py", o / "composite-src",
+                             *(["--libporpoise"] if getattr(self.args, "libporpoise", False) else []))
         if self.args.native_skin:
             self.source_step("native-skin", "scripts/windows/native_skin.py", o / "composite-src")
         if self.args.fixed_cpu:
@@ -746,6 +792,8 @@ int main(void) {
                    "native_game_math": self.args.native_game_math,
                    "native_entries": getattr(self.args, "native_entries", False),
                    "lean_memory": getattr(self.args, "lean_memory", False),
+                   "libporpoise": getattr(self.args, "libporpoise", False),
+                   "libporpoise_inputs": self.libporpoise_inputs(),
                    "native_entries_sha256": {name: sha256_file(ROOT / "cmake/composite" / name)
                                               for name in ("native_entries.c", "native_entries.h", "native_fifo.c", "native_fifo.h",
                                                            "native_bg.c", "native_bg.h", "native_mtxcalc.c", "native_mtxcalc.h",
@@ -835,6 +883,8 @@ int main(void) {
             f"-DBLUEWAKE_NATIVE_GAME_MATH={'ON' if self.args.native_game_math else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_SKIN={'ON' if self.args.native_skin else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_MATH={'ON' if self.args.native_math else 'OFF'}",
+            f"-DBLUEWAKE_LIBPORPOISE={'ON' if getattr(self.args, 'libporpoise', False) else 'OFF'}",
+            f"-DLIBPORPOISE_DIR={self.libporpoise}",
             f"-DBLUEWAKE_NATIVE_ENTRIES={'ON' if getattr(self.args, 'native_entries', False) else 'OFF'}",
             f"-DBLUEWAKE_DIRECT_CALLS={'ON' if self.args.direct_calls else 'OFF'}",
             f"-DBLUEWAKE_GATHER_PIPE={'ON' if self.args.gather_pipe else 'OFF'}",
@@ -934,7 +984,8 @@ int main(void) {
                                            ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp",
                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
                                             "native_vec", "native_math", "native_skin", "native_game_math",
-                                            "native_entries", "lean_memory")},
+                                            "native_entries", "lean_memory", "libporpoise")},
+                               "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
                                "source": tree_digest(self.out / "composite-src")},
                               sort_keys=True).encode())
@@ -1113,6 +1164,12 @@ int main(void) {
         for name in ("dsp_rom.bin", "dsp_coef.bin"):
             shutil.copy2(self.recompcore / "Data/Sys/GC" / name, app / "dsp" / name)
         self.place(self.iso, app / "game/GZLE01.iso")
+        libporpoise = self.libporpoise_inputs()
+        if libporpoise is not None:
+            (app / "licenses").mkdir(exist_ok=True)
+            shutil.copy2(self.libporpoise / "LICENSE", app / "licenses/libPorpoise-MIT.txt")
+        else:
+            (app / "licenses/libPorpoise-MIT.txt").unlink(missing_ok=True)
         dirty = bool(self.git("status", "--porcelain"))
         provenance = {
             "profile": "bluewake-windows",
@@ -1136,6 +1193,8 @@ int main(void) {
             "native_game_math": self.args.native_game_math,
             "native_entries": getattr(self.args, "native_entries", False),
             "lean_memory": getattr(self.args, "lean_memory", False),
+            "libporpoise": getattr(self.args, "libporpoise", False),
+            "libporpoise_sha": libporpoise["sha"] if libporpoise is not None else None,
             "local_training": self.profile is not None,
             "composite_profile_sha256": sha256_file(self.profile) if self.profile else "",
             "compiler": self.clang_version,
@@ -1304,6 +1363,8 @@ def main():
                         help="certify and enable optional native skinning preparation (off by default)")
     parser.add_argument("--native-math", action="store_true",
                         help="prepare certified native matrix functions; off by default, compatible host opt-in required")
+    parser.add_argument("--libporpoise", action=argparse.BooleanOptionalAction, default=None,
+                        help="use the pinned libPorpoise SDK for certified matrix acceleration (default on; requires native math)")
     parser.add_argument("--native-entries", action=argparse.BooleanOptionalAction, default=False,
                         help="certify additional native FIFO, vector, collision and joint transforms; requires gather pipe and direct calls")
     parser.add_argument("--lean-memory", action=argparse.BooleanOptionalAction, default=False,
@@ -1325,6 +1386,10 @@ def main():
     if not args.conservative:
         for name in WINDOWS_DEFAULT_OPTIMIZATIONS:
             setattr(args, name, True)
+    if args.libporpoise is None:
+        args.libporpoise = not args.conservative
+    if args.libporpoise and not args.native_math:
+        parser.error("--libporpoise requires --native-math")
     if args.inline_gpr and not args.direct_calls:
         parser.error("--inline-gpr requires --direct-calls")
     if args.fixed_mem1 and not args.fixed_cpu:

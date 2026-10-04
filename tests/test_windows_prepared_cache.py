@@ -42,6 +42,14 @@ MARK = "bluewake: prepaid block copies"
 
 
 class PreparedBlockSelectionTest(unittest.TestCase):
+    def test_porpoise_certification_reserves_only_selected_leaves(self):
+        for start, end in fast.PORPOISE_CERTIFIED:
+            source = CHUNK.replace('80001000', f'{start:08X}').replace('80001004', f'{start+4:08X}')
+            self.assertEqual(fast.transform(source)[1], 1)
+            self.assertEqual(fast.transform(source, libporpoise=True), (source, 0))
+        # Other leaves retain ordinary block optimization with either selection.
+        self.assertEqual(fast.transform(CHUNK, libporpoise=True)[1], 1)
+
     def test_native_vector_certification_survives_block_preparation(self):
         source = CHUNK.replace('80001000', '8030DEAC').replace('80001004', '8030DEB0')
         self.assertEqual(fast.transform(source)[1], 1)
@@ -226,6 +234,33 @@ label_80004004:
         self.cycle()
         self.assertFalse(json.loads((self.out / "prepared-blocks.json").read_text())["lean_memory"])
 
+    def test_libporpoise_selection_pin_and_adapter_changes_invalidate_prepared_cache(self):
+        self.cycle()
+        baseline = (self.out / "composite-inputs.digest").read_text()
+        sdk = {"sha": "a" * 40, "sources": {"src/mtx/mtx.c": "public synthetic source hash"}}
+        self.builder.libporpoise_inputs = lambda: sdk if getattr(self.args, "libporpoise", False) else None
+        self.args.libporpoise = True
+        self.cycle()
+        selected = (self.out / "composite-inputs.digest").read_text()
+        self.assertNotEqual(selected, baseline)
+        receipt = json.loads((self.out / "prepared-blocks.json").read_text())
+        self.assertTrue(receipt["libporpoise"])
+        self.assertEqual(receipt["libporpoise_inputs"]["sha"], sdk["sha"])
+        before = self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns
+        self.cycle()
+        self.assertEqual(before, (self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns))
+        sdk["sha"] = "b" * 40
+        self.cycle()
+        revised = (self.out / "composite-inputs.digest").read_text()
+        self.assertNotEqual(selected, revised)
+        adapter = self.root / "cmake/composite/porpoise_mtx.h"
+        adapter.write_text("/* synthetic adapter revision */\n")
+        self.cycle()
+        self.assertNotEqual(revised, (self.out / "composite-inputs.digest").read_text())
+        self.args.libporpoise = False
+        self.cycle()
+        self.assertFalse(json.loads((self.out / "prepared-blocks.json").read_text())["libporpoise"])
+
     def test_native_entries_certification_reuse_disable_and_helper_invalidation(self):
         body = '\nlabel_80004100:\n    ctx->gpr[3] = 1;\n'
         digest = hashlib.sha256(' '.join(body.split()).encode()).hexdigest()
@@ -326,7 +361,7 @@ label_80004004:
         script = self.root / "scripts/mods/prepare_native_math.py"
         text = script.read_text()
         start = text.index('LEAVES = (')
-        end = text.index('DECLARATION = ', start)
+        end = text.index('PORPOISE_LEAVES = ', start)
         script.write_text(text[:start] + f"LEAVES = ((0x8030D0C8, 0x8030D0FC, '803096E0', '{digest}'),)\n" + text[end:], newline="\n")
         (self.base / 'chunks_dol/chunk_803096E0.c').write_text('#include "../generated.h"\n' + body + '\nlabel_8030D0FC:\n', newline="\n")
         header = self.base / 'generated_composite.h'

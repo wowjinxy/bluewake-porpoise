@@ -16,6 +16,12 @@ LEAVES = (
     (0x8030DA44, 0x8030DA98, '8030D6E0', 'cf4cfa14c036cdcc192f4b3ee9ed8ceda627c576a3a26de1fd922be96b51287e'),
     (0x8030DA98, 0x8030DB24, '8030D6E0', 'ecba4bf605b5dfa693e2a14525f36a68a8a373881105bab2872d7118753111cd'),
 )
+PORPOISE_LEAVES = (
+    (0x8030D09C, 0x8030D0C8, '803096E0', 'd7a76bde12b0c49ed8de5950d66f39bd61c8512dd33392bff7cdd8611fdcb396'),
+    (0x8030D618, 0x8030D64C, '803096E0', 'a0f3e37bfab1629224a2a4e64c5d6f4b320f725fa56b98eb6afc82cb0e8d03b2'),
+    (0x8030D698, 0x8030D6C0, '803096E0', '947ed8f260c31aa05ad4707c1f383c21e6d408e984c07f4ebd6d94cb3ca06c65'),
+)
+PORPOISE_MARKER = '#define BLUEWAKE_LIBPORPOISE_MATH_PREPARED 1\n'
 
 
 DECLARATION = """// BlueWake native math entries are resolved only on a PC-cache miss.
@@ -35,9 +41,10 @@ CACHE = """    if (s_cached_pc[cache_index] == address)
 """
 
 
-def prepare(root):
+def prepare(root, libporpoise=False):
     files = {}
-    for start, end, chunk, expected in LEAVES:
+    leaves = LEAVES + (PORPOISE_LEAVES if libporpoise else ())
+    for start, end, chunk, expected in leaves:
         matches = sorted(root.rglob(f'*{chunk}*.c'))
         if not matches:
             raise ValueError(f'missing translated SDK chunk {chunk}')
@@ -61,24 +68,30 @@ def prepare(root):
             raise ValueError('unsupported composite dispatcher')
         source = source.replace(TYPE, TYPE + DECLARATION)
         source = source.replace(CACHE, CACHE + LOOKUP)
+    if source.count(PORPOISE_MARKER) > 1:
+        raise ValueError('modified libPorpoise preparation marker')
+    source = source.replace(PORPOISE_MARKER, '')
+    if libporpoise:
+        source = source.replace(DECLARATION, DECLARATION + PORPOISE_MARKER)
     # Finish validation before changing the header or its certification.
     if header.read_text() != source:
         header.write_text(source)
     files[header.name] = hashlib.sha256(header.read_bytes()).hexdigest()
     manifest = root / 'native_math.json'
-    data = json.dumps({'abi': 1, 'files': files}, indent=2) + '\n'
+    data = json.dumps({'abi': 1, 'libporpoise': libporpoise, 'files': files}, indent=2) + '\n'
     if not manifest.exists() or manifest.read_text() != data:
         temporary = manifest.with_suffix('.json.tmp')
         temporary.write_text(data)
         temporary.replace(manifest)
-    print(f'native math: {len(LEAVES)} SDK leaves verified across {len(files)} source files')
+    print(f'native math: {len(leaves)} SDK leaves verified across {len(files)} source files')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('composite', type=Path)
+    parser.add_argument('--libporpoise', action='store_true', help='certify the three libPorpoise matrix constructors')
     args = parser.parse_args()
     try:
-        prepare(args.composite)
+        prepare(args.composite, args.libporpoise)
     except ValueError as error:
         parser.exit(1, f'{error}\n')

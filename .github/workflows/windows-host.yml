@@ -41,6 +41,10 @@ jobs:
           if ($LASTEXITCODE) { throw 'Windows prepared-source cache contract failed' }
           python tests/test_windows_package.py
           if ($LASTEXITCODE) { throw 'Windows staged packaging contract failed' }
+          python tests/test_windows_libporpoise.py
+          if ($LASTEXITCODE) { throw 'Windows libPorpoise builder contract failed' }
+          python tests/libporpoise_source_test.py
+          if ($LASTEXITCODE) { throw 'Pinned libPorpoise source contract failed' }
       - name: Compile and link the host without a disc or game module
         shell: pwsh
         run: |

@@ -97,6 +97,18 @@
       "submodule_path": "ref/recompcore/DolRecomp"
     },
     {
+      "id": "libporpoise",
+      "url": "https://github.com/cybervisi0n/libPorpoise.git",
+      "sha": "9ea0e6ebef7e3be432b92487639991ca0251b0f4",
+      "license": "MIT",
+      "role": "Optional Windows native matrix SDK acceleration behind the certified guest-memory and CPU-state adapter; renderer, threading and full simulator are not linked",
+      "verified": "2026-10-03",
+      "local_checkout": {
+        "path": "ref/libporpoise",
+        "sha": "9ea0e6ebef7e3be432b92487639991ca0251b0f4"
+      }
+    },
+    {
       "id": "moderngekko",
       "url": "https://github.com/ExpansionPak/ModernGekko",
       "sha": "cc6b1327325d27ab1519daabce51dde47424705d",

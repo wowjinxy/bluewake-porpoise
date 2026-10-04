@@ -108,6 +108,18 @@ class DirectPreparationTests(unittest.TestCase):
             direct.write_watch_list(root, {0xC0004000, 0x80004000})
             self.assertEqual(before, (root / 'bw_edge_watch.inc').read_bytes())
 
+    def test_porpoise_calls_try_native_and_keep_translated_fallback(self):
+        for entry in direct.DISPATCHER_PORPOISE:
+            source = CALL.replace('0x80006000', f'0x{entry:08X}')
+            result, count = direct.transform(source, 0x80004000, [0x80004000, 0x803096E0],
+                {0x80004000: 0, 0x803096E0: 1}, set(), direct.DISPATCHER_PORPOISE)
+            self.assertEqual(count, 1)
+            self.assertIn(f'bw_native_call(ctx, 0x{entry:08X}u)', result)
+            self.assertIn('bw_chunk_fns[1](ctx)', result)
+            self.assertIn('bw_direct_call_ready(ctx, 0x80004004u)', result)
+            self.assertEqual(direct.transform(source, 0x80004000, [0x80004000, 0x803096E0],
+                {0x80004000: 0, 0x803096E0: 1}, {entry}, direct.DISPATCHER_PORPOISE), (source, 0))
+
 
 if __name__ == '__main__':
     unittest.main()

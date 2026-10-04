@@ -39,6 +39,8 @@ from pathlib import Path
 # native replacements or enabling them in a player build.
 CERTIFIED = [(0x8030D0C8, 0x8030D0FC), (0x8030D0FC, 0x8030D1C8),
              (0x8030DA44, 0x8030DA98), (0x8030DA98, 0x8030DB24)]
+PORPOISE_CERTIFIED = [(0x8030D09C, 0x8030D0C8), (0x8030D618, 0x8030D64C),
+                      (0x8030D698, 0x8030D6C0)]
 
 # Keep all blocks inside the nine certified vector leaves unchanged when routed.
 VEC_CERTIFIED = [(0x8030DCE0, 0x8030DD44), (0x8030DE0C, 0x8030DF08),
@@ -239,7 +241,7 @@ def transform_function(lines, certified=CERTIFIED):
     return out, done
 
 
-def transform(text):
+def transform(text, libporpoise=False):
     if MARK in text:
         return text, 0
     if INCLUDE not in text:
@@ -249,6 +251,8 @@ def transform(text):
     if not heads:
         return text, 0
     certified = CERTIFIED + (VEC_CERTIFIED if '#include "native_vec.h"' in text else [])
+    if libporpoise:
+        certified += PORPOISE_CERTIFIED
     out, blocks = lines[:heads[0]], 0
     for h, start in enumerate(heads):
         stop = heads[h + 1] if h + 1 < len(heads) else len(lines)
@@ -271,10 +275,12 @@ def main():
     if not chunks:
         sys.exit(f"no chunks under {root}")
     blocks = files = 0
+    composite = root / 'generated_composite.h'
+    libporpoise = composite.is_file() and '#define BLUEWAKE_LIBPORPOISE_MATH_PREPARED 1' in composite.read_text()
     for path in chunks:
         with open(path, encoding="utf-8", newline="") as file:
             original = file.read()
-        converted, count = transform(original)
+        converted, count = transform(original, libporpoise)
         if count:
             temporary = path.with_suffix(".c.tmp")
             with open(temporary, "w", encoding="utf-8", newline="") as file:

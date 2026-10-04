@@ -89,7 +89,7 @@ From a normal terminal in the checkout:
 python scripts/windows/build.py "D:\Games\The Legend of Zelda - The Wind Waker (USA).rvz"
 ```
 
-The builder finds Visual Studio itself (no developer prompt needed), fetches the pinned RecompCore and DolRecomp
+The builder finds Visual Studio itself (no developer prompt needed), fetches the pinned RecompCore, DolRecomp and libPorpoise
 into `ref/`, checks and converts the disc, extracts and translates the game, checks the generated source against
 the verified digest, adds the mods, records a local optimization profile, compiles the game module and the app, and writes the app folder
 `build\windows\BlueWake`. Each stage prints its progress; full logs are in `build\windows\logs`. Rerunning the
@@ -116,6 +116,7 @@ Options (`--help` lists all):
 | `--native-game-math` | Prepare twelve certified game-math functions |
 | `--native-skin` | Prepare certified model skinning |
 | `--native-math` | Prepare four certified SDK matrix functions |
+| `--libporpoise` / `--no-libporpoise` | Select the pinned native matrix constructors; enabled by default, requires native math; conservative builds disable it |
 | `--native-entries` | Prepare nine additional FIFO, collision, matrix-vector and joint-matrix routines; requires `--gather-pipe --direct-calls`, off by default |
 | `--inline-gpr` | Also inline certified register saves/restores; requires `--direct-calls` |
 | `--jobs N` | Parallel compile jobs (default: the cores, as far as free memory allows) |
@@ -154,6 +155,53 @@ Its source and synthetic routing tests do not establish gameplay performance.
 Matrix-array workers remain opt-in on macOS (`BLUEWAKE_NATIVE_WORKERS=1` through
 `8`); Windows keeps Elliott's serial path. Both paths require qualification,
 and worker selection is separate from rendering interpolation.
+
+Windows builds also use [libPorpoise](https://github.com/cybervisi0n/libPorpoise)
+at `9ea0e6ebef7e3be432b92487639991ca0251b0f4` for `PSMTXIdentity`, `PSMTXTrans`
+and `PSMTXScale`. Its unchanged C constructors are selected from the pinned SDK
+source and compiled in a separate translation unit. The adapter converts guest
+scalar store bits and matrix output to the required byte order, preserves the
+complete register state and reservations, and retains guest cycle accounting.
+Unsupported CPU flags, quantization, deadlines, aliases, device memory, write
+observers and host observations use the original translated routine. Cached
+wrappers check readiness on every call. `--no-libporpoise` retains the earlier
+matrix path; `--conservative --native-math --libporpoise` isolates this addition.
+The SDK checkout is verified during configuration and compilation, and its MIT
+notice and exact source revision accompany enabled builds.
+
+RecompCore continues to supply the translated CPU, guest memory, REL loading,
+graphics and audio. libPorpoise's full simulator needs a different native SDK
+interface, and its current renderer and DSP do not yet support the data and
+audio protocol this Wind Waker build uses. The selected constructors can be
+integrated independently through the existing native-math handshake.
+
+On October 3, Visual Studio clang 19.1.5 with the Windows MSVC ABI passed
+180,000 constructor fixtures: 82,500 accepted calls matched all CPU bytes and
+guest RAM against the original personal DLL and matched current raw/prepaid
+translations; 97,500 calls declined without changes. A miniature linked module
+using the production dispatcher and SDK library passed another 3,072 routed
+comparisons, including disabling cached native wrappers. These are constructor
+and module integration checks; full gameplay and whole-game FPS remain untested.
+`tests/run_porpoise_math_oracle.py` reproduces the constructor comparison from
+the player's raw SDK chunk, generated header and original module, and writes
+source-hashed results under the ignored build directory.
+
+The complete Windows development module (O1, no PGO) also passed 1,800
+constructor CPU/RAM comparisons and a visible 1,800-retrace title-screen smoke.
+The smoke produced rendered frames and nonzero 32 kHz audio, exercised all three
+libPorpoise constructors, and exited normally. This checks startup and title
+rendering; full gameplay and whole-game FPS remain untested.
+
+A matched routed comparison on an AMD Ryzen 7 3700X used the current fixed
+CPU/MEM1, inline FP/gather helpers and prepaid blocks, compiled at O2 with
+`x86-64-v3` by Visual Studio clang 19.1.5. The baseline optimized all three
+translated constructors; the alternative used libPorpoise through the actual
+cached dispatcher. Another 1,800 complete CPU/RAM cases passed. Five interleaved
+10-million-call rounds per constructor preserved checksums and exact guest cycle
+charges. Ratios of median baseline/native call times were approximately 1.57x
+identity, 1.42x translation and 1.36x scale, and all 15 paired rounds improved.
+The benchmark used a cheap readiness callback and isolated constructor routes;
+these ratios do not establish whole-game FPS gains or gameplay acceptance.
 
 The direct-call options retain the ordinary module ABI and are selected separately
 from fixed CPU/RAM storage. Windows requests them in a supporting module by

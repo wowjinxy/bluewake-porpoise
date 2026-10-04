@@ -39,6 +39,8 @@ PROFILE_HOST_PGO=scripts/builder/profiles/bluewake/host.profdata
 RECOMPCORE_URL=https://github.com/chrissotraidis/RecompCore.git
 RECOMPCORE_SHA=e280c788dadabd18b085af0085f1558fc9ff5ecc
 DOLRECOMP_SHA=b8b534591cba8ca7cd43943a655ee6e2591cf5de
+LIBPORPOISE_URL=https://github.com/cybervisi0n/libPorpoise.git
+LIBPORPOISE_SHA=9ea0e6ebef7e3be432b92487639991ca0251b0f4
 DAWN_URL=https://github.com/encounter/dawn/releases/download/v20260618.032059/dawn-ios-arm64.tar.gz
 DAWN_SHA256=ada0bafc173152d80eba7c3b2f9609a71185d5809cbd5dd3251b91a0803a7ae2
 # Digest of the generated composite source (scripts/ios/composite_manifest.py)

@@ -46,6 +46,7 @@ SYSTEM_DLLS = {
 PROVENANCE_FIELDS = ("profile", "source_commit", "source_modified", "composite_digest", "mods", "march",
                      "prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls",
                      "inline_gpr", "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
+                     "native_entries", "lean_memory", "libporpoise", "libporpoise_sha",
                      "local_training", "composite_profile_sha256", "compiler", "module_sha256", "built")
 INSTALL = """BlueWake {version} for Windows x64
 
@@ -234,7 +235,7 @@ def dependency_pins(deps):
     return pins
 
 
-def license_sources(args):
+def license_sources(args, *, libporpoise=False):
     runtime, deps = args.runtime, args.deps
     sources = {
         "BlueWake-GPL-3.0.txt": (ROOT / "LICENSE",),
@@ -254,6 +255,8 @@ def license_sources(args):
     }
     if any((args.app / name).is_file() for name in VC_BINARIES):
         sources["Visual-Cpp-Runtime.txt"] = (args.vc_runtime_license,)
+    if libporpoise:
+        sources["libPorpoise-MIT.txt"] = (getattr(args, "libporpoise_dir", ROOT / "ref/libporpoise") / "LICENSE",)
     result = {}
     for name, candidates in sources.items():
         source = next((p for p in candidates if p is not None and p.is_file()), None)
@@ -289,6 +292,18 @@ def validate_provenance(args):
         if git(path, "status", "--porcelain", "--untracked-files=no"):
             raise ValueError(f"{name}: tracked dependency changes must be committed")
         actual[name] = {"url": dependencies[name]["url"], "sha": expected}
+    if not isinstance(original.get("libporpoise", False), bool):
+        raise ValueError("libPorpoise selection must be a boolean in builder provenance")
+    if original.get("libporpoise", False):
+        path = getattr(args, "libporpoise_dir", ROOT / "ref/libporpoise")
+        dependency = dependencies["libporpoise"]
+        expected = dependency["sha"]
+        if (not original.get("native_math") or original.get("libporpoise_sha") != expected or
+                not re.fullmatch("[0-9a-f]{40}", expected) or git(path, "rev-parse", "HEAD") != expected):
+            raise ValueError("libporpoise: builder and checkout must match the dependency lock")
+        if git(path, "status", "--porcelain"):
+            raise ValueError("libporpoise: dependency must be a clean pinned checkout")
+        actual["libporpoise"] = {"url": dependency["url"], "sha": expected}
     submodules = []
     for line in git(args.runtime, "submodule", "status", "--recursive", "--", "DolRecomp").splitlines():
         if not line.startswith(" "):
@@ -333,7 +348,11 @@ def assemble(args):
     for name in REQUIRED_BINARIES:
         regular_file(args.app / name)
     provenance, dependencies = validate_provenance(args)
-    licenses = license_sources(args)
+    if provenance.get("libporpoise", False):
+        sdk = getattr(args, "libporpoise_dir", ROOT / "ref/libporpoise").resolve()
+        if out == sdk or sdk in out.parents:
+            raise ValueError("release output must be separate from libPorpoise dependency inputs")
+    licenses = license_sources(args, libporpoise=provenance.get("libporpoise", False))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="windows-release-stage-", dir=args.out.parent) as work:
         work = Path(work)
@@ -362,6 +381,8 @@ def assemble(args):
                    "Native J3D formulas: zeldaret/tww (CC0-1.0). See RIGHTS_AND_LICENSES.md for attribution.\n"
                    "Microsoft Visual C++ runtime: see Visual-Cpp-Runtime.txt when bundled.\n"
                    "Game code and assets retain their owners' rights; no license grant is implied.\n")
+        if provenance.get("libporpoise", False):
+            notices += "libPorpoise matrix SDK: MIT; see libPorpoise-MIT.txt and BUILD.json for its pinned revision.\n"
         (stage / "licenses/THIRD_PARTY_NOTICES.txt").write_text(notices, encoding="utf-8", newline="\n")
         (stage / "BuilderProvenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         (stage / "README.txt").write_text(INSTALL.format(version=args.version, march=provenance.get("march", "see BUILD.json")), encoding="utf-8", newline="\n")
@@ -398,6 +419,8 @@ def main():
     parser.add_argument("--app", type=Path, default=ROOT / "build/windows/BlueWake")
     parser.add_argument("--out", type=Path, default=ROOT / "build/windows/release")
     parser.add_argument("--runtime", type=Path, default=ROOT / "ref/recompcore")
+    parser.add_argument("--libporpoise-dir", type=Path, default=ROOT / "ref/libporpoise",
+                        help="clean pinned matrix SDK checkout when the builder enabled libPorpoise")
     parser.add_argument("--deps", type=Path, default=ROOT / "build/windows/app/_deps")
     parser.add_argument("--dawn-license", required=True, type=Path, help="complete Dawn/Tint and third-party license text")
     parser.add_argument("--dxc-license", required=True, type=Path, help="complete DirectXShaderCompiler license text")

@@ -1,6 +1,9 @@
 #include "native_math.h"
 #include "native_work_pool.h"
 #include <math.h>
+#if defined(BLUEWAKE_LIBPORPOISE)
+#include "porpoise_mtx.h"
+#endif
 
 // GZLE01 SDK leaves. Keep the original register results, stack stores, paired
 // rounding, reservation invalidation and guest cycle accounting. The ordinary
@@ -25,13 +28,17 @@ int bluewake_native_math_try(CPUState* cpu, u32 address) {
            bluewake_native_math(cpu, address);
 }
 
-static unsigned long long s_hits[4], s_fallbacks[4], s_array_vectors, s_array_max;
+static unsigned long long s_hits[7], s_fallbacks[7], s_array_vectors, s_array_max;
 static unsigned long long s_gpr_hits, s_gpr_fallbacks;
 BW_MATH_EXPORT void bluewake_native_math_report(void) {
     fprintf(stderr, "[native-math] copy=%llu/%llu concat=%llu/%llu vec=%llu/%llu array=%llu/%llu vectors=%llu max=%llu parallel=%llu (native/fallback)\n",
         s_hits[0],s_fallbacks[0],s_hits[1],s_fallbacks[1],s_hits[2],s_fallbacks[2],
         s_hits[3],s_fallbacks[3],s_array_vectors,s_array_max,bluewake_parallel_batches());
     fprintf(stderr,"[native-gpr] inline=%llu fallback=%llu\n",s_gpr_hits,s_gpr_fallbacks);
+#if defined(BLUEWAKE_LIBPORPOISE)
+    fprintf(stderr,"[libporpoise] identity=%llu/%llu trans=%llu/%llu scale=%llu/%llu (native/fallback)\n",
+        s_hits[4],s_fallbacks[4],s_hits[5],s_fallbacks[5],s_hits[6],s_fallbacks[6]);
+#endif
 }
 typedef struct Pair { float x, y; } Pair;
 static Pair mul(Pair a, float b) { return (Pair){a.x*b, a.y*b}; }
@@ -93,6 +100,44 @@ static int finish(CPUState* c,unsigned cycles,unsigned suffix) {
     c->downcount-=cycles; c->cycle_observation_suffix=suffix;
     c->pc=c->lr & ~3u; return 1;
 }
+#if defined(BLUEWAKE_LIBPORPOISE)
+// Use the pinned upstream constructors on native float storage. Guest scalar
+// stores truncate bits using ConvertToSingle; a host double-to-float cast would
+// round differently and change subnormal/NaN payloads. The upstream constructors
+// only assign these floats, so their outputs retain the guest store bits.
+static float porpoise_scalar(f64 value) {
+    u32 bits=convert_to_single(f64_bits(value));
+    float result;memcpy(&result,&bits,4);return result;
+}
+static int porpoise_matrix(CPUState* c,unsigned index) {
+    const u32 out=c->gpr[3],zero=c->gpr[2]-12964u,one=c->gpr[2]-12968u;
+    if (c->host_call || !ram(c,out,48) || !ram(c,zero,4) ||
+        read_be32(c->ram+(zero-GC_RAM_BASE))!=0 ||
+        (index!=6 && (!ram(c,one,4) ||
+         read_be32(c->ram+(one-GC_RAM_BASE))!=0x3F800000u))) return 0;
+    float matrix[3][4];
+    if (index==4) bluewake_porpoise_mtx_identity(matrix);
+    else if (index==5) bluewake_porpoise_mtx_trans(matrix,
+        porpoise_scalar(c->fpr[1]),porpoise_scalar(c->fpr[2]),porpoise_scalar(c->fpr[3]));
+    else bluewake_porpoise_mtx_scale(matrix,
+        porpoise_scalar(c->fpr[1]),porpoise_scalar(c->fpr[2]),porpoise_scalar(c->fpr[3]));
+    // Retain the translated store order and reservation invalidation. Both
+    // constants are read before output writes, so overlapping them is valid.
+    static const unsigned order[3][12]={
+        {2,3,6,7,8,9,4,5,0,1,10,11},
+        {3,7,1,2,8,9,4,5,6,10,11,0},
+        {0,1,2,3,4,5,6,7,8,9,10,11}};
+    for (unsigned i=0;i<12;++i) {
+        unsigned word=order[index-4][i];
+        store(c,out+4*word,matrix[word/4][word%4]);
+    }
+    reg(c,0,(Pair){0,0});
+    if (index==4) {
+        reg(c,1,(Pair){1,0});reg(c,2,(Pair){0,1});
+    } else if (index==5) reg(c,4,(Pair){1,1});
+    return finish(c,index==4?11:index==5?13:10,1);
+}
+#endif
 // CodeWarrior nonvolatile GPR save/restore suffixes. Only whole, stable RAM
 // operations with no observable deadline inside may resume in the caller.
 // This removes both dispatcher crossings; partial/device cases retain the
@@ -261,6 +306,11 @@ int bluewake_native_math(CPUState* c,u32 address) {
     case 0x8030D0FC: index=1; cycles=51; break;
     case 0x8030DA44: index=2; cycles=21; break;
     case 0x8030DA98: index=3; cycles=36; break;
+#if defined(BLUEWAKE_LIBPORPOISE)
+    case 0x8030D09C: index=4; cycles=11; break;
+    case 0x8030D618: index=5; cycles=13; break;
+    case 0x8030D698: index=6; cycles=10; break;
+#endif
     default: return 0;
     }
     int handled=0;
@@ -268,7 +318,10 @@ int bluewake_native_math(CPUState* c,u32 address) {
         if (index==0) handled=copy_matrix(c);
         else if (index==1) handled=concat_matrix(c);
         else if (index==2) handled=mult_vec(c);
-        else handled=mult_vec_array(c);
+        else if (index==3) handled=mult_vec_array(c);
+#if defined(BLUEWAKE_LIBPORPOISE)
+        else handled=porpoise_matrix(c,index);
+#endif
     }
     if (handled) ++s_hits[index]; else ++s_fallbacks[index];
     return handled;

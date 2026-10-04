@@ -27,6 +27,13 @@ That fixed revision carries [CC0-1.0](https://github.com/zeldaret/tww/blob/09de0
 The import retains its attribution. Certification scripts record hashes and
 modify only a player's locally generated source; translated bodies stay private.
 
+Windows matrix acceleration also uses the matrix SDK implementation from
+[cybervisi0n/libPorpoise](https://github.com/cybervisi0n/libPorpoise), pinned to
+`9ea0e6ebef7e3be432b92487639991ca0251b0f4`. Its MIT license is retained in
+`licenses/libPorpoise-MIT.txt` in builds that enable it. BlueWake's adapter keeps
+guest memory and CPU state behind its existing compatibility runtime; the source
+revision and selected matrix acceleration are recorded in build provenance.
+
 BlueWake's source is published here. Mac, iPhone and iPad apps are built by each player from their own
 disc ([docs/BUILD_YOUR_OWN.md](docs/BUILD_YOUR_OWN.md)). One exception: the maintainers publish a
 ready-made Windows build on the Releases page, as Wind Waker Recomp did. It contains code translated

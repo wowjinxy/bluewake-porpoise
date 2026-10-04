@@ -57,6 +57,7 @@ MIRROR = 0x40000000
 # dispatcher does (bw_native_call), and runs the translated body where the
 # native declines.
 DISPATCHER_NATIVE = {0x8030D0C8, 0x8030D0FC, 0x8030DA44, 0x8030DA98}
+DISPATCHER_PORPOISE = {0x8030D09C, 0x8030D618, 0x8030D698}
 # The SDK vector leaves cmake/composite/native_vec.c runs natively (PSVECAdd,
 # PSVECSubtract, PSVECScale, PSVECSquareMag, PSVECDotProduct,
 # PSVECCrossProduct, PSVECSquareDistance, PSVECNormalize, PSVECMag): start ->
@@ -340,6 +341,10 @@ def main():
     if matrix_manifest != matrix_header:
         sys.exit("incomplete native matrix preparation")
     natives = DISPATCHER_NATIVE if matrix_manifest else set()
+    if '#define BLUEWAKE_LIBPORPOISE_MATH_PREPARED 1' in (root / 'generated_composite.h').read_text():
+        if not matrix_manifest:
+            sys.exit('libPorpoise requires native matrix preparation')
+        natives = natives | DISPATCHER_PORPOISE
     sites = files = indirect = fallback = 0
     for path in chunks:
         m = re.search(r"_([0-9A-F]{8})\.c$", path.name)

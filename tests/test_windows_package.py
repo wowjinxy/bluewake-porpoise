@@ -20,6 +20,7 @@ SPEC.loader.exec_module(PACKAGE)
 SOURCE_SHA = "a" * 40
 RUNTIME_SHA = "b" * 40
 TRANSLATOR_SHA = "c" * 40
+LIBPORPOISE_SHA = "d" * 40
 
 
 def pe(imports=(), delay=()):
@@ -171,6 +172,61 @@ class WindowsPackageTest(unittest.TestCase):
 
     def write_provenance(self):
         (self.args.app / "BuilderProvenance.json").write_text(json.dumps(self.provenance))
+
+    def enable_libporpoise(self):
+        self.args.libporpoise_dir = self.root / "sdk"
+        self.args.libporpoise_dir.mkdir()
+        (self.args.libporpoise_dir / "LICENSE").write_text("synthetic MIT SDK notice")
+        lock_path = self.repo / "config/dependencies.lock.json"
+        lock = json.loads(lock_path.read_text())
+        lock["dependencies"].append({"id": "libporpoise", "sha": LIBPORPOISE_SHA,
+                                     "url": "https://example.org/libporpoise"})
+        lock_path.write_text(json.dumps(lock))
+        self.provenance.update(libporpoise=True, libporpoise_sha=LIBPORPOISE_SHA, native_math=True)
+        self.write_provenance()
+        self.git.side_effect = lambda path, *arguments: (LIBPORPOISE_SHA if arguments == ("rev-parse", "HEAD")
+                                                       else "") if path == self.args.libporpoise_dir else self.git_output(path, *arguments)
+
+    def test_selected_libporpoise_ships_the_mit_notice_and_exact_pin(self):
+        self.enable_libporpoise()
+        result = PACKAGE.assemble(self.args)
+        with zipfile.ZipFile(result) as archive:
+            self.assertEqual(archive.read("BlueWake/licenses/libPorpoise-MIT.txt"), b"synthetic MIT SDK notice")
+            build = json.loads(archive.read("BlueWake/BUILD.json"))
+            self.assertEqual(build["dependencies"]["locked_sources"]["libporpoise"]["sha"], LIBPORPOISE_SHA)
+            self.assertTrue(build["builder"]["libporpoise"])
+            self.assertEqual(build["builder"]["libporpoise_sha"], LIBPORPOISE_SHA)
+            self.assertIn(b"libPorpoise matrix SDK: MIT", archive.read("BlueWake/licenses/THIRD_PARTY_NOTICES.txt"))
+
+    def test_libporpoise_mismatched_pin_changes_and_missing_license_stop_packaging(self):
+        self.enable_libporpoise()
+        for field, value in (("libporpoise_sha", "e" * 40), ("native_math", False)):
+            old = self.provenance[field]
+            self.provenance[field] = value
+            self.write_provenance()
+            with self.assertRaisesRegex(ValueError, "libporpoise.*dependency lock"):
+                PACKAGE.assemble(self.args)
+            self.provenance[field] = old
+        self.write_provenance()
+        original = self.git.side_effect
+        self.git.side_effect = lambda path, *arguments: (" M src/mtx/mtx.c" if path == self.args.libporpoise_dir
+                                                       and arguments[0] == "status" else original(path, *arguments))
+        with self.assertRaisesRegex(ValueError, "clean pinned checkout"):
+            PACKAGE.assemble(self.args)
+        self.git.side_effect = original
+        (self.args.libporpoise_dir / "LICENSE").unlink()
+        with self.assertRaisesRegex(ValueError, "missing license.*libPorpoise"):
+            PACKAGE.assemble(self.args)
+        self.check.assert_not_called()
+        self.assertFalse(self.args.out.exists())
+
+    def test_release_output_cannot_modify_the_selected_sdk_checkout(self):
+        self.enable_libporpoise()
+        self.args.out = self.args.libporpoise_dir / "release"
+        with self.assertRaisesRegex(ValueError, "separate from libPorpoise"):
+            PACKAGE.assemble(self.args)
+        self.check.assert_not_called()
+        self.assertFalse(self.args.out.exists())
 
     def inspect_candidate(self, paths):
         self.assertEqual(len(paths), 2)

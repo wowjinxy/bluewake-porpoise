@@ -32,6 +32,8 @@ jobs:
           python3 tests/test_windows_builder_recovery.py
           python3 tests/test_windows_training.py
           python3 tests/test_windows_app_training.py
+          python3 tests/test_windows_libporpoise.py
+          python3 tests/libporpoise_source_test.py
       - name: Preserve prepaid and lean rewrite qualification
         run: python3 tests/test_prepaid_rewrites.py
       - name: Require complete guest checkpoint comparison coverage
