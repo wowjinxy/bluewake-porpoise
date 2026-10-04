@@ -1,0 +1,17 @@
+{
+  "base_sha": "e280c788dadabd18b085af0085f1558fc9ff5ecc",
+  "patches": [
+    {
+      "path": "patches/recompcore/0152-reuse-unchanged-gx-transform-snapshots.patch",
+      "sha256": "c078fae226bfba9cc5fd24b341e691bb42236bb9464dfc435666386ca912aef6"
+    },
+    {
+      "path": "patches/recompcore/0153-controller-enumeration-thread.patch",
+      "sha256": "aa16973d84c651b37943a98e849fb2b85f0cfa0de7ffab301e476d2540039324"
+    },
+    {
+      "path": "patches/recompcore/0154-sustained-render-overload-pacing.patch",
+      "sha256": "8128c590223e1f697ae8592e99ded7011a01ae093ff15c7a9274f7d7c0428671"
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
+index de5dbcf..4e22cc1 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
+@@ -39,8 +39,8 @@ std::atomic_bool g_enabled{env_flag("DOL_AURORA_FRAME_INTERP", false)};
+ std::atomic<int> g_steps{static_cast<int>(std::clamp<uint64_t>(env_u64("DOL_AURORA_FRAME_INTERP_STEPS", 1), 1, kMaxSteps))};
+ int g_frameSteps = g_steps.load(std::memory_order_relaxed);
+ // In-between frames need not make the game wait (pace_steps): when the GPU
+-// or the render worker keeps falling behind (note_overload), 60 Hz drops to
+-// none, and comes back after a calm spell (120 Hz to 60 only when asked).
++// or the render worker keeps falling behind (note_overload), higher rates drop
++// to 60 Hz, then none, and come back after a calm spell.
+ std::atomic_bool g_overloaded{false};
+ std::atomic<const char*> g_overloadWhy{nullptr}; // the latest overload's cause, for the log
+ bool g_frameSkipped = false; // the recording frame has none (recording thread)
+@@ -1921,8 +1921,8 @@ static bool slow_game(Pacing& p) {
+ 
+ // Recording thread, between game frames: the next frame's in-between frames.
+ // Overloads (the GPU a frame behind, or the game waiting on rendering) in 3 of
+-// the last 8 game frames take 60 Hz to none (and 120 Hz to 60, when pacing
+-// is asked for there); one now and then (a texture loading, a late drawable)
++// the last 8 game frames take higher rates to 60 Hz, then to none;
++// one now and then (a texture loading, a late drawable)
+ // is not a scene too heavy, and dropping on each one put 120 Hz at 60 most
+ // times it did not need to be. The frames in
+ // flight still report the overload a drop answers, so a second drop waits a
+@@ -1936,10 +1936,9 @@ static void pace_steps() {
+   static constexpr int kCalmMostSlow = 3600; // 2 min, after the game itself ran slow
+   static constexpr uint64_t kSettle = 4; // game frames between drops
+   static constexpr uint64_t kSoon = 300; // an overload within 10 s of coming back
+-  // DOL_AURORA_FRAME_INTERP_PACING: 0 never lowers them, 1 lowers 120 Hz's
+-  // too. Unset, only 60 Hz's are: 120 Hz stays 120, where a drop to 60 for a
+-  // stall of a few frames, over by the time it dropped, was felt more than the
+-  // stall.
++  // DOL_AURORA_FRAME_INTERP_PACING: 0 never lowers them. Unset or 1 allows
++  // sustained overloads to lower any requested rate. The 3-of-8 threshold
++  // keeps an isolated stall from dropping a higher rate to 60 Hz.
+   static const int setting = [] {
+     const char* env = std::getenv("DOL_AURORA_FRAME_INTERP_PACING");
+     return env != nullptr && env[0] != '\0' ? (env[0] != '0' ? 1 : 0) : -1;
+@@ -1947,7 +1946,7 @@ static void pace_steps() {
+   auto& p = g_pacing;
+   ++p.frame;
+   const int wanted = g_steps.load(std::memory_order_relaxed);
+-  const bool pacing = setting == 1 || (setting < 0 && wanted < 3);
++  const bool pacing = setting != 0;
+   // The game running slow counts at any number of in-between frames (slow
+   // motion is worse than fewer of them) unless pacing is off altogether.
+   const bool slow = slow_game(p) && setting != 0;
+diff --git a/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp b/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp
+index 233a93e..e37a188 100644
+--- a/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp
++++ b/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp
+@@ -103,9 +103,19 @@ static const gxc::VertexShaderConstants* blend_plan(const gxc::DrawPlan& plan, c
+   return fi::blend_draw(input, c);
+ }
+ 
+-int main() {
+-  // Pacing at 120 Hz as well, for its checks (unset, 120 Hz is never lowered).
+-  setenv("DOL_AURORA_FRAME_INTERP_PACING", "1", 1);
++int main(int argc, char** argv) {
++  // Run separately with no argument, 1, and 0: the setting is read once.
++  const char* pacing = argc > 1 ? argv[1] : "";
++  if (argc > 2 || (pacing[0] != '\0' && std::strcmp(pacing, "0") != 0 && std::strcmp(pacing, "1") != 0)) {
++    std::fprintf(stderr, "usage: frame_interp_test [0|1]\n");
++    return 2;
++  }
++#if defined(_WIN32)
++  CHECK(_putenv_s("DOL_AURORA_FRAME_INTERP_PACING", pacing) == 0);
++#else
++  CHECK((pacing[0] == '\0' ? unsetenv("DOL_AURORA_FRAME_INTERP_PACING")
++                           : setenv("DOL_AURORA_FRAME_INTERP_PACING", pacing, 1)) == 0);
++#endif
+   fi::set_enabled(true);
+   const uint64_t kShip = 11, kTree = 22, kHud = 33;
+ 
+@@ -1066,7 +1076,7 @@ int main() {
+   // the frames in flight to none; one now and then does nothing. 3 s of calm
+   // brings a level back, and an overload soon after coming back makes the
+   // next wait twice as long.
+-  {
++  if (pacing[0] != '0') {
+     const auto overload_frames = [](int n) {
+       for (int i = 0; i < n; ++i) {
+         fi::note_overload("test");
+@@ -1113,6 +1123,43 @@ int main() {
+     fi::set_steps(1);
+     fi::end_game_frame();
+     CHECK(fi::frame_steps() == 1 && !fi::frame_skipped());
++
++    // Higher requested rates retain isolated-stall protection and recover
++    // through 60 Hz after sustained rendering overload, including the maximum.
++    for (const int wanted : {5, fi::kMaxSteps}) {
++      fi::set_steps(wanted);
++      fi::end_game_frame();
++      overload_frames(1);
++      for (int i = 0; i < 8; ++i)
++        fi::end_game_frame();
++      CHECK(fi::frame_steps() == wanted && !fi::frame_skipped());
++      overload_frames(2);
++      CHECK(fi::frame_steps() == wanted && !fi::frame_skipped());
++      overload_frames(1);
++      CHECK(fi::frame_steps() == 1 && !fi::frame_skipped());
++      overload_frames(3);
++      CHECK(fi::frame_steps() == 1 && !fi::frame_skipped());
++      overload_frames(1);
++      CHECK(fi::frame_skipped());
++      for (int i = 0; i < 90; ++i)
++        fi::end_game_frame();
++      CHECK(fi::frame_steps() == 1 && !fi::frame_skipped());
++      for (int i = 0; i < 90; ++i)
++        fi::end_game_frame();
++      CHECK(fi::frame_steps() == wanted && !fi::frame_skipped());
++    }
++  } else {
++    // The explicit opt-out keeps every requested rate despite persistent
++    // renderer overload, including the ordinary and maximum settings.
++    for (const int wanted : {1, 3, 5, fi::kMaxSteps}) {
++      fi::set_steps(wanted);
++      fi::end_game_frame();
++      for (int i = 0; i < 16; ++i) {
++        fi::note_overload("test");
++        fi::end_game_frame();
++        CHECK(fi::frame_steps() == wanted && !fi::frame_skipped());
++      }
++    }
+   }
+ 
+   if (g_failures == 0)

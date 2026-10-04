@@ -1,5 +1,20 @@
 # Historical RecompCore patches
 
+The patches through 0151 are historical and are already in the pinned runtime.
+`active.json` lists the additional patches applied to that exact base by both
+builders. The verifier checks their SHA256 values and the complete resulting
+tracked tree; local dependency edits and partial patch sets stop the build.
+The dependency lock and build provenance record this recipe.
+
+- 0152 adapts [Elliott Tate's transform snapshot reuse](https://github.com/elliotttate/RecompCore/commit/ef3e17f81f512a655ba40e64f1d4eda09ef50d54),
+  retaining BlueWake's existing runtime fixes and optional full-copy verification.
+- 0153 adapts [s-ilent's controller enumeration patch](https://github.com/s-ilent/Wind-Waker-Recomp/commit/b643dda2bb402e369f4a565073da52a586e33423).
+  The Windows SDL hint is set before initialization at default priority, so an
+  explicit override still wins. Pinned SDL already enables this thread by default.
+- 0154 adapts [s-ilent's sustained rendering overload policy](https://github.com/s-ilent/Wind-Waker-Recomp/commit/f92ba1a43c5a58a08e40ce8a4129c08fe1ab2412)
+  to the current seven-step interpolation implementation, keeping its slow-game
+  median, hysteresis, settling and recovery behavior. It includes runtime tests.
+
 These patches record BlueWake's RecompCore changes as they were made. They are history, not a build
 input: the series starts at 0008 (0001-0007 were never exported), so it does not apply to the
 upstream base 5c3611e, and the local head it led to (3476998) was never published.

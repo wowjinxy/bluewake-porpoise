@@ -38,6 +38,8 @@ PROFILE_HOST_PGO=scripts/builder/profiles/bluewake/host.profdata
 # chrissotraidis 5c91d6e plus patches/dolrecomp/0019.
 RECOMPCORE_URL=https://github.com/chrissotraidis/RecompCore.git
 RECOMPCORE_SHA=e280c788dadabd18b085af0085f1558fc9ff5ecc
+# Additional runtime patches are checksum-locked in patches/recompcore/active.json.
+# Both builders verify the entire base-plus-patches tree before using it.
 DOLRECOMP_SHA=b8b534591cba8ca7cd43943a655ee6e2591cf5de
 LIBPORPOISE_URL=https://github.com/cybervisi0n/libPorpoise.git
 LIBPORPOISE_SHA=9ea0e6ebef7e3be432b92487639991ca0251b0f4
@@ -86,11 +88,11 @@ profile_dependencies() {
         run dolrecomp-fetch git -C "$recompcore" submodule update --init --depth 1 -- DolRecomp
     fi
     [ "$(git -C "$recompcore/DolRecomp" rev-parse HEAD)" = "$DOLRECOMP_SHA" ] || die "ref/recompcore/DolRecomp is not at $DOLRECOMP_SHA"
-    if [ -n "$(git -C "$recompcore" status --porcelain --untracked-files=no)" ] ||
-       [ -n "$(git -C "$recompcore/DolRecomp" status --porcelain --untracked-files=no)" ]; then
-        die "ref/recompcore has local changes; the build must use the pinned source exactly"
+    if [ -n "$(git -C "$recompcore/DolRecomp" status --porcelain --untracked-files=no)" ]; then
+        die "ref/recompcore/DolRecomp has local changes; the build must use the pinned translator exactly"
     fi
-    echo "RecompCore $RECOMPCORE_SHA, DolRecomp $DOLRECOMP_SHA"
+    run runtime-patches python3 "$root/scripts/builder/runtime_patches.py" "$recompcore"
+    echo "RecompCore $RECOMPCORE_SHA plus the verified runtime patches, DolRecomp $DOLRECOMP_SHA"
 
     deps=$root/build/deps
     mkdir -p "$deps"

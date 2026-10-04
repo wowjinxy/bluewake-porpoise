@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Certify the second native entry batch against original GZLE01 translations.
+"""Certify native entries and search resume leaders against original GZLE01 translations.
 
 Run after mod variants, before other native hooks, inline-GPR, fixed-CPU,
 prepaid-block, direct-call and memory rewrites. Every base/mod fragment and
@@ -43,6 +43,10 @@ FRAGMENTS = {
     'copy': (0x803096E0, 0x8030D0C8, 0x8030D0FC, '8d89ffc5251b41bc39532c918e0855ceceab319616a5c0ef12acfb9635d9b55d'),
     'save': (0x803256E0, 0x80328F04, 0x80328F50, 'b7fa7b91c185412cce8d7dfc7eccafd5c50d69f7f49b66d111c582d11ab8df1b'),
     'restore': (0x803256E0, 0x80328F50, 0x80328F9C, 'f525cbda6f2bed00dbaa48533f1a32c12ed19b571328e7045945a08b9c3ca2d4'),
+    'strcmp': (0x8032D6E0, 0x8032DB44, 0x8032DC6C, 'e4a953744010f165ec41e010775db92a273b5fcdcf5c38abc25fe764d5549683'),
+    'stage_name': (0x8003D6E0, 0x80041544, 0x800415B4, 'd0d8a0291847e1b5901d52c0491e9718676133a2656e874c7f8ec1406ebec5d6'),
+    'judge_filter': (0x802416E0, 0x80245640, 0x80245674, 'e78e6d3f9ff0c731b7bb189e73f32c726605bba79863cba8b501f6ed8b52da53'),
+    'find_object': (0x800256E0, 0x8002833C, 0x80028410, '89a98e1bbb6a1d1db4c08ae6c62f04d6e5b5d463cdb197b6b691eeeb1a791d96'),
 }
 ENTRIES = {
     0x802D8BD8: ('fifo_pos',), 0x802D8C58: ('fifo_nrm',), 0x802D8CC4: ('fifo_nrm33',),
@@ -50,6 +54,12 @@ ENTRIES = {
     0x802F5090: ('basic', 'j3d_info', 'concat', 'copy', 'save', 'restore'),
     0x802F52BC: ('softimage', 'j3d_values', 'concat', 'copy', 'save', 'restore'),
     0x802F5508: ('maya_entry', 'maya_tail', 'j3d_info', 'concat', 'copy', 'save', 'restore'),
+    0x8032DB44: ('strcmp',),
+    0x80041544: ('stage_name', 'strcmp', 'save', 'restore'),
+    0x8004156C: ('stage_name', 'strcmp', 'save', 'restore'),
+    0x80041578: ('stage_name', 'strcmp', 'save', 'restore'),
+    0x80041588: ('stage_name', 'strcmp', 'save', 'restore'),
+    0x80245640: ('judge_filter', 'find_object', 'stage_name', 'strcmp', 'save', 'restore'),
 }
 
 
@@ -97,9 +107,21 @@ def certify(chunks, watched):
                     # These precise save/restore calls have read-only CPU probes
                     # in native_mtxcalc.c; their bodies are certified separately.
                     observed = re.sub(r'ctx->pc = 0x80328F(?:38|40|84|8C)u;', '', observed)
+                if name == 'stage_name':
+                    # The known save/restore calls have private CPU probes in
+                    # native_search.c; the helpers are certified separately.
+                    observed = re.sub(r'ctx->pc = 0x80328F(?:40|8C)u;', '', observed)
+                if name == 'find_object':
+                    # The assertion call is reachable only for a NULL search
+                    # parameter, which judge_search explicitly rejects.
+                    observed = observed.replace('ctx->pc = 0x80006C4Cu;', '')
                 names = re.findall(r'label_([8C][0-9A-F]{7})|// ([8C][0-9A-F]{7}):|'
                                    r'ctx->(?:pc|lr) = 0x([8C][0-9A-F]{7})u', observed)
                 pcs = {int(next(v for v in group if v), 16) for group in names}
+                if name == 'judge_filter':
+                    # Its watched entry is approved by native_entries_v1;
+                    # every internal observation still rejects the fragment.
+                    pcs.discard(start)
                 if any(pc in watched or (pc & ~0x40000000) in watched for pc in pcs):
                     print(f'{name}: host watches an internal address')
                     valid = False

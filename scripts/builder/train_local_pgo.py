@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from module_optimizations import MODES, HOST_DEFAULTS, cmake_flags
+from runtime_patches import PatchError, apply_patches
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -75,7 +76,7 @@ def run(command, log, *, env=None, timeout=7200):
     print(f"training: {log.stem} complete in {int(time.monotonic() - start)}s", flush=True)
 
 
-def fingerprint(args, compiler):
+def fingerprint(args, compiler, runtime_patches=None):
     digest = hashlib.sha256(compiler.encode())
     # The source includes the generated base and optional mod variants. Host
     # and recipe edits also invalidate the training result.
@@ -91,6 +92,12 @@ def fingerprint(args, compiler):
     digest.update(args.module_optimizations.encode())
     digest.update((ROOT / "apple/ios/src/dsp_common_shim.cpp").read_bytes())
     digest.update(subprocess.check_output(["git", "-C", str(ROOT / "ref/recompcore"), "rev-parse", "HEAD"]))
+    if runtime_patches is None:
+        runtime_patches = apply_patches(ROOT / "ref/recompcore", root=ROOT,
+                                       manifest=ROOT / "patches/recompcore/active.json", verify_only=True)
+    digest.update(json.dumps(runtime_patches, sort_keys=True).encode())
+    digest.update((ROOT / "patches/recompcore/active.json").read_bytes())
+    digest.update((ROOT / "scripts/builder/runtime_patches.py").read_bytes())
     with args.disc.open("rb") as disc:
         for chunk in iter(lambda: disc.read(4 * 1024 * 1024), b""):
             digest.update(chunk)
@@ -125,16 +132,17 @@ def main():
     for path in required:
         if not path.is_file():
             parser.error(f"missing {path}; run the builder's source stages first")
-    donor_status = subprocess.check_output(
-        ["git", "-C", str(ROOT / "ref/recompcore"), "status", "--porcelain", "--untracked-files=no"], text=True)
-    if donor_status.strip():
-        parser.error("ref/recompcore has modified tracked source; restore the pinned dependency first")
+    try:
+        runtime_patches = apply_patches(ROOT / "ref/recompcore", root=ROOT,
+                                       manifest=ROOT / "patches/recompcore/active.json", verify_only=True)
+    except PatchError as error:
+        parser.error(str(error))
     work = args.out / "pgo-local"
     work.mkdir(parents=True, exist_ok=True)
     logs = work / "logs"
     logs.mkdir(exist_ok=True)
     compiler = subprocess.check_output(["xcrun", "clang", "--version"], text=True)
-    key = fingerprint(args, compiler)
+    key = fingerprint(args, compiler, runtime_patches)
     receipt = work / "training.json"
     outputs = [work / "composite.profdata", work / "host.profdata"]
     if receipt.exists():
@@ -206,6 +214,7 @@ def main():
         raise RuntimeError("merged profile has no executed translated game function counters")
     shutil.copy2(outputs[0], outputs[1])
     receipt.write_text(json.dumps({"fingerprint": key, "compiler": compiler,
+        "runtime_patches": runtime_patches,
         "route": "local boot through player-control, 23000 retraces", "performance_verified": False,
         "dsp_mode": "hle", "renderer": "headless",
         "module_optimizations": args.module_optimizations,

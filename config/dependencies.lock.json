@@ -128,7 +128,7 @@
       "branch": "codex/bluewake-honest-fps",
       "license": "GPL-3.0",
       "role": "static-recomp runtime (GXRuntime), vendored Aurora renderer at GXRuntime/graphics/aurora, Dolphin DSP donor sources, and the DolRecomp translator as the DolRecomp submodule; the product source for the iPad build (scripts/ios/build_device.sh)",
-      "verified": "2026-10-03",
+      "verified": "2026-10-04",
       "upstream": {
         "url": "https://github.com/ExpansionPak/RecompCore",
         "base_sha": "5c3611e2bcb03d1578274c956bc3d7b913527ec2"
@@ -604,6 +604,24 @@
           "donor": "elliotttate RecompCore 31401e5, 3be805f, 0e631be, bb63c90, 50763a2, 6d0ed15, db2c87f, 44e5c2c (Wind-Waker-Recomp patches 0121, 0123-0129), authorship retained",
           "evidence": "Device lock, multi-threaded pipelines, GX worker reductions, Smooth Motion cloth and colours, ubershader (on by default for D3D12 only). Mac host builds; frame_interp and fps_watch regressions pass; donor measurements not repeated."
         }
+      },
+      "active_patches": {
+        "manifest": "patches/recompcore/active.json",
+        "sha256": "70c12f4e6ba2f2599dc0d03f76a1b20091be6a7b00792c2502201d21d1e44193",
+        "patches": [
+          {
+            "path": "patches/recompcore/0152-reuse-unchanged-gx-transform-snapshots.patch",
+            "sha256": "c078fae226bfba9cc5fd24b341e691bb42236bb9464dfc435666386ca912aef6"
+          },
+          {
+            "path": "patches/recompcore/0153-controller-enumeration-thread.patch",
+            "sha256": "aa16973d84c651b37943a98e849fb2b85f0cfa0de7ffab301e476d2540039324"
+          },
+          {
+            "path": "patches/recompcore/0154-sustained-render-overload-pacing.patch",
+            "sha256": "8128c590223e1f697ae8592e99ded7011a01ae093ff15c7a9274f7d7c0428671"
+          }
+        ]
       }
     },
     {

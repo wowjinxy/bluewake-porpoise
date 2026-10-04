@@ -166,12 +166,97 @@ class WindowsPackageTest(unittest.TestCase):
 
     def git_output(self, path, *arguments):
         if arguments == ("rev-parse", "HEAD"):
-            return {self.repo: SOURCE_SHA, self.args.runtime: RUNTIME_SHA,
+            return {self.repo: SOURCE_SHA, self.args.runtime: getattr(self, "runtime_sha", RUNTIME_SHA),
                     self.args.runtime / "DolRecomp": TRANSLATOR_SHA}[path]
         return ""
 
     def write_provenance(self):
         (self.args.app / "BuilderProvenance.json").write_text(json.dumps(self.provenance))
+
+    def enable_runtime_patches(self):
+        def runtime_git(*args):
+            return subprocess.check_output(["git", "-C", str(self.args.runtime), *args],
+                                           stderr=subprocess.DEVNULL)
+        runtime_git("init", "-q")
+        runtime_git("config", "core.autocrlf", "false")
+        runtime_git("config", "user.name", "Fixture")
+        runtime_git("config", "user.email", "fixture@example.invalid")
+        self.runtime_source = self.args.runtime / "source.cpp"
+        self.runtime_source.write_bytes(b"int answer = 1;\n")
+        runtime_git("add", ".")
+        runtime_git("commit", "-qm", "pinned runtime")
+        self.runtime_sha = runtime_git("rev-parse", "HEAD").decode().strip()
+        self.runtime_source.write_bytes(b"int answer = 2;\n")
+        folder = self.repo / "patches/recompcore"
+        folder.mkdir(parents=True)
+        patch_file = folder / "change.patch"
+        patch_file.write_bytes(runtime_git("diff", "--binary"))
+        self.runtime_source.write_bytes(b"int answer = 1;\n")
+        self.runtime_manifest = folder / "active.json"
+        self.runtime_recipe = {"base_sha": self.runtime_sha, "patches": [
+            {"path": "patches/recompcore/change.patch", "sha256": PACKAGE.sha256(patch_file)}]}
+        self.runtime_manifest.write_text(json.dumps(self.runtime_recipe))
+        lock_path = self.repo / "config/dependencies.lock.json"
+        lock = json.loads(lock_path.read_text())
+        lock["dependencies"][0].update(sha=self.runtime_sha, active_patches={
+            "manifest": "patches/recompcore/active.json", "sha256": PACKAGE.sha256(self.runtime_manifest),
+            "patches": self.runtime_recipe["patches"]})
+        lock_path.write_text(json.dumps(lock))
+        self.runtime_receipt = PACKAGE.apply_patches(self.args.runtime, self.runtime_manifest, self.repo)
+        self.provenance["runtime_patches"] = self.runtime_receipt
+        self.write_provenance()
+
+    def test_verified_runtime_patches_are_recorded_and_never_applied_by_packaging(self):
+        self.enable_runtime_patches()
+        index = self.args.runtime / ".git/index"
+        before = self.runtime_source.read_bytes(), index.read_bytes()
+        result = PACKAGE.assemble(self.args)
+        self.assertEqual((self.runtime_source.read_bytes(), index.read_bytes()), before)
+        with zipfile.ZipFile(result) as archive:
+            build = json.loads(archive.read("BlueWake/BUILD.json"))
+            self.assertEqual(build["builder"]["runtime_patches"], self.runtime_receipt)
+            self.assertEqual(build["dependencies"]["locked_sources"]["recompcore"]["active_patches"]["patches"],
+                             self.runtime_recipe["patches"])
+
+    def test_runtime_patch_provenance_and_lock_must_match_exactly(self):
+        self.enable_runtime_patches()
+        self.provenance["runtime_patches"] = {**self.runtime_receipt, "patched_tree": "0" * 40}
+        self.write_provenance()
+        with self.assertRaisesRegex(ValueError, "builder's runtime provenance"):
+            PACKAGE.assemble(self.args)
+        self.provenance["runtime_patches"] = self.runtime_receipt
+        self.write_provenance()
+        lock_path = self.repo / "config/dependencies.lock.json"
+        lock = json.loads(lock_path.read_text())
+        active = lock["dependencies"][0]["active_patches"]
+        active["sha256"] = "0" * 64
+        lock_path.write_text(json.dumps(lock))
+        with self.assertRaisesRegex(ValueError, "manifest differs from the dependency lock"):
+            PACKAGE.assemble(self.args)
+        active["sha256"] = PACKAGE.sha256(self.runtime_manifest)
+        active["patches"] = []
+        lock_path.write_text(json.dumps(lock))
+        with self.assertRaisesRegex(ValueError, "recipe differs from the dependency lock"):
+            PACKAGE.assemble(self.args)
+        self.check.assert_not_called()
+        self.assertFalse(self.args.out.exists())
+
+    def test_unpatched_and_modified_runtime_sources_are_rejected_without_changes(self):
+        self.enable_runtime_patches()
+        for content in (b"int answer = 1;\n", b"int answer = 2;\n// private edit\n"):
+            self.runtime_source.write_bytes(content)
+            with self.assertRaisesRegex(ValueError, "does not match the verified patch set"):
+                PACKAGE.assemble(self.args)
+            self.assertEqual(self.runtime_source.read_bytes(), content)
+        self.check.assert_not_called()
+        self.assertFalse(self.args.out.exists())
+
+    def test_unlocked_runtime_patch_receipt_is_rejected(self):
+        self.provenance["runtime_patches"] = {"base_sha": RUNTIME_SHA}
+        self.write_provenance()
+        with self.assertRaisesRegex(ValueError, "patches absent from the dependency lock"):
+            PACKAGE.assemble(self.args)
+        self.check.assert_not_called()
 
     def enable_libporpoise(self):
         self.args.libporpoise_dir = self.root / "sdk"

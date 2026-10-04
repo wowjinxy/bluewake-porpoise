@@ -84,7 +84,7 @@ int main(void) {{
     return 0;
 }}
 ''')
-        helpers = ('native_entries', 'native_fifo', 'native_bg', 'native_vec', 'native_mtxcalc', 'gather_pipe', 'direct_calls')
+        helpers = ('native_entries', 'native_fifo', 'native_bg', 'native_vec', 'native_mtxcalc', 'native_search', 'gather_pipe', 'direct_calls')
         executable = root / 'native_entries_hook_test.exe'
         command = [compiler, '-std=c11', '-O2', '-Wno-dll-attribute-on-redeclaration', '-ffp-contract=off',
                    f'-I{ROOT / "cmake/composite"}', f'-I{runtime / "include"}', str(driver)]

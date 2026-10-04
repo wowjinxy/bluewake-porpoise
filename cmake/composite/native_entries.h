@@ -3,7 +3,7 @@
 
 #include "core/cpu.h"
 
-/* The second certified entry batch. A host must explicitly approve skipped
+/* Certified entries and name-search resume leaders. A host must approve skipped
  * observations through this versioned, read-only predicate. Old hosts and a
  * NULL predicate leave every translated fallback intact. The predicate must
  * not depend on memory/registers changed inside an approved routine, except

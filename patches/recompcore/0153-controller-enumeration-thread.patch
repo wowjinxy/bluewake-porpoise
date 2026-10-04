@@ -1,0 +1,17 @@
+diff --git a/GXRuntime/graphics/aurora/lib/window.cpp b/GXRuntime/graphics/aurora/lib/window.cpp
+index 48463a0..773ad04 100644
+--- a/GXRuntime/graphics/aurora/lib/window.cpp
++++ b/GXRuntime/graphics/aurora/lib/window.cpp
+@@ -397,6 +397,12 @@ void show_window() {
+ 
+ bool initialize() {
+   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
++#if defined(_WIN32)
++  // Keep joystick detection and raw input on SDL's worker thread. Configure
++  // it before the first SDL initialization, and preserve an explicit override.
++  // A higher-priority setting may reject this default without being an error.
++  SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_THREAD, "1", SDL_HINT_DEFAULT);
++#endif
+   TRY(SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"), "Error setting {}: {}", SDL_HINT_ORIENTATIONS,
+       SDL_GetError());
+   TRY(SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO), "Error initializing SDL: {}", SDL_GetError());

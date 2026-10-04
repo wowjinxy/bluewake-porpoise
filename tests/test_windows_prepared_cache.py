@@ -107,7 +107,8 @@ class PreparedCacheTest(unittest.TestCase):
                        "cmake/composite/native_entries.c", "cmake/composite/native_entries.h",
                        "cmake/composite/native_fifo.c", "cmake/composite/native_fifo.h",
                        "cmake/composite/native_bg.c", "cmake/composite/native_bg.h",
-                       "cmake/composite/native_mtxcalc.c", "cmake/composite/native_mtxcalc.h"):
+                       "cmake/composite/native_mtxcalc.c", "cmake/composite/native_mtxcalc.h",
+                       "cmake/composite/native_search.c", "cmake/composite/native_search.h"):
             dst = self.root / script
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / script, dst)
@@ -290,7 +291,8 @@ label_80004004:
             self.builder.prepare_blocks()
         self.assertEqual(before, (source.read_bytes(), source.stat().st_mtime_ns))
         for helper in ('scripts/windows/native_entries.py', 'cmake/composite/native_entries.c',
-                       'cmake/composite/native_mtxcalc.h'):
+                       'cmake/composite/native_mtxcalc.h', 'cmake/composite/native_search.c',
+                       'cmake/composite/native_search.h'):
             old = (self.out / 'composite-inputs.digest').read_text()
             path = self.root / helper; path.write_text(path.read_text() + '\n', newline='\n')
             self.cycle()

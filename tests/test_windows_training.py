@@ -31,6 +31,7 @@ class TrainingTest(unittest.TestCase):
                           DOL_AURORA_FRAME_INTERP="1", LLVM_PROFILE_FILE="player.profraw")
         self.b.mods = True
         self.b.clang_version = "clang version fixture"
+        self.b.clang = str(self.root / "tools/clang.exe")
         self.b.llvm_profdata = "llvm-profdata"
         self.b.iso = self.root / "owned-disc.iso"
         self.b.logs.mkdir()
@@ -65,6 +66,35 @@ class TrainingTest(unittest.TestCase):
             self.assertNotIn("-fprofile-instr-generate", " ".join(map(str, argv)))
         self.b.run = check
         self.b.configure_app()
+
+    def test_app_profile_compatibility_controls_pgo_and_thinlto(self):
+        self.b.APP_PROFILE = self.root / "app.profdata"
+        self.b.APP_PROFILE.write_bytes(b"fixture")
+        profdata = Path(self.b.clang).with_name("llvm-profdata.exe")
+        profdata.parent.mkdir()
+        profdata.write_bytes(b"fixture tool")
+        for compatible in (True, False):
+            with self.subTest(compatible=compatible):
+                if hasattr(self.b, "_app_profile_readable"):
+                    del self.b._app_profile_readable
+                calls = []
+                self.b.run = lambda name, argv, **kw: calls.append(list(map(str, argv)))
+                with patch.object(bw.subprocess, "run", return_value=SimpleNamespace(returncode=0 if compatible else 1)) as probe:
+                    self.b.configure_app()
+                    self.b.configure_app()
+                probe.assert_called_once()
+                self.assertEqual(probe.call_args.args[0], [str(profdata), "show", str(self.b.APP_PROFILE)])
+                self.assertEqual("-fprofile-instr-use=" in " ".join(calls[0]), compatible)
+                self.assertEqual("-flto=thin" in " ".join(calls[0]), compatible)
+                if compatible:
+                    self.assertIn(f'"-fprofile-instr-use={self.b.APP_PROFILE.as_posix()}"', " ".join(calls[0]))
+
+    def test_app_instrumentation_and_explicit_opt_out_skip_profile_probe(self):
+        self.b.run = lambda *args, **kwargs: None
+        with patch.object(self.b, "app_profile_readable", side_effect=AssertionError("unexpected profile read")):
+            self.b.configure_app(instrument=True)
+            self.b.args.no_app_pgo = True
+            self.b.configure_app()
 
     def test_playback_isolated_and_requires_control_and_profile(self):
         for marker, profile, succeeds in [(False, True, False), (True, False, False), (True, True, True)]:

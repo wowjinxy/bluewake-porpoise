@@ -26,6 +26,9 @@ from urllib.parse import urlsplit
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts/builder"))
+from runtime_patches import PatchError, apply_patches
+
 NAME = "BlueWake"
 MODULE = "gGZLE01_recomp.dll"
 REQUIRED_BINARIES = ("BlueWake.exe", MODULE, "SDL3.dll", "webgpu_dawn.dll", "dxcompiler.dll", "dxil.dll")
@@ -47,7 +50,7 @@ PROVENANCE_FIELDS = ("profile", "source_commit", "source_modified", "composite_d
                      "prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls",
                      "inline_gpr", "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
                      "native_entries", "lean_memory", "libporpoise", "libporpoise_sha",
-                     "local_training", "composite_profile_sha256", "compiler", "module_sha256", "built")
+                     "local_training", "composite_profile_sha256", "compiler", "module_sha256", "built", "runtime_patches")
 INSTALL = """BlueWake {version} for Windows x64
 
 Extract this entire folder and run BlueWake.exe. Windows 10/11 x64 and a
@@ -289,9 +292,30 @@ def validate_provenance(args):
         expected = dependencies[name]["sha"]
         if not re.fullmatch("[0-9a-f]{40}", expected) or git(path, "rev-parse", "HEAD") != expected:
             raise ValueError(f"{name}: checkout does not match the dependency lock")
-        if git(path, "status", "--porcelain", "--untracked-files=no"):
-            raise ValueError(f"{name}: tracked dependency changes must be committed")
         actual[name] = {"url": dependencies[name]["url"], "sha": expected}
+        active = dependencies[name].get("active_patches") if name == "recompcore" else None
+        if active is not None:
+            if not isinstance(active, dict) or active.get("manifest") != "patches/recompcore/active.json":
+                raise ValueError("recompcore: invalid active patch manifest in the dependency lock")
+            manifest = regular_file(ROOT / active["manifest"])
+            if sha256(manifest) != active.get("sha256"):
+                raise ValueError("recompcore: active patch manifest differs from the dependency lock")
+            recipe = json.loads(manifest.read_text())
+            if (not isinstance(recipe, dict) or recipe.get("base_sha") != expected or
+                    recipe.get("patches") != active.get("patches")):
+                raise ValueError("recompcore: active patch recipe differs from the dependency lock")
+            try:
+                receipt = apply_patches(path, manifest=manifest, root=ROOT, verify_only=True)
+            except PatchError as error:
+                raise ValueError(f"recompcore: {error}") from error
+            if original.get("runtime_patches") != receipt:
+                raise ValueError("recompcore: verified patches differ from the builder's runtime provenance")
+            actual[name]["active_patches"] = {key: active[key] for key in ("manifest", "sha256", "patches")}
+        else:
+            if name == "recompcore" and original.get("runtime_patches") is not None:
+                raise ValueError("recompcore: builder records patches absent from the dependency lock")
+            if git(path, "status", "--porcelain", "--untracked-files=no"):
+                raise ValueError(f"{name}: tracked dependency changes must be committed")
     if not isinstance(original.get("libporpoise", False), bool):
         raise ValueError("libPorpoise selection must be a boolean in builder provenance")
     if original.get("libporpoise", False):

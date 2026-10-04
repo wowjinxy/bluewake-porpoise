@@ -37,7 +37,7 @@ three tests and the full app link also pass natively at `74da8ee` in
 [CI run 36810799124](https://github.com/chrissotraidis/bluewake/actions/runs/36810799124).
 These checks do not imply Windows gameplay or audio acceptance.
 
-The current source qualification (`6b64f45`, runtime `0568fedd`, merged in #38)
+The upstream source qualification (`6b64f45`, runtime `0568fedd`, merged in #38)
 builds the native Windows host and passes all 58 runtime regressions plus 24
 builder training/cache checks in
 [CI run 37071417006](https://github.com/chrissotraidis/bluewake/actions/runs/37071417006).
@@ -47,7 +47,7 @@ the newer host adds the Pictobox fix qualified on Mac in the reconciliation ledg
 This covers app linking and the registered regression suites, not a complete
 player-owned-disc build, Direct3D gameplay, audio or physical controllers.
 
-Remaining native acceptance needs an x86-64 Windows PC with a Direct3D 12 GPU.
+Broader native acceptance needs testing on an x86-64 Windows PC with a Direct3D 12 GPU.
 A Windows ARM64 VM running x64 applications can provide separately labelled
 compatibility evidence, but cannot establish native x64 performance parity.
 Use the [Windows testing handoff](WINDOWS_ACCEPTANCE.md) for the current build,
@@ -62,8 +62,26 @@ options then add the chosen preparation steps. The new `--native-entries` and
 establish Windows performance. The Windows builder now carries Elliott’s local PGO training route: it builds
 an instrumented module, plays the opening to control in isolated plain/modded
 runs, validates executed translated functions, and uses the local profile for O2.
-Source contract checks cover the wiring; a complete Windows disc-to-playback run
-remains unverified. Mac training receipts do not validate that Windows path. Full clean Windows builds, matched performance and gameplay remain open.
+On October 4, a fresh native x64 Windows build from an owned USA revision-0 disc
+completed with Visual Studio Clang 19.1.5, the default optimization preparation,
+`--native-entries` and `--no-mods`. Local training reached player control, toured
+ten locations and recorded 399 of 748 translated functions before the final
+O2/PGO build and packaging. The selected compiler rejected the bundled app
+profile, and the automatic app PGO/ThinLTO fallback completed successfully.
+The complete optimized DLL passed 3,600 constructor comparisons, 3,000 search
+cases and 900 scheduler workloads with zero state mismatches. The bounded
+Direct3D 12 opening reached player control, wrote nonblank frames and nonzero
+32 kHz audio, and compared over 33 million graphics transform packets with
+zero mismatches. A separate Smooth Motion startup smoke passed with the
+120 FPS preference safely capped to 60 FPS on the available display.
+A second fresh-card opening with transform reuse enabled received a scheduled
+120-retrace main-stick pulse, moved Link by 78 horizontal world units while
+normal control remained active, captured the rendered result and exited normally.
+The private movement harness reads the guest's decoded stick and player position;
+it does not rely on the legacy player-execute CPU hook or claim camera acceptance.
+These local checks do not establish a measured FPS gain, physical controller
+acceptance, save/reload preservation or sustained progression. Receipts and
+personal binaries remain in the private build directory.
 
 ## What you need
 
@@ -117,7 +135,7 @@ Options (`--help` lists all):
 | `--native-skin` | Prepare certified model skinning |
 | `--native-math` | Prepare four certified SDK matrix functions |
 | `--libporpoise` / `--no-libporpoise` | Select the pinned native matrix constructors; enabled by default, requires native math; conservative builds disable it |
-| `--native-entries` | Prepare nine additional FIFO, collision, matrix-vector and joint-matrix routines; requires `--gather-pipe --direct-calls`, off by default |
+| `--native-entries` | Prepare FIFO, collision, matrix-vector, joint-matrix and resumable string/actor-name search hooks; requires `--gather-pipe --direct-calls`, off by default |
 | `--inline-gpr` | Also inline certified register saves/restores; requires `--direct-calls` |
 | `--jobs N` | Parallel compile jobs (default: the cores, as far as free memory allows) |
 | `--march LEVEL` | CPU level for the game module (default `x86-64-v3`) |
@@ -152,9 +170,29 @@ original-body and shared-callee certification plus the same host observation
 handshake. It covers three FIFO matrix loads, two collision helpers,
 `PSMTXMultVecSR` and the Basic, Softimage and Maya joint matrix calculators.
 Its source and synthetic routing tests do not establish gameplay performance.
+The same option now also certifies `strcmp`, `dStage_searchName` and
+`cTgIt_JudgeFilter`, including three resumable table-search entry points. These
+hooks preserve complete CPU state, guest-memory aliases, observation boundaries
+and cycle deadlines. The host's existing actor-search interception can make the
+JudgeFilter hook decline; that path continues to run through the host. The
+optional donor batched actor walk is not enabled.
+The hooks adapt the [donor's resumable search implementation](https://github.com/elliotttate/Wind-Waker-Recomp/blob/99a20cce10bf643810ef96da22c08ea050fd486c/cmake/composite/native_search.c).
+Profile figures in its source comment describe the donor's Dragon Roost measurement.
 Matrix-array workers remain opt-in on macOS (`BLUEWAKE_NATIVE_WORKERS=1` through
 `8`); Windows keeps Elliott's serial path. Both paths require qualification,
 and worker selection is separate from rendering interpolation.
+
+The runtime stays at its pinned base with the additional verified patches in
+`patches/recompcore/active.json`. These reuse unchanged graphics transform
+snapshots and let sustained rendering overload reduce higher interpolation
+rates. Builders verify the complete patched tree and record it in provenance.
+
+The Windows app's bundled optimization profile is checked with the selected
+Visual Studio toolchain. If its format is incompatible, the builder proceeds
+without app PGO and ThinLTO. After a complete build,
+`python scripts/windows/train_app_profile.py DISC.iso --out build/windows`
+records a compatible local app profile; rebuilding then uses it. The game
+module's separate local optimization training still runs by default.
 
 Windows builds also use [libPorpoise](https://github.com/cybervisi0n/libPorpoise)
 at `9ea0e6ebef7e3be432b92487639991ca0251b0f4` for `PSMTXIdentity`, `PSMTXTrans`
@@ -372,7 +410,8 @@ clang (GNU driver, MSVC ABI) from Visual Studio.
 
 The Windows overlay saves display, camera, mod and audio choices in `settings.ini`; mods and audio mode
 apply after restart. Touch-layout editing and save-management screens remain iOS-specific.
-Windows optimization training and full end-to-end build/play verification remain pending.
+The October 4 local build, optimization training and bounded opening checks
+are recorded in [Status](#status); broader gameplay acceptance remains open.
 
 The prepaid-block candidate has bounded correctness evidence on an M3 Max:
 30,000 cases across 14 SDK/J3D entries compare every CPU/RAM byte between two

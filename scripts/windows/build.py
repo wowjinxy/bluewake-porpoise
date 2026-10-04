@@ -164,6 +164,7 @@ class Builder:
         self.libporpoise = ROOT / "ref/libporpoise"
         self.iso = None
         self.profile = None
+        self.runtime_patch_receipt = None
 
     # --- helpers -------------------------------------------------------
     def run(self, name, command, *, env=None, cwd=None, ninja=False):
@@ -382,10 +383,12 @@ int main(void) {
                 subprocess.check_call(["git", "config", "core.autocrlf", "false"], cwd=sub)
         if self.git("rev-parse", "HEAD", cwd=sub) != dolrecomp_sha:
             die(f"{sub} is not at {dolrecomp_sha}")
-        if self.git("status", "--porcelain", "--untracked-files=no", cwd=rc) or \
-                self.git("status", "--porcelain", "--untracked-files=no", cwd=sub):
-            die(f"{rc} has local changes; the build must use the pinned source exactly")
-        print(f"RecompCore {sha}, DolRecomp {dolrecomp_sha}")
+        if self.git("status", "--porcelain", "--untracked-files=no", cwd=sub):
+            die(f"{sub} has local changes; the build must use the pinned translator exactly")
+        patch_log = self.run("runtime-patches", [sys.executable, ROOT / "scripts/builder/runtime_patches.py", rc],
+                             env=os.environ)
+        self.runtime_patch_receipt = json.loads(patch_log.read_text(encoding="utf-8"))
+        print(f"RecompCore {sha} plus the verified runtime patches, DolRecomp {dolrecomp_sha}")
         if getattr(self.args, "libporpoise", False):
             self.libporpoise_dependency()
 
@@ -493,6 +496,20 @@ int main(void) {
 
     APP_PROFILE = ROOT / "windows/pgo/app.profdata"
 
+    def app_profile_readable(self):
+        """Probe the profile using llvm-profdata from the selected compiler."""
+        if not hasattr(self, "_app_profile_readable"):
+            profdata = Path(self.clang).with_name("llvm-profdata.exe")
+            readable = profdata.is_file() and subprocess.run(
+                [str(profdata), "show", str(self.APP_PROFILE)], env=self.env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+            if not readable:
+                print(f"note: {self.clang_version.split(' (')[0]} cannot read the app's optimization "
+                      "profile; building the app without it. Run scripts/windows/train_app_profile.py "
+                      "after building to record a compatible local profile.")
+            self._app_profile_readable = readable
+        return self._app_profile_readable
+
     def configure_app(self, build=None, instrument=False):
         """The app's build, by default build/windows/app. With the committed
         profile of the app's own code (windows/pgo/app.profdata,
@@ -505,11 +522,13 @@ int main(void) {
         profile, link = "", ""
         if instrument:
             profile = link = "-fprofile-instr-generate"
-        elif self.APP_PROFILE.exists() and not getattr(self.args, "no_app_pgo", False):
+        elif self.APP_PROFILE.exists() and not getattr(self.args, "no_app_pgo", False) \
+                and self.app_profile_readable():
             # Functions changed since the profile was recorded are compiled
             # without counts (the warnings say so; they are expected).
-            profile = (f"-fprofile-instr-use={self.APP_PROFILE.as_posix()} -Wno-profile-instr-unprofiled "
-                       "-Wno-profile-instr-out-of-date -Wno-backend-plugin -flto=thin")
+            profile = subprocess.list2cmdline([
+                f"-fprofile-instr-use={self.APP_PROFILE.as_posix()}", "-Wno-profile-instr-unprofiled",
+                "-Wno-profile-instr-out-of-date", "-Wno-backend-plugin", "-flto=thin"])
             link = "-flto=thin"
         # The app for the same CPU level as the game module: the FIFO worker's
         # matrix work for Smooth Motion needs AVX2 and FMA to keep up (at the
@@ -611,7 +630,8 @@ int main(void) {
                      ROOT / "cmake/composite/native_entries.h", ROOT / "cmake/composite/native_fifo.c",
                      ROOT / "cmake/composite/native_fifo.h", ROOT / "cmake/composite/native_bg.c",
                      ROOT / "cmake/composite/native_bg.h", ROOT / "cmake/composite/native_mtxcalc.c",
-                     ROOT / "cmake/composite/native_mtxcalc.h", ROOT / "scripts/windows/lean_memory.py",
+                     ROOT / "cmake/composite/native_mtxcalc.h", ROOT / "cmake/composite/native_search.c",
+                     ROOT / "cmake/composite/native_search.h", ROOT / "scripts/windows/lean_memory.py",
                      ROOT / "cmake/composite/porpoise_mtx.h", ROOT / "cmake/libporpoise/CMakeLists.txt",
                      ROOT / "scripts/dependencies/prepare_libporpoise_math.py",
                      ROOT / "scripts/windows/inline_save_restore_gpr.py", Path(__file__)]):
@@ -797,7 +817,7 @@ int main(void) {
                    "native_entries_sha256": {name: sha256_file(ROOT / "cmake/composite" / name)
                                               for name in ("native_entries.c", "native_entries.h", "native_fifo.c", "native_fifo.h",
                                                            "native_bg.c", "native_bg.h", "native_mtxcalc.c", "native_mtxcalc.h",
-                                                           "native_vec.c", "native_vec.h")}
+                                                           "native_vec.c", "native_vec.h", "native_search.c", "native_search.h")}
                                               if getattr(self.args, "native_entries", False) else {},
                    "native_entries_script_sha256": sha256_file(ROOT / "scripts/windows/native_entries.py")
                                                    if getattr(self.args, "native_entries", False) else None,
@@ -987,6 +1007,7 @@ int main(void) {
                                             "native_entries", "lean_memory", "libporpoise")},
                                "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
+                                "runtime_patches": self.runtime_patch_receipt,
                                "source": tree_digest(self.out / "composite-src")},
                               sort_keys=True).encode())
         for folder in ("cmake/composite", "runtime/host/src", "windows/src"):
@@ -1176,6 +1197,7 @@ int main(void) {
             "containsTranslatedGameCode": True,
             "source_commit": self.git("rev-parse", "HEAD"),
             "source_modified": dirty,
+            "runtime_patches": self.runtime_patch_receipt,
             "composite_digest": (self.out / "composite-src.digest").read_text().strip(),
             "mods": bool(self.mods),
             "march": self.args.march,
