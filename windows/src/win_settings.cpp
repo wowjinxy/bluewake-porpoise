@@ -1104,6 +1104,8 @@ extern "C" void bw_settings_apply_launch(void) {
     env_default("BLUEWAKE_FAST_FORWARD", d.fast_transitions ? "1" : "0");
     env_default("BLUEWAKE_FADE_FRAMES", d.fast_transitions ? "6" : "0");
     env_default("BLUEWAKE_QUICK_DOORS", d.quick_doors ? "1" : "0");
+    // Diagnostic routes restore block-level overlap observations in the host.
+    env_default("BLUEWAKE_OVERLAP_OBSERVATION", "0");
     if (env_set("DOL_AURORA_RENDER_SCALE"))
         d.render_scale = std::clamp(std::atoi(std::getenv("DOL_AURORA_RENDER_SCALE")), 0, 4);
     if (env_set("DOL_AURORA_FORCE_ANISO"))

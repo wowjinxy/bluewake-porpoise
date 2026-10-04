@@ -14,9 +14,8 @@
  * and record forms into CR0 (with XER's SO), the cycles each block charges -
  * and leaves every register as the translation does: r0, r3, r4 and r5 as
  * the last instruction to write them left them, CR, the cycles, pc at the
- * return address. The prepaid copies' RAM loads store no cycle suffix; the
- * one block ChkGrpThrough has no prepaid copy of (0x800A96DC, the last in its
- * chunk) stores zero, and so does the native on that path.
+ * return address. The last observation suffix is retained exactly as in the
+ * original translation, including the zero at ChkGrpThrough's split load.
  *
  * It declines, changing nothing, unless that is certain: every load plain
  * RAM, no exception pending, no write journal, the turn's budget not spent at
@@ -37,8 +36,6 @@
 
 #include <stdio.h>
 
-int bluewake_native_bg_enabled;
-
 enum { BG_SAME_ACTOR, BG_GRP_THROUGH, BG_COUNT };
 static unsigned long long s_bg_runs[BG_COUNT], s_bg_declined[BG_COUNT], s_bg_crossed;
 
@@ -56,7 +53,7 @@ static inline bool bg_block(const CPUState* cpu, s64* downcount, s64 cycles) {
     if (*downcount <= -cpu->cycle_budget)
         return false;
     if (cpu->cycle_deadline_budget > 0 &&
-        (cpu->cycle_deadline_budget < cycles || cpu->cycle_deadline_budget + *downcount < cycles))
+        (cpu->cycle_deadline_budget < cycles || *downcount < cycles - cpu->cycle_deadline_budget))
         return false;
     *downcount -= cycles;
     return true;
@@ -80,7 +77,8 @@ static inline u32 bg_cr0_signed(u32 cr, u32 xer, s32 a, s32 b) { return bg_cr0(c
 static inline u32 bg_cr0_unsigned(u32 cr, u32 xer, u32 a, u32 b) { return bg_cr0(cr, xer, a < b, a > b); }
 
 static inline bool bg_ready(const CPUState* cpu) {
-    return cpu->exception == 0u && g_mem_write_journal == NULL && cpu->cycle_budget > 0;
+    return cpu->ram != NULL && cpu->exception == 0u && g_mem_write_journal == NULL &&
+           cpu->cycle_budget > 64 && cpu->downcount <= 0 && cpu->downcount >= -cpu->cycle_budget + 64;
 }
 
 /* cBgS_Chk::ChkSameActorPid(r3 this, r4 pid): this->mActorPid (8) and
@@ -92,6 +90,7 @@ static int bg_same_actor(CPUState* cpu) {
     s64 downcount = cpu->downcount;
     const u32 self = cpu->gpr[3], pid = cpu->gpr[4];
     u32 r0, r3, r5, cr;
+    u32 suffix = 3u; /* the first block's lwz */
     /* 8024734C (4): lwz r5,8(r3); addis r0,r5,1; cmplwi r0,0xFFFF; beq 80247374 */
     if (!bg_block(cpu, &downcount, 4) || !bg_ram(cpu, self + 8u, 4))
         return 0;
@@ -109,6 +108,7 @@ static int bg_same_actor(CPUState* cpu) {
             if (!bg_block(cpu, &downcount, 3) || !bg_ram(cpu, self + 12u, 1))
                 return 0;
             r0 = cpu->ram[self + 12u - GC_RAM_BASE];
+            suffix = 2u;
             cr = bg_cr0_unsigned(cr, xer, r0, 0u);
             if (r0 != 0u) {
                 /* 8024737C (4): subf r0,r5,r4; cntlzw r0,r0; rlwinm r3,r0,27,24,31; blr */
@@ -131,6 +131,7 @@ done:
     cpu->gpr[5] = r5;
     cpu->cr = cr;
     cpu->downcount = downcount;
+    cpu->cycle_observation_suffix = suffix;
     cpu->pc = cpu->lr & ~3u;
     return 1;
 }
@@ -139,7 +140,10 @@ done:
  * filter's own test (dispatch_loop.h), which a direct call's return path
  * (direct_calls.h) only narrows. */
 static inline bool bg_boundary_silent(const CPUState* cpu, u32 address) {
-    return bw_edge_filter_enabled && bw_edge_watch_ready && bw_host_quiet(cpu) && bw_edge_unwatched(address);
+    return bw_edge_filter_enabled && bw_edge_watch_ready && bw_host_can_skip != NULL &&
+           bw_host_sources_dirty != NULL && bw_host_decrementer_pending != NULL &&
+           bw_host_pi_cause != NULL && bw_host_pi_mask != NULL && bw_host_quiet(cpu) &&
+           bw_edge_unwatched(address) && bw_host_can_skip(bw_host_can_skip_user, cpu, address);
 }
 
 /* dBgW::ChkGrpThrough(r3 this, r4 group, r5 pass check, r6 depth):
@@ -153,7 +157,7 @@ static int bg_grp_through(CPUState* cpu) {
     const u32 check = cpu->gpr[5], depth = cpu->gpr[6];
     u32 r0 = cpu->gpr[0], r3 = cpu->gpr[3], r4 = cpu->gpr[4], cr;
     u32 boundary = 0u;
-    bool suffix_zero = false;
+    u32 suffix = cpu->cycle_observation_suffix;
     u32 flags = 0u;
     /* 800A9684 (2): cmpwi r6,2; bne 800A9694 */
     if (!bg_block(cpu, &downcount, 2))
@@ -180,6 +184,7 @@ static int bg_grp_through(CPUState* cpu) {
     if (!bg_ram(cpu, r3 + 48u, 4) || !bg_ram(cpu, check + 4u, 4))
         return 0;
     r4 = bg_word(cpu, r3 + 48u);
+    suffix = 4u;
     flags = bg_word(cpu, check + 4u); /* every later load of the pass check's flags reads this word */
     r3 = 0x00080000u;
     r0 = r4 & 0x00080700u;
@@ -189,6 +194,7 @@ static int bg_grp_through(CPUState* cpu) {
         if (!bg_block(cpu, &downcount, 3))
             return 0;
         r0 = flags & 1u;
+        suffix = 2u;
         cr = bg_cr0_signed(cr, xer, (s32)r0, 0);
         if (r0 != 0u)
             goto false_96CC;
@@ -203,7 +209,7 @@ static int bg_grp_through(CPUState* cpu) {
         if (!bg_block(cpu, &downcount, 1))
             return 0;
         r0 = flags;
-        suffix_zero = true;
+        suffix = 0u;
         boundary = 0x800A96E0u;
         /* 800A96E0 (2): rlwinm. r0,r0,0,30,30; beq 800A96F0 */
         if (!bg_block(cpu, &downcount, 2))
@@ -237,6 +243,7 @@ static int bg_grp_through(CPUState* cpu) {
             if (!bg_block(cpu, &downcount, 3))
                 return 0;
             r0 = flags & check_bits[test];
+            suffix = 2u;
             cr = bg_cr0_signed(cr, xer, (s32)r0, 0);
             if (r0 == 0u)
                 continue;
@@ -273,13 +280,13 @@ done:
     cpu->gpr[4] = r4;
     cpu->cr = cr;
     cpu->downcount = downcount;
-    if (suffix_zero)
-        cpu->cycle_observation_suffix = 0u;
+    cpu->cycle_observation_suffix = suffix;
     cpu->pc = cpu->lr & ~3u;
     return 1;
 }
 
 int bluewake_native_bg(CPUState* cpu, u32 address) {
+    if (cpu == NULL) return 0;
     unsigned which;
     int done;
     switch (address) {

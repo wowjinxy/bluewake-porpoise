@@ -65,7 +65,7 @@ BW_VEC_EXPORT void bluewake_native_vec_report(void) {
 typedef struct VecPair { f64 p0, p1; } VecPair;
 
 static inline const u8* vec_ram(const CPUState* cpu, u32 address, u32 size) {
-    if (!ppc_dispatch_poll_read_stable((CPUState*)cpu, address, size))
+    if (cpu->ram == NULL || !ppc_dispatch_poll_read_stable((CPUState*)cpu, address, size))
         return NULL;
     return cpu->ram + (address - GC_RAM_BASE);
 }
@@ -459,7 +459,6 @@ int bluewake_native_vec(CPUState* cpu, u32 address) {
  * three ranges plain RAM, no exception pending, the turn's budget not spent
  * and the next deadline beyond the block. The last access (the third store)
  * leaves its cycle suffix, 1. */
-int bluewake_native_vec_sr_enabled;
 static unsigned long long s_vec_sr_runs, s_vec_sr_declined;
 
 void bluewake_native_vec_sr_report(void) {
@@ -540,9 +539,9 @@ static int vec_mult_sr(CPUState* cpu) {
     const u32 gqr = cpu->gqr[0];
     if (cpu->exception != 0u || (cpu->msr & PPC_MSR_FP) == 0u || (cpu->hid2 & PPC_HID2_LSQE) == 0u ||
         ((gqr >> 16) & 7u) != 0u || (gqr & 7u) != 0u || g_mem_write_journal != NULL || cpu->cycle_budget <= 0 ||
-        cpu->downcount <= -cpu->cycle_budget ||
+        cpu->downcount > 0 || cpu->downcount <= -cpu->cycle_budget ||
         (cpu->cycle_deadline_budget > 0 &&
-         (cpu->cycle_deadline_budget < 21 || cpu->cycle_deadline_budget + cpu->downcount < 21)) ||
+         (cpu->cycle_deadline_budget < 21 || cpu->downcount < 21 - cpu->cycle_deadline_budget)) ||
         !vec_ram(cpu, m, 48) || !vec_ram(cpu, v, 12) || !vec_ram(cpu, out, 12))
         return 0;
     const u8* matrix = cpu->ram + (m - GC_RAM_BASE);
@@ -576,6 +575,7 @@ static int vec_mult_sr(CPUState* cpu) {
 }
 
 int bluewake_native_vec_sr(CPUState* cpu) {
+    if (cpu == NULL) return 0;
     const int done = vec_mult_sr(cpu);
     if (done)
         s_vec_sr_runs++;

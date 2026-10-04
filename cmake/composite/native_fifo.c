@@ -38,8 +38,6 @@
 
 #include <stdio.h>
 
-int bluewake_native_fifo_enabled;
-
 enum { FIFO_POS, FIFO_NRM, FIFO_NRM33, FIFO_COUNT };
 static unsigned long long s_fifo_runs[FIFO_COUNT], s_fifo_declined[FIFO_COUNT];
 
@@ -77,10 +75,10 @@ static const FifoShape k_fifo_shapes[FIFO_COUNT] = {
  * least the whole block away, so no in-block deadline test (an access whose
  * suffix exceeds the deadline) leaves the prepaid copy. */
 static inline bool fifo_ready(const CPUState* cpu, s64 cycles) {
-    return cpu->exception == 0u && g_mem_write_journal == NULL && bw_gather_pipe_write != NULL &&
-           cpu->cycle_budget > 0 && cpu->downcount > -cpu->cycle_budget &&
+    return cpu->ram != NULL && cpu->exception == 0u && g_mem_write_journal == NULL && bw_gather_pipe_write != NULL &&
+           cpu->cycle_budget > 0 && cpu->downcount <= 0 && cpu->downcount > -cpu->cycle_budget &&
            (cpu->cycle_deadline_budget <= 0 ||
-            (cpu->cycle_deadline_budget >= cycles && cpu->cycle_deadline_budget + cpu->downcount >= cycles));
+            (cpu->cycle_deadline_budget >= cycles && cpu->downcount >= cycles - cpu->cycle_deadline_budget));
 }
 
 /* A pipe store of the prepaid copy (bw_write*_at off the RAM fast path):
@@ -141,6 +139,7 @@ static int fifo_load(CPUState* cpu, const FifoShape* shape) {
 }
 
 int bluewake_native_fifo(CPUState* cpu, u32 address) {
+    if (cpu == NULL) return 0;
     unsigned which;
     switch (address) {
     case BLUEWAKE_J3D_FIFO_POS_MTX: which = FIFO_POS; break;

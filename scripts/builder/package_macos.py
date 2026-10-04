@@ -6,9 +6,97 @@ import json
 import plistlib
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import tempfile
 from module_optimizations import MODES
+
+MACOS_MINIMUM = "14.0"
+ARCHITECTURES = {0x01000007: "x86_64", 0x0100000C: "arm64"}
+
+
+def macho_minimums(path):
+    """Read every Mach-O slice; missing/malformed deployment records fail closed."""
+    data = path.read_bytes()
+
+    def thin(start, length, expected_cpu=None):
+        end = start + length
+        if length < 32 or end > len(data):
+            raise ValueError(f"{path.name}: truncated Mach-O slice")
+        magic = data[start:start + 4]
+        endian = {b"\xcf\xfa\xed\xfe": "<", b"\xfe\xed\xfa\xcf": ">"}.get(magic)
+        if endian is None:
+            raise ValueError(f"{path.name}: expected a 64-bit Mach-O binary")
+        _, cpu, _, _, count, command_bytes, _, _ = struct.unpack_from(endian + "8I", data, start)
+        if cpu not in ARCHITECTURES or (expected_cpu is not None and cpu != expected_cpu):
+            raise ValueError(f"{path.name}: unsupported or inconsistent architecture")
+        commands_end = start + 32 + command_bytes
+        if commands_end > end or count > command_bytes // 8:
+            raise ValueError(f"{path.name}: truncated Mach-O load commands")
+        offset, minimum = start + 32, None
+        for _ in range(count):
+            if offset + 8 > commands_end:
+                raise ValueError(f"{path.name}: truncated Mach-O load command")
+            command, size = struct.unpack_from(endian + "2I", data, offset)
+            if size < 8 or size % 8 or offset + size > commands_end:
+                raise ValueError(f"{path.name}: malformed Mach-O load command")
+            if command == 0x32:  # LC_BUILD_VERSION
+                if size < 24:
+                    raise ValueError(f"{path.name}: malformed LC_BUILD_VERSION")
+                platform, version, _, tools = struct.unpack_from(endian + "4I", data, offset + 8)
+                if platform != 1 or minimum is not None or size != 24 + 8 * tools:
+                    raise ValueError(f"{path.name}: invalid macOS LC_BUILD_VERSION")
+                minimum = (version >> 16, (version >> 8) & 255, version & 255)
+                if minimum[0] == 0:
+                    raise ValueError(f"{path.name}: invalid macOS minimum version")
+            offset += size
+        if offset != commands_end or minimum is None:
+            raise ValueError(f"{path.name}: missing or malformed LC_BUILD_VERSION")
+        return ARCHITECTURES[cpu], minimum
+
+    magic = data[:4]
+    fat = {b"\xca\xfe\xba\xbe": (">", False), b"\xbe\xba\xfe\xca": ("<", False),
+           b"\xca\xfe\xba\xbf": (">", True), b"\xbf\xba\xfe\xca": ("<", True)}.get(magic)
+    if fat is None:
+        arch, version = thin(0, len(data))
+        return {arch: version}
+    if len(data) < 8:
+        raise ValueError(f"{path.name}: truncated universal Mach-O header")
+    endian, wide = fat
+    count = struct.unpack_from(endian + "I", data, 4)[0]
+    size = 32 if wide else 20
+    table_end = 8 + count * size
+    if count == 0 or table_end > len(data):
+        raise ValueError(f"{path.name}: malformed universal Mach-O table")
+    spans, minimums = [], {}
+    for index in range(count):
+        entry = struct.unpack_from(endian + ("IIQQII" if wide else "5I"), data, 8 + index * size)
+        cpu, _, start, length, alignment = entry[:5]
+        if (start < table_end or start + length > len(data) or alignment > 31 or
+                start % (1 << alignment) or any(start < end and begin < start + length for begin, end in spans)):
+            raise ValueError(f"{path.name}: invalid or overlapping universal Mach-O slices")
+        arch, version = thin(start, length, cpu)
+        if arch in minimums:
+            raise ValueError(f"{path.name}: duplicate universal Mach-O architecture")
+        spans.append((start, start + length))
+        minimums[arch] = version
+    return minimums
+
+
+def validate_deployment(executable, module=None):
+    binaries = {"host": macho_minimums(executable)}
+    if module is not None:
+        binaries["module"] = macho_minimums(module)
+        if not binaries["host"].keys() <= binaries["module"].keys():
+            raise ValueError("the game module does not support every host architecture")
+    maximum = (14, 0, 0)
+    for name, slices in binaries.items():
+        for arch, version in slices.items():
+            if version > maximum:
+                required = ".".join(map(str, version))
+                raise ValueError(f"{name} ({arch}) requires macOS {required}, newer than advertised {MACOS_MINIMUM}")
+    return {name: {arch: ".".join(map(str, version)) for arch, version in slices.items()}
+            for name, slices in binaries.items()}
 
 
 def sha(path):
@@ -41,6 +129,7 @@ def assemble(args):
             raise ValueError("missing personal module, disc or extracted executable")
         if len(list((args.game / "rels").glob("*.rel"))) != 415:
             raise ValueError("expected all 415 extracted RELs")
+    minimums = validate_deployment(executable, args.module if personal else None)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="mac-stage-", dir=args.output.parent))
     app = stage / "BlueWake.app"
@@ -48,7 +137,7 @@ def assemble(args):
     resources = app / "Contents/Resources"
     info_path = app / "Contents/Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info["LSMinimumSystemVersion"] = "14.0"
+    info["LSMinimumSystemVersion"] = MACOS_MINIMUM
     info_path.write_bytes(plistlib.dumps(info))
     provenance = {
         "platform": "macos", "source_commit": args.source_commit,
@@ -57,6 +146,8 @@ def assemble(args):
         "translator_commit": subprocess.check_output(["git", "-C", args.runtime / "DolRecomp", "rev-parse", "HEAD"], text=True).strip(),
         "containsTranslatedGameCode": personal,
         "module_optimizations": args.module_optimizations,
+        "macos_minimum": MACOS_MINIMUM,
+        "binary_minimums": minimums,
     }
     if personal:
         game = resources / "Game"

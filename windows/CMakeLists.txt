@@ -276,7 +276,20 @@ if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)
     target_link_libraries(bluewake_gather_dispatch_test PRIVATE gxruntime)
     target_compile_definitions(bluewake_gather_dispatch_test PRIVATE BLUEWAKE_GATHER_PIPE=1)
     add_test(NAME bluewake_gather_dispatch_test COMMAND bluewake_gather_dispatch_test)
-    foreach(_test bluewake_inline_gpr_memory_test bluewake_direct_calls_test bluewake_guest_checkpoint_test bluewake_gather_host_test bluewake_gather_memory_plain_test bluewake_gather_memory_global_test bluewake_gather_dispatch_test)
+    add_executable(bluewake_gather_skip_edges_test
+        ${BLUEWAKE_REPO_ROOT}/tests/gather_skip_edges_test.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/gather_pipe.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/dispatch_loop.c)
+    target_include_directories(bluewake_gather_skip_edges_test PRIVATE ${BLUEWAKE_REPO_ROOT}/cmake/composite)
+    target_link_libraries(bluewake_gather_skip_edges_test PRIVATE gxruntime)
+    target_compile_definitions(bluewake_gather_skip_edges_test PRIVATE BLUEWAKE_GATHER_PIPE=1 BLUEWAKE_DIRECT_CALLS=1)
+    add_test(NAME bluewake_gather_skip_edges_test COMMAND bluewake_gather_skip_edges_test)
+
+    add_executable(bluewake_overlap_observation_test ${BLUEWAKE_REPO_ROOT}/tests/overlap_observation_test.c)
+    target_include_directories(bluewake_overlap_observation_test PRIVATE ${BLUEWAKE_HOST_SRC})
+    add_test(NAME bluewake_overlap_observation_test COMMAND bluewake_overlap_observation_test)
+
+    foreach(_test bluewake_inline_gpr_memory_test bluewake_direct_calls_test bluewake_guest_checkpoint_test bluewake_gather_host_test bluewake_gather_memory_plain_test bluewake_gather_memory_global_test bluewake_gather_dispatch_test bluewake_gather_skip_edges_test)
         target_include_directories(${_test} PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
         target_compile_options(${_test} PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
         target_link_libraries(${_test} PRIVATE bluewake_posix_compat)
@@ -331,6 +344,22 @@ if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)
     target_compile_options(bluewake_native_vec_guard_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
     target_link_libraries(bluewake_native_vec_guard_test PRIVATE bluewake_posix_compat)
     set_target_properties(bluewake_native_vec_guard_test PROPERTIES LINKER_LANGUAGE CXX)
+
+    add_executable(bluewake_native_entries_guard_test
+        ${BLUEWAKE_REPO_ROOT}/tests/native_entries_guard_test.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_entries.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_fifo.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_bg.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_vec.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_mtxcalc.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/gather_pipe.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/direct_calls.c)
+    target_include_directories(bluewake_native_entries_guard_test PRIVATE ${BLUEWAKE_REPO_ROOT}/cmake/composite)
+    target_compile_options(bluewake_native_entries_guard_test PRIVATE -ffp-contract=off ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_native_entries_guard_test PRIVATE gxruntime bluewake_posix_compat)
+    set_target_properties(bluewake_native_entries_guard_test PROPERTIES LINKER_LANGUAGE CXX)
+    add_test(NAME bluewake_native_entries_guard_test COMMAND bluewake_native_entries_guard_test)
+    set_tests_properties(bluewake_native_entries_guard_test PROPERTIES TIMEOUT 30)
 
     add_executable(bluewake_native_j3d_guard_test
         ${BLUEWAKE_REPO_ROOT}/tests/native_j3d_guard_test.c

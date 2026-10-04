@@ -15,10 +15,10 @@ This gives each block a second copy, entered right after the block's start has
 charged it all (cycle_block_prepaid true), in which
   - the per-instruction prepaid tests are gone (each is false there),
   - each suffix is its prepaid value,
-  - every original pc store remains, including those in arithmetic-only
-    instructions, so host observations keep the original guest pc,
-  - a block that can refund cycles or otherwise change its prepaid state
-    keeps its original body without a copy,
+  - pure instructions defer pc stores until the next observable instruction
+    or exit, where the original guest pc is restored,
+  - a recognized deadline refund resumes the original next instruction;
+    unsupported prepaid-state changes keep their original bodies,
   - the labels are the original block's (a jump from the copy goes where the
     same jump from the block goes), and the end continues where the block ends.
 Everything else is the block's own text. Only blocks that remain prepaid
@@ -52,6 +52,19 @@ CHARGE = re.compile(r"^    if \(!cycle_block_prepaid && !dolrecomp_charge_precis
 PC = re.compile(r"^    ctx->pc = 0x([0-9A-F]{8})u;$")
 LABEL = re.compile(r"^label_[0-9A-F]{8}:$")
 SUFFIX = re.compile(r"cycle_block_prepaid \? (\d+u) : 0u")
+REFUND = [
+    "    if (cycle_block_prepaid &&",
+    "        ctx->cycle_deadline_budget > 0 &&",
+    "        (s64)ctx->cycle_observation_suffix > ctx->cycle_deadline_budget) {",
+    "        ctx->downcount += (s64)ctx->cycle_observation_suffix;",
+    "        cycle_block_prepaid = false;",
+    "    }",
+]
+CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+PURE = {"if", "sizeof", "dolrecomp_rotl32", "dolrecomp_f32_from_bits",
+        "dolrecomp_f64_from_bits", "dolrecomp_f32_to_bits", "dolrecomp_f64_to_bits",
+        "dolrecomp_ps_from_bits", "dolrecomp_ps_to_bits",
+        "__builtin_bswap16", "__builtin_bswap32", "__builtin_bswap64"}
 
 
 def entry_length(lines, i, cycles):
@@ -110,21 +123,54 @@ def split(block):
     return parts
 
 
-def fast_copy(parts, n):
-    """Copy only blocks whose prepaid state cannot change inside the body.
+def quiet(code):
+    """Only known pure helpers may run while a pc store is deferred."""
+    text = "\n".join(code)
+    if "return" in text or "goto" in text or "ctx->pc" in text:
+        return False
+    return all(name in PURE for name in CALL.findall(text))
 
-    Keep deadline-refund and other unsupported state transitions in the original
-    block. This also retains every PC store, including arithmetic instructions.
-    """
-    out = []
-    for marker, code in parts:
-        for line in code:
-            if "cycle_block_prepaid" in SUFFIX.sub(r"\1", line):
+
+def fast_copy(parts, n, slow_label):
+    """Recognized refunds leave the copy at the original next instruction."""
+    out, pending_pc = [], None
+    for k, (marker, code) in enumerate(parts):
+        pc = next((PC.match(line).group(1) for line in marker if PC.match(line)), None)
+        if pc is not None:
+            if quiet(code):
+                pending_pc = pc
+            else:
+                out.append(f"    ctx->pc = 0x{pc}u;")
+                pending_pc = None
+        elif pending_pc is not None and not quiet(code):
+            out.append(f"    ctx->pc = 0x{pending_pc}u;")
+            pending_pc = None
+        c = 0
+        while c < len(code):
+            if code[c:c + len(REFUND)] == REFUND:
+                if any(line.strip() for line in code[c + len(REFUND):]):
+                    return None
+                if pending_pc is not None:
+                    out.append(f"    ctx->pc = 0x{pending_pc}u;")
+                    pending_pc = None
+                out.extend([
+                    "    if (ctx->cycle_deadline_budget > 0 &&",
+                    "        (s64)ctx->cycle_observation_suffix > ctx->cycle_deadline_budget) {",
+                    "        ctx->downcount += (s64)ctx->cycle_observation_suffix;",
+                    "        cycle_block_prepaid = false;",
+                    f"        goto {slow_label(k + 1)};",
+                    "    }",
+                ])
+                c += len(REFUND)
+                continue
+            line = SUFFIX.sub(r"\1", code[c])
+            if "cycle_block_prepaid" in line:
                 return None
-        for line in marker:
-            if PC.match(line):
+            if not LABEL.match(line):
                 out.append(line)
-        out.extend(SUFFIX.sub(r"\1", line) for line in code if not LABEL.match(line))
+            c += 1
+    if pending_pc is not None:
+        out.append(f"    ctx->pc = 0x{pending_pc}u;")
     out.append(f"    goto bwend_{n};")
     return out
 
@@ -158,9 +204,23 @@ def transform_function(lines, certified=CERTIFIED):
         if any(start <= address < stop for start, stop in certified):
             continue
         parts = split(lines[e:end])
-        copy = fast_copy(parts, n)
+        starts, offset, labels = [], e, {}
+        for marker, code in parts:
+            starts.append(offset)
+            offset += len(marker) + len(code)
+
+        def slow_label(k, n=n, starts=starts, labels=labels):
+            if k >= len(starts):
+                return f"bwend_{n}"
+            if k not in labels:
+                labels[k] = f"bwslow_{n}_{k}"
+            return labels[k]
+
+        copy = fast_copy(parts, n, slow_label)
         if copy is None:
             continue
+        for k, name in labels.items():
+            inserts.setdefault(starts[k], []).append(f"{name}: ;")
         inserts.setdefault(e, []).insert(0, f"    if (cycle_block_prepaid) goto bwfast_{n};")
         inserts.setdefault(end, []).append(f"bwend_{n}: ;")
         appended.append(f"bwfast_{n}:")

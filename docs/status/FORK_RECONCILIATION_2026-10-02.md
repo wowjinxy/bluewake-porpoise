@@ -1111,6 +1111,39 @@ No issue is closed or externally commented on by this work.
 
 ## Next actions and retained work
 
+### October 3 local selective donor integration
+
+The local `breeze/selective-donor-improvements` candidate starts at BlueWake
+`2fe0aa0be07346c26b0d49469fef98891b3b2a67` and selects improvements from
+Elliott Tate's `windows-release` through
+`13355b82044b33430186fad421e23739cf6c3c6c`. This integration is local and unpublished.
+Runtime qualification uses the locked RecompCore
+`e280c788dadabd18b085af0085f1558fc9ff5ecc`.
+
+The second native batch adapts donor commits `850e7c8`, `efdce40`, `1f53a29`,
+`17b47cc`, `939dcc0`, `807a50a` and `02f09ba`. Its nine entry hooks certify
+original bodies and shared callees before downstream rewrites. A versioned
+read-only host predicate checks observations, including matrix register-save
+boundaries. Comparisons found and fixed two donor discrepancies: collision
+paths lost the last observation suffix, and matrix arithmetic could hide
+underflow as zero under host FTZ. The latter now computes double intermediates
+and declines uncertain numeric cases before committing state.
+
+| Change | Local validation | Remaining scope |
+| --- | --- | --- |
+| Nine native FIFO/collision/vector/joint-matrix entries | 540,000 cases against a read-only personal original module: 326,879 identical accepted results, 213,121 unchanged declines, zero mismatches; full CPU, fixture RAM and FIFO outcomes. All nine invented source hooks compile with enabled/disabled/observed fallback guards | Current routed full game build, gameplay and matched performance; `--native-entries` remains off by default |
+| Prepaid refunds, PC deferral and lean memory | 96,000 original/fast/lean runs against real memory wrappers; exact CPU including suffix, RAM, aliases and observer traces, with callback metadata/deadline changes and omitted PC stores | Whole-module and gameplay performance; `--lean-memory` remains off by default |
+| Retained gather batches at approved edges | Plain/fixed-memory wrapper contracts, ordinary/approved-edge dispatch tests; all consulted edges and exits drain | Indexed GX memory and rendered gameplay; batch selection remains explicit |
+| Windows build recovery, isolated retraining and watch-set cache | Expanded memory/crash/retry, profile preservation, receipt integrity and host-address invalidation tests | Complete disc-to-profile build |
+| Windows staged packaging and Mac deployment targets | 16 Windows and 9 Mac synthetic tests; actual PE imports parsed from six retained runtime DLLs | A real gated release candidate and Mac artifact checks on a Mac; no publication |
+| Host observation policy and save hotkey messages | Shipping host and settings compiled to AMD64 COFF with VS clang 19.1.5; developer-tracing host syntax check; diagnostic overlap override and gather tests | Full native app link and Direct3D gameplay |
+
+The combined Windows Python suite passes 66 tests; Mac packaging, native source
+certification and prepaid rewrite suites pass another 18. Native comparison
+receipts and Windows compile evidence are retained under the ignored local
+`build/native-entries-oracle` and `build/selective-checks` directories. The
+archived personal project and donor checkout were not changed by this work.
+
 The [current goal loop](../GOAL_LOOP.md#critical-path-and-exit-evidence) defines
 execution order: source consolidation and retained PadMint assembly are complete;
 bounded iPad install/save/reload/upgrade now passes. Finish remaining Mac gameplay

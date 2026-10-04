@@ -64,9 +64,11 @@ Status: not started. 27 issues and 3 pull requests were open on October 3.
   are Elliott's decision. One way to make the Windows build easy without publishing game code is written
   up as a [proposal](PROPOSALS.md); nothing is decided until Elliott and Chris agree.
 - **Windows testing** of BlueWake from a player's own disc: [checklist](WINDOWS_ACCEPTANCE.md).
-- **Remaining code:** Elliott's second set of native functions, his `lean_memory` step, and his
-  newest Wind-Waker-Recomp commits on October 3 (WWHD texture import, Mac rendering fixes, smooth HUD
-  interpolation).
+- **Remaining qualification:** the second native batch and `lean_memory` are now
+  integrated as local opt-in candidates, with certification and equivalence fixtures.
+  Complete module, gameplay and matched performance checks remain before promotion.
+  Other October 3 donor changes still need separate review (WWHD texture import,
+  Mac rendering fixes, smooth HUD interpolation).
 - **The fork afterwards:** it stays available while the move is in progress; archiving it is planned once
   the issues are moved, Windows is checked and both maintainers agree.
 - **A joint announcement** on Discord and X inviting testers and developers.

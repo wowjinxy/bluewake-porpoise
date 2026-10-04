@@ -21,10 +21,19 @@ jobs:
         run: python3 tests/test_mac_launcher.py
       - name: Preserve Mac packaging inputs and prior output
         run: python3 tests/test_mac_package.py
+      - name: Preserve Windows staged packaging and dependency receipts
+        run: python3 tests/test_windows_package.py
       - name: Preserve Mac optimization selection and interrupted source
         run: python3 tests/test_mac_optimization_cache.py
       - name: Preserve explicit Windows optimization cache selection
         run: python3 tests/test_windows_prepared_cache.py
+      - name: Preserve bounded Windows recovery and app training isolation
+        run: |
+          python3 tests/test_windows_builder_recovery.py
+          python3 tests/test_windows_training.py
+          python3 tests/test_windows_app_training.py
+      - name: Preserve prepaid and lean rewrite qualification
+        run: python3 tests/test_prepaid_rewrites.py
       - name: Require complete guest checkpoint comparison coverage
         run: python3 tests/test_guest_checkpoints.py
       - name: Preserve direct-call host boundaries and preparation
@@ -36,6 +45,7 @@ jobs:
           python3 tests/native_skin_source_test.py
           python3 tests/native_vec_source_test.py
           python3 tests/native_math_source_test.py
+          python3 tests/native_entries_source_test.py
       - name: Bound synthetic instant-text patching under sanitizers
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -I runtime/host/src tests/bmg_patch_test.c -o "$RUNNER_TEMP/bluewake_bmg_patch_test"

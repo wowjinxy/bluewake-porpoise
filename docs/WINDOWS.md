@@ -53,9 +53,11 @@ compatibility evidence, but cannot establish native x64 performance parity.
 Use the [Windows testing handoff](WINDOWS_ACCEPTANCE.md) for the current build,
 gameplay, save-preservation and donor-comparison checklist and results template.
 
-The candidate includes prepaid blocks, fixed CPU/RAM storage, inline floating
-point, gather helpers, direct calls and certified native replacements as explicit
-builder options. Their bounded Mac evidence is in the
+The Windows builder prepares prepaid blocks, fixed CPU/RAM storage, inline
+floating point, gather helpers, direct calls and the earlier certified native
+replacements by default. `--conservative` selects ordinary translation; individual
+options then add the chosen preparation steps. The new `--native-entries` and
+`--lean-memory` options remain off by default. Bounded Mac evidence is in the
 [reconciliation ledger](status/FORK_RECONCILIATION_2026-10-02.md); it does not
 establish Windows performance. The Windows builder now carries Elliott’s local PGO training route: it builds
 an instrumented module, plays the opening to control in isolated plain/modded
@@ -100,18 +102,21 @@ Options (`--help` lists all):
 | `--source-only` | Stop after generating the source: checks your tools, disc and translation in a few minutes |
 | `--no-train` / `--no-pgo` | Explicitly skip local training and compile without a profile |
 | `--retrain` | Record a new local profile instead of reusing a matching one |
+| `--conservative` | Disable the existing default preparation set; add individual options to isolate changes |
 | `--no-mods` | Skip the mods (widescreen 16:9 and 16:10, Better Wind Waker's options) |
-| `--prepared-blocks` | Opt into generic prepaid-block optimization; off by default, Windows timing/gameplay pending |
-| `--fixed-cpu` | Opt into experimental fixed-address CPU storage; off by default, requires the matching app |
-| `--fixed-mem1` | Also use module-owned RAM; requires `--fixed-cpu` and the matching app, off by default |
-| `--inline-fp` | Opt into inline floating-point helpers; off by default, module/gameplay/performance qualification pending |
-| `--gather-pipe` | Prepare experimental gather/inline-memory wrappers; off by default, host batching and module qualification remain separate gates |
-| `--direct-calls` | Prepare direct cross-chunk/indirect calls; off by default, matching host selection and qualification required |
-| `--native-j3d` | Prepare certified J3D matrix functions; off by default, host opt-in and module qualification required |
-| `--native-vec` | Prepare nine certified SDK vector functions; off by default, host opt-in and module qualification required |
-| `--native-game-math` | Prepare twelve certified game-math functions; off by default, host opt-in and module qualification required |
-| `--native-skin` | Prepare certified model skinning; off by default, host opt-in and module qualification required |
-| `--native-math` | Prepare four certified SDK matrix functions; off by default, host opt-in and module qualification required |
+| `--prepared-blocks` | Prepare generic prepaid-block copies; part of the existing Windows defaults |
+| `--lean-memory` | Defer observation metadata on ordinary RAM accesses in prepaid copies; requires `--prepared-blocks --gather-pipe`, off by default |
+| `--fixed-cpu` | Prepare fixed-address CPU storage; requires the matching app |
+| `--fixed-mem1` | Use module-owned RAM; requires `--fixed-cpu` and the matching app |
+| `--inline-fp` | Prepare inline floating-point helpers; module/gameplay/performance qualification remains separate |
+| `--gather-pipe` | Prepare gather/inline-memory wrappers; host batching and module qualification remain separate |
+| `--direct-calls` | Prepare direct cross-chunk/indirect calls; requires a supporting host |
+| `--native-j3d` | Prepare certified J3D matrix functions |
+| `--native-vec` | Prepare nine certified SDK vector functions |
+| `--native-game-math` | Prepare twelve certified game-math functions |
+| `--native-skin` | Prepare certified model skinning |
+| `--native-math` | Prepare four certified SDK matrix functions |
+| `--native-entries` | Prepare nine additional FIFO, collision, matrix-vector and joint-matrix routines; requires `--gather-pipe --direct-calls`, off by default |
 | `--inline-gpr` | Also inline certified register saves/restores; requires `--direct-calls` |
 | `--jobs N` | Parallel compile jobs (default: the cores, as far as free memory allows) |
 | `--march LEVEL` | CPU level for the game module (default `x86-64-v3`) |
@@ -127,23 +132,39 @@ matching prepared source, runtime, compiler, CPU level, selected options and hos
 playback code. A profile hash in its filename makes changed counts invalidate
 Ninja's compile inputs.
 
+Each compile refreshes the job limit from available physical and commit memory,
+using a conservative 2.5 GiB per job. Recognized compiler crashes get at most two
+retries with fewer jobs. A transient source-step or training playback crash gets
+one retry; syntax errors, failed validation and repeated crashes stop the build.
+Playback retries use fresh data folders and keep failed logs and valid profiles.
+The app-profile trainer inherits the built module's preparation receipt and keeps
+each attempt separately.
+
 The independent `--native-j3d`, `--native-vec`, `--native-math`, `--native-skin` and `--native-game-math` options certify
 the original function bodies before other rewrites. `BLUEWAKE_NATIVE_J3D=1`,
 `BLUEWAKE_NATIVE_VEC=1`, `BLUEWAKE_NATIVE_MATH=1`, `BLUEWAKE_NATIVE_SKIN=1` and `BLUEWAKE_NATIVE_GAME_MATH=1` enable their respective
 supporting host/module paths
 through versioned handshakes; absent support, disabled selection,
 unsupported inputs and observed boundaries retain translated execution.
+The second batch uses `--native-entries` and `BLUEWAKE_NATIVE_ENTRIES=1`, with
+original-body and shared-callee certification plus the same host observation
+handshake. It covers three FIFO matrix loads, two collision helpers,
+`PSMTXMultVecSR` and the Basic, Softimage and Maya joint matrix calculators.
+Its source and synthetic routing tests do not establish gameplay performance.
 Matrix-array workers remain opt-in on macOS (`BLUEWAKE_NATIVE_WORKERS=1` through
 `8`); Windows keeps Elliott's serial path. Both paths require qualification,
 and worker selection is separate from rendering interpolation.
 
 The direct-call options retain the ordinary module ABI and are selected separately
-from fixed CPU/RAM storage. To enable them in a supporting host, set
-`BLUEWAKE_DIRECT_CALLS=1`; default and older hosts use ordinary dispatch.
+from fixed CPU/RAM storage. Windows requests them in a supporting module by
+default; `BLUEWAKE_DIRECT_CALLS=0` disables them. Other hosts can request them with
+`BLUEWAKE_DIRECT_CALLS=1`; older hosts use ordinary dispatch.
 The host must approve each skipped boundary, including scene observations,
 feature hooks and pending jump input. Register inlining also verifies the
 translated helper hashes and declines aliases, MMIO and write journals.
-Changing host watch sources or either option invalidates prepared-source reuse.
+Changing the extracted host watch addresses or either option invalidates
+prepared-source reuse. Unrelated host edits reuse prepared source; training still
+fingerprints the playback host because those edits can change execution counts.
 These options are being qualified; no performance gain or gameplay acceptance
 is claimed yet. Personal generated source and modules stay local.
 
@@ -157,13 +178,28 @@ limits are tracked in the [reconciliation ledger](status/FORK_RECONCILIATION_202
 
 The `--gather-pipe` option also leaves the module ABI unchanged. It can be used
 with or without `--inline-fp` and records its helper hashes in build provenance.
-The host keeps direct FIFO writes off unless `BLUEWAKE_GATHER_PIPE=1` is set.
+Windows requests direct FIFO writes in a supporting module by default;
+`BLUEWAKE_GATHER_PIPE=0` disables them. Other hosts can request them with
+`BLUEWAKE_GATHER_PIPE=1`.
 With that enabled, `BLUEWAKE_GATHER_PIPE_BATCH=1` additionally requests batching
 on a backend that supports byte writes. Both require a module prepared with
 `--gather-pipe`; older modules keep their ordinary MMIO path. FIFO diagnostic
 tracing and edge-census builds retain the ordinary handler. Renderer batching,
 whole-module optimized comparisons and performance remain unaccepted until the
 reconciliation ledger records their specific qualification.
+
+Prepaid copies can refund their remaining cycles when an access brings a
+deadline forward, then resume the original next instruction. The lean-memory
+step preserves the PC and observation suffix before observers and on exits.
+The compiled synthetic fixture compares complete CPU, RAM, alias storage and
+observation traces against ordinary translated execution. Gather batches can
+span only boundaries approved by the host; consulted edges and all host exits
+drain first. Indexed drawing and rendered gameplay still need qualification.
+
+Windows play samples the diagnostic overlap phase once per host turn by default.
+`BLUEWAKE_OVERLAP_OBSERVATION=1` restores per-block sampling. Training,
+player-control probes, scripted acceptance routes, captures, checkpoints and
+censuses force per-block sampling even when the environment requests `0`.
 
 ## Play
 
@@ -183,6 +219,7 @@ Run `build\windows\BlueWake\BlueWake.exe`.
 | Fullscreen | F11 |
 | Smooth Motion | F10 |
 | Frame rate | F9 |
+| Save state / Load state | F6 / F8 |
 
 Game controllers work through SDL (Xbox, PlayStation, Switch Pro and others). The title screen wants A to reach
 the file menu. The mouse turns the game's own camera around Link and tilts it, and a left click is A; a
@@ -209,6 +246,29 @@ Command-line options (`BlueWake.exe --help`):
 The mods need no extra files: they are compiled into your game module from your disc (see [MODS.md](MODS.md)).
 The environment variables `scripts/mac/run_host.sh` documents (`BLUEWAKE_*`, `DOL_*`) work the same way, for
 example `BLUEWAKE_MOUSE_SENSITIVITY` and `BLUEWAKE_MOUSE_INVERT_Y`.
+
+## Stage a release candidate
+
+`scripts/windows/package_release.py` stages a local ZIP and checksum file in a
+separate output directory. It copies a fixed binary/resource list, audits normal
+and delay-loaded DLL dependencies, records source and dependency pins, and
+requires complete license notices. It preserves the personal build and excludes
+disc images, extracted game assets, cards, states, settings and texture packs.
+It also excludes `nodtool`; a staged candidate therefore imports ISO/GCM images.
+
+```powershell
+python scripts/windows/package_release.py VERSION --dawn-license FILE --dxc-license FILE
+```
+
+If the candidate includes app-local Visual C++ runtime DLLs, also provide
+`--vc-runtime-license FILE`. Inputs must come from a clean committed source and
+the locked runtime/translator; retain dependency download archives where their
+CMake recipes lack a fixed archive hash. Before installing its output, the
+packager runs `scripts/release/check_public_assets.py` with the gate configured
+by `BLUEWAKE_RELEASE_GATE` (or the default local gate). A missing or rejecting
+gate leaves no finished candidate. Staging does not publish anything or grant
+permission to distribute personal translated game code; the repository's
+[rights and licenses](../RIGHTS_AND_LICENSES.md) still apply.
 
 ## Your saves and logs
 

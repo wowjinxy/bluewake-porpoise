@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import struct
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,21 @@ PACKAGE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PACKAGE)
 
 
+def macho(version=(14, 0, 0), cpu=0x0100000C, platform=1):
+    packed = version[0] << 16 | version[1] << 8 | version[2]
+    return struct.pack("<8I", 0xFEEDFACF, cpu, 0, 2, 1, 24, 0, 0) + struct.pack("<6I", 0x32, 24, platform, packed, packed, 0)
+
+
+def universal(*slices):
+    offset = 8 + 20 * len(slices)
+    entries, contents = [], []
+    for cpu, binary in slices:
+        entries.append(struct.pack(">5I", cpu, 0, offset, len(binary), 0))
+        contents.append(binary)
+        offset += len(binary)
+    return struct.pack(">2I", 0xCAFEBABE, len(slices)) + b"".join(entries + contents)
+
+
 class MacPackageTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -28,7 +44,7 @@ class MacPackageTest(unittest.TestCase):
         contents = self.args.app / "Contents"
         (contents / "MacOS").mkdir(parents=True)
         (contents / "Resources").mkdir()
-        (contents / "MacOS/BlueWake").write_bytes(b"synthetic host")
+        (contents / "MacOS/BlueWake").write_bytes(macho())
         (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.bluewake.host"}))
         dsp = self.args.runtime / "Data/Sys/GC"
         dsp.mkdir(parents=True)
@@ -49,7 +65,7 @@ class MacPackageTest(unittest.TestCase):
 
     def personal(self):
         self.args.module = self.root / "module.dylib"
-        self.args.module.write_bytes(b"synthetic module")
+        self.args.module.write_bytes(macho())
         self.args.disc = self.root / "disc.iso"
         self.args.disc.write_bytes(b"synthetic disc")
         self.args.game = self.root / "game"
@@ -75,7 +91,7 @@ class MacPackageTest(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             PACKAGE.assemble(self.args)
         self.assertEqual((self.args.output / "old").read_text(), "previous app")
-        self.assertEqual(self.args.module.read_bytes(), b"synthetic module")
+        self.assertEqual(self.args.module.read_bytes(), macho())
 
     def test_app_only_contains_no_personal_inputs(self):
         result = PACKAGE.assemble(self.args)
@@ -100,6 +116,56 @@ class MacPackageTest(unittest.TestCase):
         result = PACKAGE.assemble(self.args)
         self.assertEqual(result["module_optimizations"], "combined-v1")
         self.assertEqual((self.args.output / "Contents/Resources/ModuleOptimizations").read_text(), "combined-v1\n")
+
+    def test_newer_host_or_module_is_rejected_before_staging(self):
+        self.personal()
+        host = self.args.app / "Contents/MacOS/BlueWake"
+        for binary in (host, self.args.module):
+            with self.subTest(binary=binary.name):
+                host.write_bytes(macho())
+                self.args.module.write_bytes(macho())
+                binary.write_bytes(macho((14, 1, 0)))
+                with self.assertRaisesRegex(ValueError, "newer than advertised 14.0"):
+                    PACKAGE.assemble(self.args)
+                self.assertEqual((self.args.output / "old").read_text(), "previous app")
+                self.assertFalse(list(self.args.output.parent.glob("mac-stage-*")))
+        self.run.assert_not_called()
+
+    def test_universal_app_checks_each_architecture_and_requires_matching_module(self):
+        self.personal()
+        host = self.args.app / "Contents/MacOS/BlueWake"
+        host.write_bytes(universal((0x0100000C, macho()), (0x01000007, macho(cpu=0x01000007))))
+        with self.assertRaisesRegex(ValueError, "every host architecture"):
+            PACKAGE.assemble(self.args)
+        self.args.module.write_bytes(universal((0x0100000C, macho()), (0x01000007, macho((15, 0, 0), cpu=0x01000007))))
+        with self.assertRaisesRegex(ValueError, "module \\(x86_64\\).*15.0.0"):
+            PACKAGE.assemble(self.args)
+        self.args.module.write_bytes(host.read_bytes())
+        result = PACKAGE.assemble(self.args)
+        self.assertEqual(result["binary_minimums"]["module"], {"arm64": "14.0.0", "x86_64": "14.0.0"})
+        self.assertEqual(plistlib.loads((self.args.output / "Contents/Info.plist").read_bytes())["LSMinimumSystemVersion"], "14.0")
+
+    def test_malformed_deployment_records_fail_closed(self):
+        binary = self.root / "bad.dylib"
+        missing = struct.pack("<8I", 0xFEEDFACF, 0x0100000C, 0, 2, 0, 0, 0, 0)
+        broken_command = bytearray(macho())
+        struct.pack_into("<I", broken_command, 36, 128)
+        overlap = bytearray(universal((0x0100000C, macho()), (0x01000007, macho(cpu=0x01000007))))
+        struct.pack_into(">I", overlap, 36, 48)  # Second slice overlaps the first.
+        wrong_arch = bytearray(universal((0x01000007, macho())))
+        fixtures = (b"", b"not a Mach-O", macho()[:-1], missing, bytes(broken_command),
+                    macho(platform=2), bytes(overlap), bytes(wrong_arch), macho(cpu=12))
+        for index, data in enumerate(fixtures):
+            with self.subTest(index=index):
+                binary.write_bytes(data)
+                with self.assertRaises(ValueError):
+                    PACKAGE.macho_minimums(binary)
+
+    def test_older_deployment_target_remains_compatible(self):
+        host = self.args.app / "Contents/MacOS/BlueWake"
+        host.write_bytes(macho((13, 3, 1)))
+        result = PACKAGE.assemble(self.args)
+        self.assertEqual(result["binary_minimums"], {"host": {"arm64": "13.3.1"}})
 
 
 if __name__ == "__main__":

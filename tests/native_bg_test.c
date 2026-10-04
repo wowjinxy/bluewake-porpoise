@@ -101,6 +101,9 @@ static u8* module_image(HMODULE lib) {
 /* The test's own host flags and watch list, the ones the native reads. */
 static bool s_sources_dirty, s_decrementer_pending;
 static u32 s_pi_cause, s_pi_mask;
+static bool fixture_can_skip(void* user, const CPUState* cpu, u32 address) {
+    (void)user; (void)cpu; (void)address; return true;
+}
 
 static void watch(u32 address) {
     const u32 canonical = address & ~0x40000000u;
@@ -125,6 +128,8 @@ static void reset_host(void) {
     bw_host_decrementer_pending = &s_decrementer_pending;
     bw_host_pi_cause = &s_pi_cause;
     bw_host_pi_mask = &s_pi_mask;
+    bw_host_can_skip = fixture_can_skip;
+    bw_host_can_skip_user = NULL;
 }
 
 static const u32 FUNCTIONS[] = {BLUEWAKE_BG_CHK_SAME_ACTOR_PID, BLUEWAKE_BG_CHK_GRP_THROUGH};
@@ -313,11 +318,14 @@ int main(int argc, char** argv) {
     CPUState* (*guest_cpu)(void) = (CPUState * (*)(void))(void*)GetProcAddress(lib, "bluewake_composite_guest_cpu");
     void (*set_edge)(int (*)(void*, CPUState*, u32), void*) =
         (void (*)(int (*)(void*, CPUState*, u32), void*))(void*)GetProcAddress(lib, "bluewake_set_edge_service");
-    int (*direct)(bool, const bool*, const bool*, const u32*, const u32*) =
+    int (*direct)(bool, const bool*, const bool*, const u32*, const u32*, BwHostCanSkipFn, void*) =
+        (int (*)(bool, const bool*, const bool*, const u32*, const u32*, BwHostCanSkipFn, void*))(void*)GetProcAddress(
+            lib, "bluewake_composite_direct_calls_v2");
+    int (*legacy_direct)(bool, const bool*, const bool*, const u32*, const u32*) =
         (int (*)(bool, const bool*, const bool*, const u32*, const u32*))(void*)GetProcAddress(
             lib, "bluewake_composite_direct_calls");
     int (*filter)(bool) = (int (*)(bool))(void*)GetProcAddress(lib, "bluewake_composite_edge_filter");
-    if (get == NULL || guest_cpu == NULL || set_edge == NULL || direct == NULL || filter == NULL) {
+    if (get == NULL || guest_cpu == NULL || set_edge == NULL || (direct == NULL && legacy_direct == NULL) || filter == NULL) {
         fprintf(stderr, "not a BlueWake Windows module\n");
         return 1;
     }
@@ -329,7 +337,9 @@ int main(int argc, char** argv) {
     /* The module as in play: quiet host flags, direct calls, its edge filter. */
     static const bool clear = false;
     static const u32 zero = 0u;
-    if (!direct(true, &clear, &clear, &zero, &zero) || !filter(true)) {
+    const int direct_enabled = direct ? direct(true, &clear, &clear, &zero, &zero, fixture_can_skip, NULL) :
+                                       legacy_direct(true, &clear, &clear, &zero, &zero);
+    if (!direct_enabled || !filter(true)) {
         fprintf(stderr, "the module's direct calls or edge filter are unavailable\n");
         return 1;
     }

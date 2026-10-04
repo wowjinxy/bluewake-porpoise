@@ -30,7 +30,6 @@ void bluewake_native_vec_report(void);
  * by scripts/windows/native_entries.py): the same contract, for the leaf at
  * BLUEWAKE_PSMTX_MULT_VEC_SR only. */
 #define BLUEWAKE_PSMTX_MULT_VEC_SR 0x8030DB24u
-extern int bluewake_native_vec_sr_enabled;
 int bluewake_native_vec_sr(CPUState* cpu);
 void bluewake_native_vec_sr_report(void);
 

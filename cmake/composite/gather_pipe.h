@@ -264,6 +264,39 @@ BW_ACCESS_AT(32, u32)
 BW_ACCESS_AT(64, u64)
 #undef BW_ACCESS_AT
 
+/* Lean copies defer metadata only for plain RAM. The caller initializes its
+ * per-access flag to false; a slow path publishes metadata before callbacks
+ * and reports that their resulting PC/suffix must be retained. Existing
+ * *_at callers keep their original interface and behavior above. */
+#define BW_ACCESS_AT_OBSERVED(bits, type) \
+    static inline __attribute__((always_inline)) type bw_read##bits##_at_observed( \
+        CPUState* cpu, u32 pc, u32 suffix, bool* observed, u32 addr) { \
+        if (observed != NULL) *observed = false; \
+        if (__builtin_expect(BW_RAM_FAST(cpu, addr, bits / 8u), 1)) \
+            return bw_mem_read##bits(cpu, addr); \
+        cpu->pc = pc; \
+        cpu->cycle_observation_suffix = suffix; \
+        if (observed != NULL) *observed = true; \
+        return bw_mem_read##bits##_slow(cpu, addr); \
+    } \
+    static inline __attribute__((always_inline)) void bw_write##bits##_at_observed( \
+        CPUState* cpu, u32 pc, u32 suffix, bool* observed, u32 addr, type value) { \
+        if (observed != NULL) *observed = false; \
+        if (__builtin_expect(BW_RAM_FAST_STORE(cpu, addr, bits / 8u), 1)) { \
+            bw_mem_write##bits(cpu, addr, value); \
+            return; \
+        } \
+        cpu->pc = pc; \
+        cpu->cycle_observation_suffix = suffix; \
+        if (observed != NULL) *observed = true; \
+        bw_mem_write##bits##_slow(cpu, addr, value); \
+    }
+BW_ACCESS_AT_OBSERVED(8, u8)
+BW_ACCESS_AT_OBSERVED(16, u16)
+BW_ACCESS_AT_OBSERVED(32, u32)
+BW_ACCESS_AT_OBSERVED(64, u64)
+#undef BW_ACCESS_AT_OBSERVED
+
 /* What the interpreter runs for the chunks makes its own accesses, outside
  * these wrappers: an instruction the translation hands it, the quantised
  * paired-single types (the generated inline forms take only type 0) and the

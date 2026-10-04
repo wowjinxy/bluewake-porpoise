@@ -15,7 +15,8 @@ spec = importlib.util.spec_from_file_location("windows_builder", REPO / "scripts
 bw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bw)
 OPTIONS = ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls",
-           "inline_gpr", "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math")
+           "inline_gpr", "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
+           "native_entries", "lean_memory")
 
 
 class TrainingTest(unittest.TestCase):
@@ -102,6 +103,62 @@ class TrainingTest(unittest.TestCase):
             returncode=0, stdout=f"  func_80001000:\n    Hash: 0x1\n    Function count: {count}\n"))
         mock.start(); self.addCleanup(mock.stop)
         return observed
+
+    def test_playback_crash_uses_a_fresh_card_and_excludes_failed_counts(self):
+        original = self.root / "run-plain"
+        attempts = []
+        def execute(name, argv, env):
+            data = Path(env["BLUEWAKE_DATA_DIR"])
+            self.assertNotIn("BLUEWAKE_CARD_PATH", env)
+            self.assertTrue(env["LLVM_PROFILE_FILE"].startswith(str(data)))
+            self.assertFalse((data / "card.raw").exists())
+            self.assertFalse((data / "settings.json").exists())
+            attempts.append(data)
+            log = self.b.logs / f"{name}.log"
+            if len(attempts) == 1:
+                (data / "card.raw").write_bytes(b"failed private card")
+                (data / "settings.json").write_text("private settings")
+                (data / "failed.profraw").write_bytes(b"unusable counts")
+                log.write_text("interrupted")
+                raise bw.CommandError(name, 0xC0000005, log)
+            log.write_text("[player-milestone] control-admitted")
+            (data / "valid.profraw").write_bytes(b"completed counts")
+            return log
+        self.b.run = execute
+        raw = self.b.training_run("host", "module", original, None)
+        self.assertEqual(len(attempts), 2)
+        self.assertNotEqual(attempts[0], attempts[1])
+        self.assertEqual(raw, [attempts[1] / "valid.profraw"])
+        self.assertTrue((original / "failed.profraw").exists())
+        self.assertEqual((self.b.logs / "training-playback-plain-failed-1.log").read_text(), "interrupted")
+
+    def test_playback_ordinary_error_and_repeated_crash_stop(self):
+        for status, expected_calls in ((1, 1), (-1073741819, 2)):
+            with self.subTest(status=status):
+                calls = []
+                def execute(name, argv, env):
+                    calls.append(env["BLUEWAKE_DATA_DIR"])
+                    raise bw.CommandError(name, status, self.b.logs / "crash.log")
+                self.b.run = execute
+                with self.assertRaises(bw.CommandError):
+                    self.b.training_run("host", "module", self.root / f"run-{status}", None)
+                self.assertEqual(len(calls), expected_calls)
+
+    def test_repeated_playback_crash_keeps_previous_valid_training_profile(self):
+        self.b.training_fingerprint = lambda: "changed"
+        self.b.build_app = lambda: Path("host.exe")
+        self.b.compile_composite = lambda *args: Path("module.dll")
+        work = self.root / "pgo-local"; work.mkdir()
+        profile = work / "composite.profdata"; profile.write_bytes(b"previous counts")
+        receipt = work / "training.json"; receipt.write_text('{"fingerprint":"old","profile":"previous"}')
+        old_receipt = receipt.read_bytes()
+        def execute(name, argv, env):
+            raise bw.CommandError(name, 0xC0000005, self.b.logs / "playback.log")
+        self.b.run = execute
+        with self.assertRaises(bw.CommandError):
+            self.b.train()
+        self.assertEqual(profile.read_bytes(), b"previous counts")
+        self.assertEqual(receipt.read_bytes(), old_receipt)
 
     def test_profile_requires_executed_game_functions_preserves_prior_result(self):
         self.setup_training(count=0)

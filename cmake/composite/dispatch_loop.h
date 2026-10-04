@@ -57,16 +57,20 @@ static inline int bluewake_chassis_dispatch_loop(
             return bluewake_chassis_return(1);
 
         address = ctx->pc;
-#if defined(BLUEWAKE_GATHER_PIPE)
-        bw_gather_pipe_drain();
-#endif
         bool skip_edge = false;
 #if defined(BLUEWAKE_DIRECT_CALLS)
         skip_edge = bw_edge_filter_enabled && bw_edge_watch_ready &&
                     bw_edge_unwatched(address) && bw_direct_call_ready(ctx, address);
 #endif
-        if (!skip_edge && edge_service(service_user, ctx, address))
-            return bluewake_chassis_return(1);
+        if (!skip_edge) {
+#if defined(BLUEWAKE_GATHER_PIPE)
+            /* A consulted host edge must observe all preceding FIFO writes.
+             * Certified successors with no host work can retain their batch. */
+            bw_gather_pipe_drain();
+#endif
+            if (edge_service(service_user, ctx, address))
+                return bluewake_chassis_return(1);
+        }
 
         prior_downcount = ctx->downcount;
         dispatched = dispatch(ctx, address);

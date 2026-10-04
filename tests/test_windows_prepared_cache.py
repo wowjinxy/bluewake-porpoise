@@ -94,18 +94,25 @@ class PreparedCacheTest(unittest.TestCase):
                        "scripts/windows/native_game_math.py", "cmake/composite/native_game_math.c", "cmake/composite/native_game_math.h",
                        "scripts/windows/native_skin.py", "cmake/composite/native_skin.c", "cmake/composite/native_skin.h",
                        "scripts/mods/prepare_native_math.py", "cmake/composite/native_math.c", "cmake/composite/native_math.h",
-                       "cmake/composite/native_work_pool.c", "cmake/composite/native_work_pool.h"):
+                       "cmake/composite/native_work_pool.c", "cmake/composite/native_work_pool.h",
+                       "scripts/windows/lean_memory.py", "scripts/windows/native_entries.py",
+                       "cmake/composite/native_entries.c", "cmake/composite/native_entries.h",
+                       "cmake/composite/native_fifo.c", "cmake/composite/native_fifo.h",
+                       "cmake/composite/native_bg.c", "cmake/composite/native_bg.h",
+                       "cmake/composite/native_mtxcalc.c", "cmake/composite/native_mtxcalc.h"):
             dst = self.root / script
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / script, dst)
         self.base = self.root / "synthetic-base"
         (self.base / "chunks_dol").mkdir(parents=True)
         (self.base / "generated.h").write_text("/* synthetic fixture */\n", newline="\n")
+        (self.base / "generated_composite.h").write_text(
+            "static DolRecompFunction s_dolrecomp_chunk_fns[] = {func_80001000};\n", newline="\n")
         for name in ("a.c", "b.c"):
             (self.base / "chunks_dol" / name).write_text(CHUNK, newline="\n")
         self.out = self.root / "build"
         self.out.mkdir()
-        self.args = SimpleNamespace(out=self.out, accept_new_composite=False, prepared_blocks=False, fixed_cpu=False, fixed_mem1=False, inline_fp=False, gather_pipe=False, direct_calls=False, inline_gpr=False, native_j3d=False, native_vec=False, native_math=False, native_skin=False, native_game_math=False)
+        self.args = SimpleNamespace(out=self.out, accept_new_composite=False, prepared_blocks=False, fixed_cpu=False, fixed_mem1=False, inline_fp=False, gather_pipe=False, direct_calls=False, inline_gpr=False, native_j3d=False, native_vec=False, native_math=False, native_skin=False, native_game_math=False, native_entries=False, lean_memory=False)
         self.builder = bw.Builder(self.args)
         self.builder.mods = False
         self.builder.composite = lambda *args: shutil.copytree(self.base, args[-2])
@@ -158,6 +165,135 @@ label_80004004:
         self.assertNotIn("BLUEWAKE_DIRECT_CALLS_PREPARED",
                          (self.out / "composite-src/generated.h").read_text())
         self.assertFalse((self.out / "composite-src/bw_edge_watch.inc").exists())
+
+    def test_host_implementation_edits_reuse_cache_but_watch_changes_invalidate(self):
+        self.args.direct_calls = True
+        host = self.root / "runtime/host/src/synthetic.c"
+        host.parent.mkdir(parents=True)
+        host.write_text("/* observed 0x80006000u */\n", newline="\n")
+        self.cycle()
+        original = (self.out / "composite-inputs.digest").read_text()
+        tree_before = bw.tree_digest(self.out / "composite-src")
+        before = self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns
+        # Same observation set, including the mirrored spelling, still uses
+        # the exact prepared tree; non-address host edits cannot change it.
+        host.write_text("int unrelated_host_work(void) { return 7; }\n/* observed 0xC0006000u */\n", newline="\n")
+        self.cycle()
+        self.assertEqual(original, (self.out / "composite-inputs.digest").read_text())
+        self.assertEqual(before, (self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns))
+        self.assertEqual(tree_before, bw.tree_digest(self.out / "composite-src"))
+        # A separate Windows host file introduces a new observation boundary.
+        window = self.root / "windows/src/fixture.cpp"; window.parent.mkdir(parents=True)
+        window.write_text("/* watched 0x80007000 */\n", newline="\n")
+        self.cycle()
+        changed = (self.out / "composite-inputs.digest").read_text()
+        self.assertNotEqual(original, changed)
+        self.assertIn("0x80007000u", (self.out / "composite-src/bw_edge_watch.inc").read_text())
+        window.unlink()
+        self.cycle()
+        self.assertEqual(original, (self.out / "composite-inputs.digest").read_text())
+        self.assertNotIn("0x80007000u", (self.out / "composite-src/bw_edge_watch.inc").read_text())
+
+    def test_watch_scanner_and_direct_helpers_remain_fingerprinted(self):
+        self.args.direct_calls = True
+        self.cycle()
+        for helper in ("scripts/windows/direct_calls.py", "cmake/composite/direct_calls.h", "cmake/composite/direct_calls.c"):
+            original = (self.out / "composite-inputs.digest").read_text()
+            path = self.root / helper
+            path.write_text(path.read_text() + "\n", newline="\n")
+            self.cycle()
+            self.assertNotEqual(original, (self.out / "composite-inputs.digest").read_text())
+
+    def test_lean_memory_enable_reuse_disable_and_script_change(self):
+        self.args.prepared_blocks = self.args.gather_pipe = True
+        self.cycle()
+        baseline = (self.out / "composite-inputs.digest").read_text()
+        self.args.lean_memory = True
+        self.cycle()
+        enabled = (self.out / "composite-inputs.digest").read_text()
+        self.assertNotEqual(baseline, enabled)
+        receipt = json.loads((self.out / "prepared-blocks.json").read_text())
+        self.assertTrue(receipt["lean_memory"])
+        self.assertEqual(receipt["lean_memory_script_sha256"], bw.sha256_file(self.root / "scripts/windows/lean_memory.py"))
+        before = self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns
+        self.cycle()
+        self.assertEqual(before, (self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns))
+        path = self.root / "scripts/windows/lean_memory.py"
+        path.write_text(path.read_text() + "\n# fixture revision\n", newline="\n")
+        self.cycle()
+        self.assertNotEqual(enabled, (self.out / "composite-inputs.digest").read_text())
+        self.args.lean_memory = False
+        self.cycle()
+        self.assertFalse(json.loads((self.out / "prepared-blocks.json").read_text())["lean_memory"])
+
+    def test_native_entries_certification_reuse_disable_and_helper_invalidation(self):
+        body = '\nlabel_80004100:\n    ctx->gpr[3] = 1;\n'
+        digest = hashlib.sha256(' '.join(body.split()).encode()).hexdigest()
+        script = self.root / "scripts/windows/native_entries.py"
+        text = script.read_text()
+        begin = text.index('FRAGMENTS = {')
+        end = text.index('def hook(', begin)
+        definitions = (f"FRAGMENTS = {{'fixture': (0x80004000, 0x80004100, 0x80004104, '{digest}')}}\n"
+                       "ENTRIES = {0x80004100: ('fixture',)}\n\n")
+        script.write_text(text[:begin] + definitions + text[end:], newline="\n")
+        (self.base / 'chunks_dol/chunk_80004000.c').write_text(
+            '#include "../generated.h"\n' + body + '\nlabel_80004104:\n\nreturn_dispatch_80004000:\n', newline="\n")
+        self.digest = bw.tree_digest(self.base)
+        self.args.native_entries = True
+        self.cycle()
+        source = self.out / 'composite-src/chunks_dol/chunk_80004000.c'
+        self.assertIn('bluewake_native_entries_try', source.read_text())
+        receipt = json.loads((self.out / 'prepared-blocks.json').read_text())
+        self.assertTrue(receipt['native_entries'])
+        manifest = self.out / 'composite-src/native_entries.json'
+        self.assertEqual(receipt['native_entries_manifest_sha256'], bw.sha256_file(manifest))
+        before = source.read_bytes(), source.stat().st_mtime_ns
+        self.builder.generate()
+        self.assertTrue(self.builder.preparation_current)
+        # Do not recertify the original stage after subsequent transforms.
+        with patch.object(self.builder, 'source_step', side_effect=AssertionError('unnecessary recertification')):
+            self.builder.prepare_blocks()
+        self.assertEqual(before, (source.read_bytes(), source.stat().st_mtime_ns))
+        for helper in ('scripts/windows/native_entries.py', 'cmake/composite/native_entries.c',
+                       'cmake/composite/native_mtxcalc.h'):
+            old = (self.out / 'composite-inputs.digest').read_text()
+            path = self.root / helper; path.write_text(path.read_text() + '\n', newline='\n')
+            self.cycle()
+            self.assertNotEqual(old, (self.out / 'composite-inputs.digest').read_text())
+        # An altered certificate is part of the final source digest and forces
+        # regeneration/certification, even though the chunk is unchanged.
+        manifest.write_text('{"tampered":true}', newline='\n')
+        self.cycle()
+        self.assertEqual(json.loads(manifest.read_text())['entries'], [0x80004100])
+        self.args.native_entries = False
+        self.cycle()
+        self.assertNotIn('native_entries_try', source.read_text())
+        self.assertFalse(manifest.exists())
+
+    def test_missing_or_invalid_receipt_regenerates_prepared_source(self):
+        self.args.prepared_blocks = True
+        self.cycle()
+        receipt = self.out / 'prepared-blocks.json'
+        for corrupt in (None, '{broken', '[]', '{"final_digest":"wrong"}'):
+            with self.subTest(receipt=corrupt):
+                if corrupt is None:
+                    receipt.unlink()
+                else:
+                    receipt.write_text(corrupt)
+                self.builder.generate()
+                self.assertFalse(self.builder.preparation_current)
+                self.assertNotIn(MARK, self.chunk().read_text())
+                self.builder.prepare_blocks()
+                self.assertIn(MARK, self.chunk().read_text())
+
+    def test_edit_after_cache_validation_cannot_skip_preparation(self):
+        self.args.prepared_blocks = True
+        self.cycle()
+        self.builder.generate()
+        self.assertTrue(self.builder.preparation_current)
+        self.chunk().write_text(self.chunk().read_text() + '\n/* edit after validation */\n', newline='\n')
+        with self.assertRaises(bw.BuildError):
+            self.builder.prepare_blocks()
 
     def test_native_j3d_reuse_and_disable(self):
         body = '\nlabel_00000100:\n    ctx->gpr[3] = 1;\n'

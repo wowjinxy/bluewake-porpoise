@@ -48,6 +48,7 @@
 #include "pad_wire.h"
 #include "rel_scratch_allocator.h"
 #include "return_census.h"
+#include "overlap_observation.h"
 #include "scheduler_contract.h"
 #include "save_state.h"
 #include "climb.h"
@@ -1454,6 +1455,7 @@ static u32 g_overlap_cached_object;
 // and one test that this replaces. See the census in docs/status/CURRENT.md,
 // 2026-09-22: this revalidation runs at every block boundary.
 static u32 g_overlap_cached_alias_state = 0xFFFFFFFFu;
+static bool g_overlap_observation = true;
 
 static u32 host_overlap_object(CPUState* cpu) {
     const u32 alias_state = g_ppc_guest_alias_generation;
@@ -1515,7 +1517,7 @@ static bool host_chassis_edge_service_body(void* user, CPUState* cpu, u32 addres
     // in both configurations, so this is observation cadence and not guest
     // state. Sampling it here restores the shipping cadence, which is one look
     // per block boundary - the same call the chassis already makes.
-    if (g_name_scene_object >= 0x80000000u &&
+    if (g_overlap_observation && g_name_scene_object >= 0x80000000u &&
         (g_file_start_pulse.triggered || !g_file_start_pulse.configured)) {
 #if BLUEWAKE_EDGE_CENSUS
         g_edge_overlap_guard++;
@@ -1782,6 +1784,11 @@ static inline const u8* bw_search_word(CPUState* cpu, u32 address) {
     return get_ram_ptr(cpu, address, 4u, NULL);
 }
 
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
 static void host_actor_search_native(CPUState* cpu) {
     if (cpu->lr != BW_SEARCH_NDIT_RETURN || cpu->gpr[29] != BW_SEARCH_JUDGE_FILTER ||
         (cpu->ctr & ~3u) != BW_SEARCH_JUDGE_FILTER || cpu->gpr[30] != cpu->gpr[4] ||
@@ -1867,7 +1874,7 @@ static inline bool host_chassis_requires_full(const CPUState* cpu, u32 address) 
                              g_interrupt_sources_dirty,
                          0))
         return true;
-    if (g_name_scene_object >= 0x80000000u &&
+    if (g_overlap_observation && g_name_scene_object >= 0x80000000u &&
         (g_file_start_pulse.triggered || !g_file_start_pulse.configured)) {
         if (g_ppc_guest_alias_generation != g_overlap_cached_alias_state ||
             g_overlap_slot_ptr == NULL)
@@ -6596,7 +6603,23 @@ static const char* host_state_dir(void) {
     return ".";
 }
 
-// The newest .bwstate in the state directory: what F9 loads when this run has
+static const char* host_state_save_key(void) {
+#if defined(_WIN32)
+    return "F6";
+#else
+    return "F5";
+#endif
+}
+
+static const char* host_state_load_key(void) {
+#if defined(_WIN32)
+    return "F8";
+#else
+    return "F9";
+#endif
+}
+
+// The newest .bwstate in the state directory: what the load hotkey loads when this run has
 // neither saved nor loaded one (after a relaunch).
 static bool host_state_latest(char* out, size_t size) {
     DIR* dir = opendir(host_state_dir());
@@ -6766,11 +6789,13 @@ static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* 
             const char* unsafe = host_state_unsafe_reason(cpu, loop);
             if (g_state_last_path[0] == '\0' &&
                 !host_state_latest(g_state_last_path, sizeof g_state_last_path))
-                fprintf(stderr, "[state] F9: no state in %s yet (F5 saves one)\n", host_state_dir());
+                fprintf(stderr, "[state] %s: no state in %s yet (%s saves one)\n",
+                        host_state_load_key(), host_state_dir(), host_state_save_key());
             else if (unsafe != NULL)
-                fprintf(stderr, "[state] F9: not now (%s)\n", unsafe);
+                fprintf(stderr, "[state] %s: not now (%s)\n", host_state_load_key(), unsafe);
             else if (!host_state_load(g_state_last_path, cpu, mod, loop))
-                fprintf(stderr, "[state] F9: load failed; the machine may be inconsistent\n");
+                fprintf(stderr, "[state] %s: load failed; the machine may be inconsistent\n",
+                        host_state_load_key());
             g_state_poll_retrace = g_host_retrace_count;
             return;
         }
@@ -7695,6 +7720,13 @@ int main(int argc, char** argv) {
         const bool enabled = native_math != NULL && native_math(want, host_can_skip_observation, NULL);
         fprintf(stderr, "[chassis] native-math=%s\n", enabled ? "on" : "off");
     }
+    {
+        typedef int (*NativeEntriesFn)(bool, bool (*)(void*, const CPUState*, u32), void*);
+        NativeEntriesFn native_entries = (NativeEntriesFn)dlsym(lib, "bluewake_composite_native_entries_v1");
+        const bool want = host_feature_wanted("BLUEWAKE_NATIVE_ENTRIES");
+        const bool enabled = native_entries != NULL && native_entries(want, host_can_skip_observation, NULL);
+        fprintf(stderr, "[chassis] native-entries=%s\n", enabled ? "on" : "off");
+    }
     BluewakeSetGatherWord set_gather_word = (BluewakeSetGatherWord)
         dlsym(lib, "bluewake_composite_set_gather_pipe");
     BluewakeSetGatherBytes set_gather_bytes = (BluewakeSetGatherBytes)
@@ -7794,6 +7826,24 @@ int main(int argc, char** argv) {
     bluewake_return_census_init(&return_census);
     return_census.edges_enabled =
         getenv("BLUEWAKE_RETURN_CENSUS_EDGES") != NULL;
+    {
+        const bool diagnostic = BLUEWAKE_ENABLE_DEVELOPER_TRACING || BLUEWAKE_EDGE_CENSUS ||
+            player_probe || capture_player_ready || opening_capture_path != NULL ||
+            g_guest_checkpoint_interval != 0u || g_player_route_waiting ||
+            g_player_stick_x_pulse.configured || g_player_stick_y_pulse.configured ||
+            g_event_confirm_target >= 0 || g_chassis_service_each_block ||
+            g_player_post_ladder_route_configured || g_player_route_confirm_configured ||
+            g_save_route_enabled || g_file_start_pulse.configured ||
+            g_turn_census_enabled || g_boundary_census_enabled || g_deadline_census_enabled ||
+            g_delivery_safety_census_enabled || g_guest_state_trace_enabled ||
+            return_census_enabled || return_census.edges_enabled || g_gx_flush_census ||
+            g_gx_fifo_trace || g_delivery_trace_lo != 0u ||
+            getenv("BLUEWAKE_TEST_WARP") != NULL ||
+            getenv("BLUEWAKE_STATE_TEST_LOAD") != NULL ||
+            getenv("BLUEWAKE_STATE_TEST_SAVE") != NULL;
+        g_overlap_observation = bluewake_overlap_observation_enabled(
+            getenv("BLUEWAKE_OVERLAP_OBSERVATION"), diagnostic);
+    }
     const bool force_fp = getenv("BLUEWAKE_FORCE_FP") != NULL;
     bool fp_resume_reported = false;
     bool scheduler_wait_reported = false;
@@ -15749,6 +15799,11 @@ int main(int argc, char** argv) {
         void (*report_native_math)(void) = (void (*)(void))dlsym(lib, "bluewake_native_math_report");
         if (report_native_math != NULL)
             report_native_math();
+    }
+    {
+        void (*report_native_entries)(void) = (void (*)(void))dlsym(lib, "bluewake_native_entries_report");
+        if (report_native_entries != NULL)
+            report_native_entries();
     }
     if (g_direct_call_trace)
         fprintf(stderr, "[direct-calls] summary queries=%llu allowed=%llu\n",

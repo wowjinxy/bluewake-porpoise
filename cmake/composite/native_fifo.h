@@ -9,8 +9,6 @@
 #define BLUEWAKE_J3D_FIFO_NRM_MTX 0x802D8C58u    /* J3DFifoLoadNrmMtxImm__FPA4_fUl */
 #define BLUEWAKE_J3D_FIFO_NRM_MTX33 0x802D8CC4u  /* J3DFifoLoadNrmMtxImm3x3__FPA3_fUl */
 
-extern int bluewake_native_fifo_enabled;
-
 /* The function at `address`, entered with the return address in LR, through
  * its blr: nonzero with every register, flag, cycle, byte of RAM and byte
  * handed to the gather pipe as the translation leaves them; zero, with

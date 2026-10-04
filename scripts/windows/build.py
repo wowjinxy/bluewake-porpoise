@@ -29,6 +29,7 @@ it is yours alone. Never share or upload it. Your saves live in
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -52,6 +53,24 @@ GC_MAGIC = 0xC2339F3D
 
 class BuildError(Exception):
     pass
+
+
+class CommandError(BuildError):
+    """A command failure with its original status, without parsing log text."""
+    def __init__(self, name, status, log):
+        self.status = status
+        self.log = log
+        super().__init__(f"{name} failed (exit {status}); full log {log}")
+
+
+# Windows reports these as signed or unsigned NTSTATUS values, depending on
+# the Python/process launcher. Ordinary script errors are never retried.
+WINDOWS_CRASH_CODES = frozenset((0xC0000005, 0xC000001D, 0xC00000FD,
+                                0xC0000374, 0xC0000409))
+
+
+def command_crashed(error):
+    return isinstance(error, CommandError) and (error.status & 0xFFFFFFFF) in WINDOWS_CRASH_CODES
 
 
 def die(message):
@@ -185,11 +204,32 @@ class Builder:
         if status != 0:
             tail = log.read_bytes()[-4000:].decode(errors="replace")
             print(tail, file=sys.stderr)
-            die(f"{name} failed (exit {status}); full log {log}")
+            raise CommandError(name, status, log)
         elapsed = int(time.monotonic() - start)
         if elapsed >= 60:
             print(f"  {name}: done in {elapsed // 60}m {elapsed % 60:02d}s", flush=True)
         return log
+
+    def preserve_retry_log(self, name, attempt):
+        log = self.logs / f"{name}.log"
+        if log.is_file():
+            shutil.copy2(log, self.logs / f"{name}-failed-{attempt}.log")
+
+    def source_step(self, name, script, root, *options):
+        """Retry an idempotent source step once after a recognized process crash.
+
+        Finished chunks are atomic and repeatable; validation failures still
+        stop immediately, and a second crash propagates to the caller.
+        """
+        command = [sys.executable, ROOT / script, root, *options]
+        try:
+            return self.run(name, command)
+        except CommandError as error:
+            if not command_crashed(error):
+                raise
+            self.preserve_retry_log(name, 1)
+            print(f"  {name} crashed (exit 0x{error.status & 0xFFFFFFFF:08X}); running it again")
+            return self.run(name, command)
 
     def git(self, *args, cwd=None):
         return subprocess.check_output(["git", *args], cwd=cwd or ROOT, text=True,
@@ -492,6 +532,7 @@ int main(void) {
     # --- 6 generate ------------------------------------------------------
     def generate(self):
         o = self.out
+        self.preparation_current = False
         new = o / "composite-src.new"
         self.composite(o / "translated/dol/generated", o / "translated/rels/generated/rels", o / "game/rels",
                        o / "game/main.dol", new, "composite-generate")
@@ -508,7 +549,8 @@ int main(void) {
         # compile start over. Mods are part of the recorded inputs.
         inputs = hashlib.sha256()
         inputs.update((f"{digest}\n{int(self.mods)}\n{int(self.args.prepared_blocks)}\n"
-                       f"{int(self.args.fixed_cpu)}\n{int(self.args.fixed_mem1)}\n{int(self.args.inline_fp)}\n{int(self.args.gather_pipe)}\n{int(self.args.direct_calls)}\n{int(self.args.inline_gpr)}\n{int(self.args.native_j3d)}\n{int(self.args.native_vec)}\n{int(self.args.native_math)}\n{int(self.args.native_skin)}\n{int(self.args.native_game_math)}\n").encode())
+                       f"{int(self.args.fixed_cpu)}\n{int(self.args.fixed_mem1)}\n{int(self.args.inline_fp)}\n{int(self.args.gather_pipe)}\n{int(self.args.direct_calls)}\n{int(self.args.inline_gpr)}\n{int(self.args.native_j3d)}\n{int(self.args.native_vec)}\n{int(self.args.native_math)}\n{int(self.args.native_skin)}\n{int(self.args.native_game_math)}\n"
+                       f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n").encode())
         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", ROOT / "scripts/windows/fast_blocks.py",
                      ROOT / "scripts/windows/global_guest_cpu.py", ROOT / "scripts/windows/chunk_headers.py",
@@ -522,26 +564,50 @@ int main(void) {
                      ROOT / "cmake/composite/native_game_math.h", ROOT / "scripts/windows/native_skin.py", ROOT / "cmake/composite/native_skin.c",
                      ROOT / "cmake/composite/native_skin.h", ROOT / "cmake/composite/native_math.c", ROOT / "cmake/composite/native_math.h",
                      ROOT / "cmake/composite/native_work_pool.c", ROOT / "cmake/composite/native_work_pool.h",
+                     ROOT / "scripts/windows/native_entries.py", ROOT / "cmake/composite/native_entries.c",
+                     ROOT / "cmake/composite/native_entries.h", ROOT / "cmake/composite/native_fifo.c",
+                     ROOT / "cmake/composite/native_fifo.h", ROOT / "cmake/composite/native_bg.c",
+                     ROOT / "cmake/composite/native_bg.h", ROOT / "cmake/composite/native_mtxcalc.c",
+                     ROOT / "cmake/composite/native_mtxcalc.h", ROOT / "scripts/windows/lean_memory.py",
                      ROOT / "scripts/windows/inline_save_restore_gpr.py", Path(__file__)]):
             if f.is_file():
                 inputs.update(f.read_bytes())
-        if self.args.direct_calls or self.args.native_game_math:
-            # The source-derived watch list is part of the prepared module.
-            for folder in ("runtime/host/src", "windows/src"):
-                for path in sorted((ROOT / folder).rglob("*")):
-                    if path.suffix in (".c", ".h", ".cpp", ".mm", ".m"):
-                        inputs.update(str(path.relative_to(ROOT)).encode())
-                        inputs.update(path.read_bytes())
+        if self.args.direct_calls or self.args.native_game_math or getattr(self.args, "native_entries", False):
+            # Preparation depends on the host's watched guest addresses, not
+            # unrelated host implementation edits. Use the preparer's own
+            # scanner, whose script remains a hashed dependency above.
+            spec = importlib.util.spec_from_file_location("bluewake_watch_inputs", ROOT / "scripts/windows/direct_calls.py")
+            scanner = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(scanner)
+            inputs.update(json.dumps(sorted(scanner.watched_addresses())).encode())
         inputs = inputs.hexdigest()
         current = o / "composite-src"
         saved = (o / "composite-final.digest").read_text().strip() if (o / "composite-final.digest").exists() else ""
         same_inputs = (o / "composite-inputs.digest").exists() and \
             (o / "composite-inputs.digest").read_text().strip() == inputs
-        if current.exists() and same_inputs and saved and tree_digest(current) == saved:
+        can_reuse = current.exists() and same_inputs and saved and tree_digest(current) == saved
+        if can_reuse:
+            self.mods_pending = self.mods and ((o / "mods.done").read_text().strip() != "complete" \
+                if (o / "mods.done").exists() else True)
+            receipt = o / "prepared-blocks.json"
+            if receipt.is_file():
+                try:
+                    prepared = json.loads(receipt.read_text())
+                except ValueError:
+                    prepared = {}
+                if not isinstance(prepared, dict):
+                    prepared = {}
+                selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
+                              "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
+                              "native_entries", "lean_memory")
+                self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
+                                            prepared.get("final_digest") == saved and
+                                            prepared.get("enabled") == self.args.prepared_blocks and
+                                            all(prepared.get(name) == getattr(self.args, name, False)
+                                                for name in selections))
+        if can_reuse and (self.preparation_current or saved == digest):
             shutil.rmtree(new)
             print("the existing composite source is current")
-            self.mods_pending = (o / "mods.done").read_text().strip() != "complete" \
-                if (o / "mods.done").exists() else self.mods
         else:
             sync_tree(new, current)
             (o / "composite-src.digest").write_text(digest + "\n")
@@ -628,41 +694,43 @@ int main(void) {
         generate() verifies both the input fingerprint and final tree digest.
         Interrupted/edited preparation cannot be mistaken for finished work.
         """
+        if getattr(self, "preparation_current", False):
+            if tree_digest(self.out / "composite-src") != (self.out / "composite-final.digest").read_text().strip():
+                die("the composite source changed after cache validation; rerun the builder to regenerate it")
+            print("the existing source preparation is current")
+            return
         o = self.out
         script = ROOT / "scripts/windows/fast_blocks.py"
         cpu_script = ROOT / "scripts/windows/global_guest_cpu.py"
+        if getattr(self.args, "native_entries", False):
+            self.source_step("native-entries", "scripts/windows/native_entries.py", o / "composite-src")
         if self.args.native_game_math:
-            self.run("native-game-math", [sys.executable, ROOT / "scripts/windows/native_game_math.py",
-                                          o / "composite-src"])
+            self.source_step("native-game-math", "scripts/windows/native_game_math.py", o / "composite-src")
         if self.args.native_j3d:
-            self.run("native-j3d", [sys.executable, ROOT / "scripts/mods/prepare_native_j3d.py",
-                                     o / "composite-src"])
+            self.source_step("native-j3d", "scripts/mods/prepare_native_j3d.py", o / "composite-src")
         if self.args.native_vec:
-            self.run("native-vec", [sys.executable, ROOT / "scripts/mods/prepare_native_vec.py",
-                                     o / "composite-src"])
+            self.source_step("native-vec", "scripts/mods/prepare_native_vec.py", o / "composite-src")
         if self.args.native_math:
-            self.run("native-math", [sys.executable, ROOT / "scripts/mods/prepare_native_math.py",
-                                     o / "composite-src"])
+            self.source_step("native-math", "scripts/mods/prepare_native_math.py", o / "composite-src")
         if self.args.native_skin:
-            self.run("native-skin", [sys.executable, ROOT / "scripts/windows/native_skin.py",
-                                      o / "composite-src"])
+            self.source_step("native-skin", "scripts/windows/native_skin.py", o / "composite-src")
         if self.args.fixed_cpu:
-            self.run("fixed-cpu", [sys.executable, cpu_script, o / "composite-src"])
+            self.source_step("fixed-cpu", "scripts/windows/global_guest_cpu.py", o / "composite-src")
         if self.args.inline_fp or self.args.gather_pipe:
-            helpers = [sys.executable, ROOT / "scripts/windows/chunk_headers.py", o / "composite-src"]
+            helpers = []
             if self.args.inline_fp:
                 helpers.append("--inline-fp")
             if self.args.gather_pipe:
                 helpers.append("--gather-pipe")
-            self.run("inline-helpers", helpers)
+            self.source_step("inline-helpers", "scripts/windows/chunk_headers.py", o / "composite-src", *helpers)
         if self.args.inline_gpr:
-            self.run("inline-gpr", [sys.executable, ROOT / "scripts/windows/inline_save_restore_gpr.py",
-                                     o / "composite-src"])
+            self.source_step("inline-gpr", "scripts/windows/inline_save_restore_gpr.py", o / "composite-src")
         if self.args.prepared_blocks:
-            self.run("prepared-blocks", [sys.executable, script, o / "composite-src"])
+            self.source_step("prepared-blocks", "scripts/windows/fast_blocks.py", o / "composite-src")
+        if getattr(self.args, "lean_memory", False):
+            self.source_step("lean-memory", "scripts/windows/lean_memory.py", o / "composite-src")
         if self.args.direct_calls:
-            self.run("direct-calls", [sys.executable, ROOT / "scripts/windows/direct_calls.py",
-                                       o / "composite-src"])
+            self.source_step("direct-calls", "scripts/windows/direct_calls.py", o / "composite-src")
         digest = tree_digest(o / "composite-src")
         receipt = {"enabled": self.args.prepared_blocks,
                    "fixed_cpu": self.args.fixed_cpu,
@@ -676,6 +744,19 @@ int main(void) {
                    "native_math": self.args.native_math,
                    "native_skin": self.args.native_skin,
                    "native_game_math": self.args.native_game_math,
+                   "native_entries": getattr(self.args, "native_entries", False),
+                   "lean_memory": getattr(self.args, "lean_memory", False),
+                   "native_entries_sha256": {name: sha256_file(ROOT / "cmake/composite" / name)
+                                              for name in ("native_entries.c", "native_entries.h", "native_fifo.c", "native_fifo.h",
+                                                           "native_bg.c", "native_bg.h", "native_mtxcalc.c", "native_mtxcalc.h",
+                                                           "native_vec.c", "native_vec.h")}
+                                              if getattr(self.args, "native_entries", False) else {},
+                   "native_entries_script_sha256": sha256_file(ROOT / "scripts/windows/native_entries.py")
+                                                   if getattr(self.args, "native_entries", False) else None,
+                   "native_entries_manifest_sha256": sha256_file(o / "composite-src/native_entries.json")
+                                                     if getattr(self.args, "native_entries", False) else None,
+                   "lean_memory_script_sha256": sha256_file(ROOT / "scripts/windows/lean_memory.py")
+                                                if getattr(self.args, "lean_memory", False) else None,
                    "gather_sha256": {name: sha256_file(ROOT / "cmake/composite" / name)
                                      for name in ("gather_pipe.h", "gather_pipe.c", "gather_pipe_batch.h")},
                    "inline_fp_script_sha256": sha256_file(ROOT / "scripts/windows/chunk_headers.py"),
@@ -754,6 +835,7 @@ int main(void) {
             f"-DBLUEWAKE_NATIVE_GAME_MATH={'ON' if self.args.native_game_math else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_SKIN={'ON' if self.args.native_skin else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_MATH={'ON' if self.args.native_math else 'OFF'}",
+            f"-DBLUEWAKE_NATIVE_ENTRIES={'ON' if getattr(self.args, 'native_entries', False) else 'OFF'}",
             f"-DBLUEWAKE_DIRECT_CALLS={'ON' if self.args.direct_calls else 'OFF'}",
             f"-DBLUEWAKE_GATHER_PIPE={'ON' if self.args.gather_pipe else 'OFF'}",
             f"-DBLUEWAKE_INLINE_FP={'ON' if self.args.inline_fp else 'OFF'}",
@@ -764,17 +846,35 @@ int main(void) {
         # -k 0: a chunk that fails does not stop the others. The usual cause is
         # memory (clang reports "out of memory" when several of the largest
         # chunks peak together), so what failed is retried with fewer jobs.
-        jobs = self.args.jobs
+        # Refresh available physical/commit memory after source preparation or
+        # an earlier compile has finished. Keep the conservative 2.5 GiB per
+        # chunk estimate until BlueWake's own compile peaks are measured.
+        jobs = default_jobs() if getattr(self.args, "jobs_auto", False) else self.args.jobs
+        print(f"  {jobs} parallel compiles")
+        crashes = 0
         while True:
             try:
                 self.run(f"{name}-build", ["cmake", "--build", build, "-j", jobs, "--", "-k", "0"], ninja=True)
                 break
-            except BuildError:
-                log = (self.logs / f"{name}-build.log").read_text(errors="replace")
-                if jobs <= 1 or "out of memory" not in log:
+            except CommandError as error:
+                log = (self.logs / f"{name}-build.log").read_text(errors="replace").lower()
+                oom = "out of memory" in log
+                clang_crash = ("clang" in log and any(marker in log for marker in (
+                    "frontend command failed due to signal", "front-end command failed due to signal",
+                    "please submit a bug report", "0xc0000005", "0xc00000fd",
+                    "exit code 3221225477", "exit code -1073741819")))
+                if not (oom or clang_crash):
                     raise
+                if oom and jobs <= 1:
+                    raise
+                if clang_crash and crashes >= 2:
+                    raise
+                if clang_crash:
+                    crashes += 1
+                self.preserve_retry_log(f"{name}-build", crashes if clang_crash else f"oom-{jobs}")
                 jobs = max(1, jobs // 2)
-                print(f"  some chunks ran out of memory; compiling the rest with {jobs} jobs")
+                reason = "some chunks ran out of memory" if oom else "clang crashed"
+                print(f"  {reason}; compiling the rest with {jobs} jobs")
         module = build / MODULE
         if not module.exists():
             die("the game module was not produced")
@@ -830,10 +930,11 @@ int main(void) {
         key.update(json.dumps({"recipe": self.TRAINING_VERSION,
                                "compiler": self.clang_version, "march": self.args.march,
                                "mods": self.mods,
-                               "options": {name: getattr(self.args, name) for name in
+                               "options": {name: getattr(self.args, name, False) for name in
                                            ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp",
                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
-                                            "native_vec", "native_math", "native_skin", "native_game_math")},
+                                            "native_vec", "native_math", "native_skin", "native_game_math",
+                                            "native_entries", "lean_memory")},
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
                                "source": tree_digest(self.out / "composite-src")},
                               sort_keys=True).encode())
@@ -931,13 +1032,28 @@ int main(void) {
                              ("native_skin", "BLUEWAKE_NATIVE_SKIN"),
                              ("native_game_math", "BLUEWAKE_NATIVE_GAME_MATH")):
             env[name] = "1" if getattr(self.args, option) else "0"
+        env["BLUEWAKE_NATIVE_ENTRIES"] = "1" if getattr(self.args, "native_entries", False) else "0"
         if warps:
             env["BLUEWAKE_TEST_WARP"] = ",".join(warps)
         if headless:
             env["BLUEWAKE_RENDERER"] = "headless"
         if mods:
             env["BLUEWAKE_MODS"] = mods
-        log = self.run(f"training-playback-{run.name[4:]}", [exe, "--module", module], env=env)
+        name = f"training-playback-{run.name[4:]}"
+        for attempt in (1, 2):
+            try:
+                log = self.run(name, [exe, "--module", module], env=env)
+                break
+            except CommandError as error:
+                if attempt == 2 or not command_crashed(error):
+                    raise
+                self.preserve_retry_log(name, attempt)
+                # A fresh card and settings reproduce the opening. Failed
+                # counts stay in their diagnostic folder and are never merged.
+                run = Path(tempfile.mkdtemp(prefix=f"{run.name}-retry-", dir=run.parent))
+                env["BLUEWAKE_DATA_DIR"] = str(run)
+                env["LLVM_PROFILE_FILE"] = str(run / "%m-%p.profraw")
+                print("  the training playback crashed; running it again with a fresh training card")
         text = log.read_text(errors="replace")
         if "[player-milestone] control-admitted" not in text:
             die(f"the training playback did not reach player control; profile rejected (see {log})")
@@ -1018,6 +1134,8 @@ int main(void) {
             "native_math": self.args.native_math,
             "native_skin": self.args.native_skin,
             "native_game_math": self.args.native_game_math,
+            "native_entries": getattr(self.args, "native_entries", False),
+            "lean_memory": getattr(self.args, "lean_memory", False),
             "local_training": self.profile is not None,
             "composite_profile_sha256": sha256_file(self.profile) if self.profile else "",
             "compiler": self.clang_version,
@@ -1186,6 +1304,10 @@ def main():
                         help="certify and enable optional native skinning preparation (off by default)")
     parser.add_argument("--native-math", action="store_true",
                         help="prepare certified native matrix functions; off by default, compatible host opt-in required")
+    parser.add_argument("--native-entries", action=argparse.BooleanOptionalAction, default=False,
+                        help="certify additional native FIFO, vector, collision and joint transforms; requires gather pipe and direct calls")
+    parser.add_argument("--lean-memory", action=argparse.BooleanOptionalAction, default=False,
+                        help="rewrite qualified translated memory accesses; requires prepared blocks and gather pipe")
     parser.add_argument("--console", action="store_true", help="build BlueWake.exe as a console program")
     parser.add_argument("--conservative", action="store_true",
                         help="build the plain translation, without the optimizations prepared by default "
@@ -1207,6 +1329,11 @@ def main():
         parser.error("--inline-gpr requires --direct-calls")
     if args.fixed_mem1 and not args.fixed_cpu:
         parser.error("--fixed-mem1 requires --fixed-cpu")
+    if args.lean_memory and not (args.prepared_blocks and args.gather_pipe):
+        parser.error("--lean-memory requires --prepared-blocks and --gather-pipe")
+    if args.native_entries and not (args.gather_pipe and args.direct_calls):
+        parser.error("--native-entries requires --gather-pipe and --direct-calls")
+    args.jobs_auto = args.jobs is None
     if args.jobs is None:
         args.jobs = default_jobs()
     if args.jobs < 1:
