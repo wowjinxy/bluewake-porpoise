@@ -21,6 +21,21 @@ std::vector<unsigned char> pe(){
     w64(b,520,0x180002345ull);w32(b,1024,4096);w32(b,1028,12);w16(b,1032,0xa008);w16(b,1034,0);
     return b;
 }
+// One original DIR64 plus legal ABS padding. The larger directory stays in
+// its own non-executable section; no game bytes or mapped-image operations.
+std::vector<unsigned char> large_relocation_pe(std::uint32_t entries){
+    auto b=pe();
+    const std::uint32_t directory_size=8u+2u*entries;
+    const std::uint32_t raw_size=(directory_size+511u)&~511u;
+    const std::uint32_t extent=(raw_size+4095u)&~4095u;
+    b.resize(1024u+raw_size,0);
+    w32(b,152+56,8192u+extent);
+    w32(b,152+156,directory_size);
+    w32(b,392+40+8,directory_size);
+    w32(b,392+40+16,raw_size);
+    w32(b,1028,directory_size);
+    return b;
+}
 std::uint64_t r64(const std::vector<unsigned char>& b,std::size_t off){std::uint64_t v=0;for(unsigned i=0;i<8;++i)v|=std::uint64_t(b[off+i])<<(8*i);return v;}
 }
 int main(){
@@ -72,5 +87,33 @@ int main(){
     CHECK(bw_ic_code::build_expected(a.data(),a.size(),native,first));
     CHECK(bw_ic_code::build_expected(c.data(),c.size(),native,second));
     CHECK(first.executable[0].bytes!=second.executable[0].bytes);
+    // The approved real module exceeds the former 1,048,576-entry bound.
+    // Synthetic boundary cases verify finite accounting includes ABS padding
+    // and still applies the original DIR64 for native/upward/downward bases.
+    {
+        auto large=large_relocation_pe(1048577u);
+        CHECK(bw_ic_code::build_expected(large.data(),large.size(),native,image));
+        CHECK(r64(image.executable[0].bytes,8)==native+0x2345);
+        CHECK(bw_ic_code::build_expected(large.data(),large.size(),native+0x10000,image));
+        CHECK(r64(image.executable[0].bytes,8)==native+0x12345);
+        CHECK(bw_ic_code::build_expected(large.data(),large.size(),native-0x10000,image));
+        CHECK(r64(image.executable[0].bytes,8)==native-0x10000+0x2345);
+    }
+    {
+        auto large=large_relocation_pe(4194304u);
+        CHECK(bw_ic_code::build_expected(large.data(),large.size(),native,image));
+        CHECK(r64(image.executable[0].bytes,8)==native+0x2345);
+        CHECK(bw_ic_code::build_expected(large.data(),large.size(),native+0x10000,image));
+        CHECK(r64(image.executable[0].bytes,8)==native+0x12345);
+        CHECK(bw_ic_code::build_expected(large.data(),large.size(),native-0x10000,image));
+        CHECK(r64(image.executable[0].bytes,8)==native-0x10000+0x2345);
+    }
+    {
+        auto large=large_relocation_pe(4194305u);
+        // The previous accepted image is populated; failure must clear it.
+        CHECK(!image.executable.empty());
+        CHECK(!bw_ic_code::build_expected(large.data(),large.size(),native+0x10000,image));
+        CHECK(image.executable.empty()&&image.image_size==0&&image.headers_size==0&&image.preferred_base==0);
+    }
     std::printf("SYNTHETIC_PE_IMAGE checks=%u; no loaded-module/native proof\n",checks);
 }

@@ -7,7 +7,9 @@
 namespace bw_ic_code {
 inline constexpr std::size_t kMaxFile = 1024ull * 1024ull * 1024ull;
 inline constexpr std::uint32_t kMaxSections = 96;
-inline constexpr std::uint32_t kMaxRelocations = 1024 * 1024;
+// Large translated modules contain millions of DIR64 entries. Keep a hard
+// bound that covers the full module while retaining overflow and overlap checks.
+inline constexpr std::uint32_t kMaxRelocations = 4 * 1024 * 1024;
 struct ExecutableSpan { std::uint32_t rva = 0; std::vector<std::uint8_t> bytes; };
 struct Image {
     std::uint64_t preferred_base = 0;
