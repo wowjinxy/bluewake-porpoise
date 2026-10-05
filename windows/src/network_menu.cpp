@@ -139,7 +139,7 @@ extern "C" bool bw_network_menu_prepare(const char* data_dir, const char* module
         // Persist generated player identity/current manifest before any backend
         // opens; a failure never silently routes a room into a personal card.
         if (!bw_network_preferences_save(data_dir, &launched, error, sizeof error)) { failure = error; return false; }
-        if (!bw_network_game_prepare(&launched)) { failure = "The network game context could not accept the selected startup room."; return false; }
+        if (!bw_network_game_prepare_with_store(&launched, data_dir)) { failure = "The network game context could not accept the selected startup room."; return false; }
         saved = editing = launched; prepared = true; failure.clear(); return true;
     } catch (...) { failure = "Network preferences or compatibility could not be initialized; no card was mounted."; return false; }
 }
@@ -155,6 +155,8 @@ extern "C" void bw_network_menu_draw(void) {
     ImGui::Text("Status: %s", status_name(current.session.status));
     if (*current.session.message) ImGui::TextWrapped("%s", current.session.message);
     if (*current.message) ImGui::TextWrapped("%s", current.message);
+    if (current.local_host && current.persistent_host)
+        ImGui::TextWrapped("Room progress is saved on this host across server restarts.");
     ImGui::TextWrapped("Mounted saves: %s", launched.room_mode ? room_card.c_str() : "personal card");
     ImGui::Checkbox("Use room saves after restart", &editing.room_mode);
     ImGui::InputText("Server address", editing.config.server, sizeof editing.config.server);

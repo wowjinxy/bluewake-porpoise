@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "network_wire.h"
+#include "network_store.h"
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -12,9 +13,8 @@ using namespace bw_net;
 namespace {
 std::string nonce(){std::random_device random;std::string out(32,'0');const char* hex="0123456789abcdef";for(char& c:out)c=hex[random()&15];return out;}
 void copy(char* target,size_t n,const std::string& s){std::snprintf(target,n,"%s",s.c_str());}
-struct Receipt{uint64_t sequence;BwProgressionDelta delta;};
-struct ClientHistory{uint64_t sequence=0;std::deque<Receipt> recent;};
-struct Room{BwNetworkCompatibility compatibility{};std::string id,password;BwProgressionState progress{};uint64_t revision=0;std::map<std::string,ClientHistory> clients;};
+using Receipt=RoomReceipt;
+using Room=StoredRoom;
 struct ServerPeer{Pipe pipe;std::string room;BwNetworkPeer info{};bool joined=false,closing=false;Clock::time_point accepted=Clock::now();};
 void presence(Bytes& b,const BwNetworkPeer& p){string(b,p.player_id);string(b,p.player_name);string(b,p.stage);b.push_back(uint8_t(p.room));
     for(float value:p.position){uint32_t bits;std::memcpy(&bits,&value,4);put32(b,bits);}b.push_back(p.online?1:0);}
@@ -29,12 +29,14 @@ bool presence(Reader& r,BwNetworkPeer& p){if(!r.text(p.player_id,sizeof p.player
 struct BwNetworkServer{
     Socket listener=invalid;uint16_t port=0;std::atomic<bool> stop{false};std::thread worker;
     std::map<std::string,Room> rooms;std::vector<std::unique_ptr<ServerPeer>> peers;
-    ~BwNetworkServer(){stop=true;if(worker.joinable())worker.join();close(listener);}
+    std::unique_ptr<RoomStore> store;bool storage_failed=false;
+    ~BwNetworkServer(){stop=true;if(worker.joinable())worker.join();bw_net::close(listener);}
     void reject(ServerPeer& p,const char* reason){Bytes b;string(b,reason);if(!p.pipe.queue(Reject,0,b))p.pipe.reset();p.closing=true;}
     void roster(const std::string& room){Bytes b;unsigned count=0;for(const auto& p:peers)if(p->joined&&!p->closing&&p->room==room)++count;
         put16(b,uint16_t(count));for(const auto& p:peers)if(p->joined&&!p->closing&&p->room==room)presence(b,p->info);
         for(auto& p:peers)if(p->joined&&!p->closing&&p->room==room&&!p->pipe.queue(Roster,0,b))p->closing=true;}
     void hello(ServerPeer& p,const Frame& f){
+        if(storage_failed){reject(p,"Durable room storage unavailable");return;}
         Reader r{f.body};BwNetworkConfig c{};std::strcpy(c.server,"127.0.0.1");c.port=port;
         if(!identity(r,c.compatibility)||!r.text(c.room,sizeof c.room)||!r.text(c.player_id,sizeof c.player_id)||
             !r.text(c.player_name,sizeof c.player_name)||!r.text(c.room_password,sizeof c.room_password)){reject(p,"Malformed handshake");return;}
@@ -42,15 +44,29 @@ struct BwNetworkServer{
         if(create>1||!r.done()||f.sequence||!bw_network_config_valid(&c,nullptr,0)){reject(p,"Invalid Wind Waker handshake");return;}
         auto found=rooms.find(c.room);
         if(found==rooms.end()){
-            if(!c.create_room){reject(p,"Room does not exist; host it first");return;}
             if(rooms.size()>=16){reject(p,"Server room limit reached");return;}
-            Room room;room.compatibility=c.compatibility;room.id=nonce();room.password=c.room_password;
+            Room room;bool saved=false;std::string error;
+            if(store&&!store->load(c.compatibility,c.room,room,saved,error)){storage_failed=true;reject(p,"Durable room storage unavailable");return;}
+            if(!saved){
+                if(!c.create_room){reject(p,"Room does not exist; host it first");return;}
+                room.name=c.room;room.compatibility=c.compatibility;room.id=nonce();room_set_credential(room,c.room_password);
+            }
             found=rooms.emplace(c.room,std::move(room)).first;
         }
         Room& room=found->second;
         if(!same(room.compatibility,c.compatibility)){reject(p,"Game/build/module/options compatibility mismatch");return;}
-        if(room.password!=c.room_password){reject(p,"Room password mismatch");return;}
+        if(!room_credential_matches(room,c.room_password)){reject(p,"Room password mismatch");return;}
         if(!room.clients.count(c.player_id)&&room.clients.size()>=128){reject(p,"Room player identity limit reached");return;}
+        /* Joining admits a stable replay identity. Persist it before Welcome,
+         * including initial room creation; never ACK an unsaved identity. */
+        if(!room.clients.count(c.player_id)){
+            Room next=room;next.clients.emplace(c.player_id,RoomClientHistory{});std::string error;
+            if(store&&!store->save(next,error)){storage_failed=true;reject(p,"Cannot persist room identity");return;}
+            room=std::move(next);
+        }
+        if(store){StoredRoom persisted;bool saved=false;std::string error;
+            if(!store->load(room.compatibility,room.name.c_str(),persisted,saved,error)||!saved||persisted.id!=room.id||persisted.revision!=room.revision){
+                storage_failed=true;reject(p,"Durable room storage unavailable");return;}}
         /* A reconnect with the same stable identity replaces its prior socket,
          * preventing one identity from generating two concurrent sequences. */
         for(auto& other:peers)if(other.get()!=&p&&other->joined&&other->room==c.room&&std::strcmp(other->info.player_id,c.player_id)==0){other->closing=true;other->pipe.reset();}
@@ -64,15 +80,25 @@ struct BwNetworkServer{
         if(!p.joined){if(f.type==Hello)hello(p,f);else reject(p,"Handshake required");return;}
         Room& room=rooms.at(p.room);
         if(f.type==Delta){Reader r{f.body};const auto d=delta(r);
+            if(storage_failed){reject(p,"Durable room storage unavailable");return;}
             if(!r.done()||!bw_progression_valid(d)||!f.sequence){reject(p,"Invalid permanent progression delta");return;}
             auto& history=room.clients.at(p.info.player_id);uint64_t& last=history.sequence;
-            if(last==UINT64_MAX||f.sequence>last+1){reject(p,"Client sequence gap or exhaustion");return;}
+            if(last>=UINT64_MAX-1||f.sequence>last+1){reject(p,"Client sequence gap or exhaustion");return;}
             const bool fresh=f.sequence==last+1;
             if(!fresh){const auto old=std::find_if(history.recent.begin(),history.recent.end(),[&](const Receipt& x){return x.sequence==f.sequence;});
-                if(old==history.recent.end()||old->delta.key!=d.key||old->delta.value!=d.value){reject(p,"Replay payload mismatch or expired sequence");return;}}
-            const bool changed=fresh&&bw_progression_merge(&room.progress,d);
-            if(fresh){last=f.sequence;history.recent.push_back({f.sequence,d});if(history.recent.size()>BW_NETWORK_QUEUE)history.recent.pop_front();}
-            if(changed)++room.revision;
+                if(old==history.recent.end()||old->delta.key!=d.key||old->delta.value!=d.value){reject(p,"Replay payload mismatch or expired sequence");return;}
+                if(store){StoredRoom persisted;bool saved=false;std::string error;
+                    if(!store->load(room.compatibility,room.name.c_str(),persisted,saved,error)||!saved){storage_failed=true;reject(p,"Durable room storage unavailable");return;}}}
+            bool changed=false;
+            if(fresh){
+                Room next=room;changed=bw_progression_merge(&next.progress,d);
+                if(changed&&next.revision==UINT64_MAX-1){reject(p,"Room revision exhaustion");return;}
+                auto& next_history=next.clients.at(p.info.player_id);next_history.sequence=f.sequence;
+                next_history.recent.push_back({f.sequence,d});if(next_history.recent.size()>BW_NETWORK_QUEUE)next_history.recent.pop_front();
+                if(changed)++next.revision;
+                std::string error;if(store&&!store->save(next,error)){storage_failed=true;reject(p,"Cannot persist room progression");return;}
+                room=std::move(next);
+            }
             Bytes b;string(b,p.info.player_id);put64(b,f.sequence);put64(b,room.revision);delta(b,{d.key,room.progress.values[d.key]});
             if(changed){for(auto& other:peers)if(other->joined&&!other->closing&&other->room==p.room&&!other->pipe.queue(Commit,0,b))other->closing=true;}
             else if(!p.pipe.queue(Commit,0,b))p.closing=true;
@@ -85,7 +111,7 @@ struct BwNetworkServer{
     void run(){
         while(!stop){
             for(unsigned tries=0;tries<8;++tries){Socket s=::accept(listener,nullptr,nullptr);if(s==invalid)break;
-                if(peers.size()>=BW_NETWORK_PEERS||!nonblocking(s)){close(s);continue;}
+                if(peers.size()>=BW_NETWORK_PEERS||!nonblocking(s)){bw_net::close(s);continue;}
                 auto p=std::make_unique<ServerPeer>();p->pipe.socket=s;peers.push_back(std::move(p));}
             for(auto& p:peers){
                 if(p->pipe.socket==invalid)continue;
@@ -172,19 +198,38 @@ struct BwNetworkSession{
         }
     }
 };
-extern "C" BwNetworkServer* bw_network_server_start(const char* bind,uint16_t port){
+namespace {
+BwNetworkServer* start_server(const char* bind,uint16_t port,const char* directory,char* error,unsigned error_size){
+    const auto failure=[&](const char* text){if(error&&error_size)std::snprintf(error,error_size,"%s",text);return static_cast<BwNetworkServer*>(nullptr);};
     if(!bind||!init())return nullptr;
+    try {
     auto server=std::make_unique<BwNetworkServer>();server->listener=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-    if(server->listener==invalid||!nonblocking(server->listener))return nullptr;
+    if(server->listener==invalid||!nonblocking(server->listener))return failure("Cannot initialize dedicated server socket");
+#ifndef _WIN32
+    /* Rebind an owned listener after server-initiated disconnects leave TCP
+     * TIME_WAIT records. This does not permit concurrent listening servers;
+     * persistent writers additionally require the exclusive store lease. */
+    const int reuse=1;
+    if(setsockopt(server->listener,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof reuse)!=0)return failure("Cannot configure dedicated server socket");
+#endif
     sockaddr_in address{};address.sin_family=AF_INET;address.sin_port=htons(port);
-    if(inet_pton(AF_INET,bind,&address.sin_addr)!=1||::bind(server->listener,reinterpret_cast<sockaddr*>(&address),sizeof address)!=0||listen(server->listener,8)!=0)return nullptr;
+    if(inet_pton(AF_INET,bind,&address.sin_addr)!=1||::bind(server->listener,reinterpret_cast<sockaddr*>(&address),sizeof address)!=0||listen(server->listener,8)!=0)return failure("Cannot bind dedicated server");
 #ifdef _WIN32
     int size=sizeof address;
 #else
     socklen_t size=sizeof address;
 #endif
-    if(getsockname(server->listener,reinterpret_cast<sockaddr*>(&address),&size)!=0)return nullptr;
+    if(getsockname(server->listener,reinterpret_cast<sockaddr*>(&address),&size)!=0)return failure("Cannot determine dedicated server port");
+    if(directory){server->store=std::make_unique<RoomStore>();std::string detail;
+        if(!server->store->open(directory,detail))return failure(detail.c_str());}
     server->port=ntohs(address.sin_port);server->worker=std::thread([pointer=server.get()]{pointer->run();});return server.release();
+    }catch(...){return failure("Cannot start dedicated server worker");}
+}
+}
+extern "C" BwNetworkServer* bw_network_server_start(const char* bind,uint16_t port){return start_server(bind,port,nullptr,nullptr,0);}
+extern "C" BwNetworkServer* bw_network_server_start_persistent(const char* bind,uint16_t port,const char* directory,char* error,unsigned error_size){
+    if(!directory||!*directory){if(error&&error_size)std::snprintf(error,error_size,"%s","Missing durable server directory");return nullptr;}
+    if(error&&error_size)*error=0;return start_server(bind,port,directory,error,error_size);
 }
 extern "C" uint16_t bw_network_server_port(BwNetworkServer* s){return s?s->port:0;}
 extern "C" void bw_network_server_stop(BwNetworkServer* s){delete s;}

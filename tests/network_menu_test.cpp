@@ -28,7 +28,7 @@ namespace fs = std::filesystem;
 namespace {
 struct Item { ImRect bounds; std::string label; ImGuiItemFlags flags = 0; ImGuiItemStatusFlags status = 0; };
 std::map<ImGuiID, Item> items;
-std::string rendered, bind_address;
+std::string rendered, bind_address, server_state_data_directory;
 BwNetworkPreferences mounted{};
 BwNetworkGameSnapshot snapshot{};
 BwNetworkConfig joined{}, hosted{};
@@ -142,6 +142,13 @@ void room(const fs::path& directory, const std::string& route) {
     for (const char* label : {"Connected","Alpha","Beta","Online","Offline","sea","LinkRM","Room revision 17","waiting 2"})
         check(rendered.find(label) != std::string::npos, std::string("Missing actual network status/roster: ")+label);
     check(rendered.find(route) != std::string::npos, "Mounted isolated room CARD was not displayed");
+    snapshot.local_host=true; snapshot.persistent_host=true; frame();
+    check(rendered.find("Room progress is saved on this host across server restarts.")!=std::string::npos,
+        "Durable local host status was not displayed");
+    snapshot.local_host=false; frame();
+    check(rendered.find("Room progress is saved on this host across server restarts.")==std::string::npos,
+        "Remote session incorrectly claimed local durable storage");
+    snapshot.persistent_host=false;
     text("Player name", "RoomLink"); click("Join / rejoin room");
     check(joins==1 && std::strcmp(joined.player_name,"RoomLink")==0 &&
         bw_network_same_room(&joined,&mounted.config) && std::strcmp(load(directory).config.player_name,"RoomLink")==0,
@@ -176,8 +183,13 @@ void room(const fs::path& directory, const std::string& route) {
 
 // Mock only the UI/game command bridge. Preferences, path isolation, hashing
 // and every ImGui widget/action are their real production implementation.
-extern "C" bool bw_network_game_prepare(const BwNetworkPreferences* value) {
+extern "C" bool bw_network_game_prepare(const BwNetworkPreferences*) {
+    throw std::runtime_error("Actual menu used the ephemeral server startup bridge");
+}
+extern "C" bool bw_network_game_prepare_with_store(const BwNetworkPreferences* value,const char* data_dir) {
     check(value && bw_network_config_valid(&value->config,nullptr,0),"UI gave bridge an invalid startup config");
+    check(data_dir && *data_dir,"UI omitted the durable server data folder");
+    server_state_data_directory=data_dir;
     mounted=*value; snapshot.mounted=value->config; snapshot.mounted_room_mode=value->room_mode; ++prepares; return true;
 }
 extern "C" void bw_network_game_snapshot(BwNetworkGameSnapshot* value) { if(value)*value=snapshot; }
@@ -257,6 +269,7 @@ int main(int argc,char** argv) {
         const bool prepared_ok=bw_network_menu_prepare(utf8(directory).c_str(),utf8(module).c_str(),route,sizeof route);
         check(prepared_ok,std::string("Actual menu prepare: ")+bw_network_menu_error());
         check(prepares==1,"Startup game bridge was not prepared exactly once");
+        check(server_state_data_directory==utf8(directory),"Startup did not copy the actual Unicode data folder for durable hosting");
         check(bw_health_host_room_locked()==room_mode,"Actual health room lock disagreed with mounted route");
         if(room_mode) check(!bw_health_host_configure(128,256),"Mounted room accepted live nonnative health rates");
         else check(bw_health_host_configuration().damage_q8==128 && bw_health_host_configuration().healing_q8==512,

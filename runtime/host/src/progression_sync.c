@@ -123,7 +123,7 @@ bool bw_progression_capture_event(BwProgressionState* known,const CPUState* cpu,
         case BW_GAME_FACT_ITEM_OBTAINED:if(e->index<21){BwProgressionState all;
             if(!bw_progression_snapshot(cpu,&all))return false;const BwProgressionDelta d={e->index,all.values[e->index]};
             if(r8(cpu,kInfo+0x51+e->index)!=e->after||!bw_progression_merge(known,d))return false;*out=d;return true;}break;
-        case BW_GAME_FACT_ITEM_CAPACITY:if(e->index==1||e->index==2){key=e->index==1?34:35;live_off=0x6E+e->index;}break;
+        case BW_GAME_FACT_ITEM_CAPACITY:if(e->index==1||e->index==2){key=e->index==1?34:35;live_off=0x6E + e->index;}break;
         case BW_GAME_FACT_EVENT:if(e->index==20||e->index==42){key=e->index==20?244:255;live_off=0x624+e->index;}break;
         case BW_GAME_FACT_SAVED_STAGE:{unsigned stage=e->index/0x24,byte=e->index%0x24;
             if(stage<16&&byte==0x21)key=192+stage;

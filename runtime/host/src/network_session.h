@@ -65,6 +65,12 @@ void bw_network_status(BwNetworkSession* session,BwNetworkSnapshot* snapshot);
 /* Standalone/in-process dedicated server. Bounded8clients/16rooms. Default UI
  * host may use127.0.0.1; LAN hosting selects an explicit bind address. */
 BwNetworkServer* bw_network_server_start(const char* bind_address,uint16_t port);
+/* Durable dedicated host. State is bounded, compatibility/room isolated and
+ * acknowledged only after flushed atomic publication. An invalid/locked store
+ * fails startup; write failures never fall back to ephemeral acknowledgements.
+ * Caller supplies UTF8 directory, which is copied before the worker starts. */
+BwNetworkServer* bw_network_server_start_persistent(const char* bind_address,uint16_t port,
+    const char* state_directory,char* error,unsigned error_size);
 uint16_t bw_network_server_port(BwNetworkServer* server);
 void bw_network_server_stop(BwNetworkServer* server);
 /* Atomic preferences and safe room CARD route. Routing is selected BEFORE any

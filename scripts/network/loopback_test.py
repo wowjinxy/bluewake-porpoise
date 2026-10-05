@@ -22,7 +22,7 @@ def main():
     processes = []
     started = time.monotonic()
     try:
-        host = subprocess.Popen([str(server), '--port', '0', '--seconds', '30'], **kwargs)
+        host = subprocess.Popen([str(server), '--port', '0', '--seconds', '30', '--ephemeral'], **kwargs)
         processes.append(host)
         # Every child has its own bounded timer; its stdout is a tiny JSON receipt.
         ready = json.loads(host.stdout.readline())

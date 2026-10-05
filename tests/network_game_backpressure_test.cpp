@@ -22,6 +22,7 @@ extern "C" bool bw_network_presence(BwNetworkSession*,const BwGameScene*){return
 extern "C" bool bw_network_poll(BwNetworkSession*,BwNetworkUpdate*){return false;}
 extern "C" void bw_network_status(BwNetworkSession* s,BwNetworkSnapshot* out){*out=s?s->snapshot:BwNetworkSnapshot{};}
 extern "C" BwNetworkServer* bw_network_server_start(const char*,uint16_t){return nullptr;}
+extern "C" BwNetworkServer* bw_network_server_start_persistent(const char*,uint16_t,const char*,char*,unsigned){return nullptr;}
 extern "C" void bw_network_server_stop(BwNetworkServer*){}
 extern "C" uint16_t bw_network_server_port(BwNetworkServer*){return 0;}
 static BwGameEventCallback callback;static void* callback_user;static BwGameScene scene;

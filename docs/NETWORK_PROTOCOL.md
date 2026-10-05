@@ -83,13 +83,54 @@ or preferences error fails startup rather than falling back to personal CARD.
 
 Changing room, player, endpoint or compatibility requires restart. Join/host/
 leave controls only act within the immutable mounted room. Leaving pauses
-sharing and stops an owned local server; it does not switch to personal saves.
+the client while an owned server stays available for rejoin; game shutdown
+stops it. Hosting again explicitly replaces the listener. A local client
+connects through its owned bind address (wildcard uses loopback), preserving
+the mounted room identity and save route.
 No personal save is automatically copied or imported into a room.
 
 Each client persists its room progression through the normal native CARD path.
-The dedicated server's room state is currently in memory. A server restart
-gets a new room generation; authorized clients re-submit their native room
-whitelists. Cross-room merge and personal export remain separate future work.
+The host stores its authoritative whitelist separately in `data/Network/Server`.
+Remote Join and personal mode do not open that store. A server restart restores
+room identity, revision, progression and acknowledged client sequences before
+Welcome; authorized clients may still re-submit their local whitelists. Cross-
+room merge and personal export remain separate future work.
+
+## Durable server storage
+
+The dedicated server defaults to `bluewake-network-state` in its working
+directory. `--state-dir DIR` selects a different location; `--ephemeral` explicitly
+opts into the former in-memory behavior. The legacy C server-start API remains
+ephemeral for callers that request that behavior; the application Host uses the
+startup-copied data directory and refuses storage errors without fallback.
+
+Store version 1 is independent of wire protocol 1. Each `.bwroom` filename hashes
+the length-framed namespace, schema, game/build/module/options identity and room
+name. Server addresses, credentials and player display names are not paths.
+The file includes canonical permanent facts, stable room ID/revision and the
+last 128 sequence/payload receipts for each of at most 128 player identities.
+Passwords are stored as a salted room-specific verifier; traffic is still plain
+TCP, so this is not an Internet authentication or encryption service.
+
+Before Welcome or a progression acknowledgement, the server validates the
+whitelist and replay history, flushes a unique pending file and publishes it
+atomically. Windows uses UTF-16 file APIs, `_commit` and
+`MoveFileExW(MOVEFILE_WRITE_THROUGH)`; POSIX uses file `fsync`, same-directory
+publication and directory `fsync`, including newly created parents. A failed
+write/flush/publication disables durable acknowledgements until restart. An
+acknowledged replay never rewrites its receipt or broadcasts another commit.
+Unacknowledged work may have been published before an interrupted response;
+the restored acknowledged sequence lets reconnect resolve that case.
+
+An exclusive directory lease prevents two server processes from writing the
+same store. The loader rejects links, wrong file identity, stale versions,
+invalid checksums, unknown fields/files, malformed or unbounded histories, and
+facts outside the progression whitelist. Room files are at most 512 KiB, with
+at most sixteen loaded rooms, 64 directory entries and 8 MiB of encoded room
+data. Bounded abandoned pending files are retained and ignored, never promoted.
+Unexpected live file changes refuse the transaction. The integrity digest
+detects corruption; it does not authenticate an administrator's offline edits
+or detect rollback of an entire valid offline store.
 
 ## Queue, lifecycle and replay rules
 
@@ -142,12 +183,17 @@ After building, run:
 ```
 ctest --test-dir <network-build> --output-on-failure
 python scripts/network/loopback_test.py --build <network-build> --receipt <receipt.json>
+python scripts/network/durable_restart_test.py --build <network-build> --receipt <new-receipt.json>
 ```
 
 The loopback test launches a dedicated server and two independent clients,
 observes exactly two live commits, then verifies a reconnect snapshot. On
-Windows it uses hidden child processes and never uses desktop input. These
-synthetic tests do not substitute for the separate two-game/native CARD
+Windows it uses hidden child processes and never uses desktop input.
+The durable restart test kills and relaunches separate owned server processes,
+restores a snapshot before client reseeding, checks replay receipts and isolated
+rooms, and proves a real filesystem failure receives no acknowledgement. It
+retains synthetic state/log evidence; it does not simulate a power failure.
+These synthetic tests do not substitute for the separate two-game/native CARD
 qualification. `BLUEWAKE_NETWORK_TRACE=1` logs lifecycle/capture/apply facts for
 that qualification; it is off by default and never logs credentials.
 

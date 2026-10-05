@@ -4,6 +4,7 @@ if(NOT TARGET bluewake_network)
   find_package(Threads REQUIRED)
   add_library(bluewake_network STATIC
     "${_bw_network_root}/runtime/host/src/network_session.cpp"
+    "${_bw_network_root}/runtime/host/src/network_store.cpp"
     "${_bw_network_root}/runtime/host/src/network_preferences.cpp"
     "${_bw_network_root}/runtime/host/src/network_game.cpp"
     "${_bw_network_root}/runtime/host/src/progression_sync.c")

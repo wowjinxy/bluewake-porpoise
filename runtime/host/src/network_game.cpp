@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 namespace {
 enum Command {None,Join,Host,Leave};
@@ -12,8 +13,10 @@ BwNetworkPreferences mounted{};
 BwNetworkGameSnapshot published{};
 PendingCommand command;
 bool prepared=false,ever_attached=false,boot_token=false;
+std::string server_store;
 /* Everything below belongs exclusively to the game thread. */
 CPUState* cpu=nullptr;BwNetworkSession* session=nullptr;BwNetworkServer* server=nullptr;
+char owned_endpoint[64]{};
 BwGameEventSubscription subscription=0;
 BwProgressionState known{},deferred{},authoritative{};
 bool loaded=false,cold=false,native_ready=false,exporting=false,dirty=false,trace=false;
@@ -25,13 +28,14 @@ void say(const char* text){std::snprintf(message,sizeof message,"%s",text);if(tr
 void log(const char* verb,BwProgressionDelta d){if(trace)std::fprintf(stderr,"[network] %s key=%u value=%u name=%s\n",verb,d.key,d.value,bw_progression_key_name(d.key));}
 void publish(){BwNetworkGameSnapshot s{};s.mounted_room_mode=mounted.room_mode;s.mounted=mounted.config;
     s.native_load_authorized=loaded;s.clean_boot_authorized=cold&&native_ready;s.exporting=exporting;s.local_host=server!=nullptr;
+    s.persistent_host_configured=!server_store.empty();s.persistent_host=server&&!server_store.empty();
     for(uint32_t value:deferred.values)if(value)++s.deferred_updates;
     s.captured=captured;s.applied=applied;s.unchanged=unchanged;s.invalid=invalid;s.queue_failures=queue_failures;
     bw_network_status(session,&s.session);if(server)s.session.local_server_port=bw_network_server_port(server);
     std::snprintf(s.message,sizeof s.message,"%s",message);
     std::lock_guard<std::mutex> lock(mutex);s.pending_command=command.kind!=None;published=s;
 }
-void stop(){if(session)bw_network_leave(session);if(server){bw_network_server_stop(server);server=nullptr;}exporting=false;known={};deferred={};authoritative={};connection_generation=0;announced=false;reseeding=true;}
+void stop(bool stop_server=true){if(session)bw_network_leave(session);if(stop_server&&server){bw_network_server_stop(server);server=nullptr;owned_endpoint[0]=0;}exporting=false;known={};deferred={};authoritative={};connection_generation=0;announced=false;reseeding=true;}
 void event(const BwGameEvent* e,void*){
     if(e->kind==BW_GAME_EVENT_RESET){
         loaded=e->reset_reason==BW_GAME_RESET_GAME_LOAD;cold=false;native_ready=false;known={};deferred={};dirty=true;announced=false;reseeding=true;
@@ -51,20 +55,40 @@ bool enqueue(Command kind,const BwNetworkConfig* c,const char* bind){
 }
 void run_command(const PendingCommand& c){
     if(c.kind==None)return;
-    stop();
+    /* Leaving/rejoining the client does not destroy its owned listener or its
+     * durable room. A new Host command explicitly replaces that listener. */
+    stop(c.kind==Host);
     if(c.kind==Leave){say("Left session; room CARD remains mounted");return;}
     if(!session)session=bw_network_create();if(!session){say("Cannot create network session");return;}
-    if(c.kind==Host){server=bw_network_server_start(c.bind,c.config.port);if(!server){say("Cannot start local server; choose an available port and restart room routing");return;}}
+    if(c.kind==Host){char error[160]{};
+        server=server_store.empty()?bw_network_server_start(c.bind,c.config.port):
+            bw_network_server_start_persistent(c.bind,c.config.port,server_store.c_str(),error,sizeof error);
+        if(!server){say(error[0]?error:"Cannot start local server; choose an available port and restart room routing");return;}
+        std::snprintf(owned_endpoint,sizeof owned_endpoint,"%s",!std::strcmp(c.bind,"0.0.0.0")?"127.0.0.1":c.bind);}
     auto selected=c.config;if(c.kind==Host)selected.create_room=true;
-    if(!bw_network_join(session,&selected)){if(server){bw_network_server_stop(server);server=nullptr;}say("Cannot join mounted room session");return;}
+    if(server){std::snprintf(selected.server,sizeof selected.server,"%s",owned_endpoint);selected.port=bw_network_server_port(server);}
+    if(!bw_network_join(session,&selected)){say("Cannot join mounted room session");return;}
     exporting=true;dirty=true;say(loaded||cold?"Connecting; waiting for native gameplay readiness":"Connecting; native room CARD load required before progress sharing");
 }
 }
-extern "C" bool bw_network_game_prepare(const BwNetworkPreferences* p){
+namespace {
+bool prepare(const BwNetworkPreferences* p,const char* directory){
     if(!p||!bw_network_config_valid(&p->config,nullptr,0))return false;
+    std::string fixed_store;
+    if(directory&&p->room_mode){
+        if(!*directory||std::strlen(directory)>900)return false;
+        try{fixed_store=(std::filesystem::absolute(std::filesystem::u8path(directory)).lexically_normal()/"Network"/"Server").u8string();}
+        catch(...){return false;}if(fixed_store.size()>1024)return false;
+    }
     std::lock_guard<std::mutex> lock(mutex);if(prepared||ever_attached)return false;
-    mounted=*p;prepared=true;boot_token=p->room_mode;published={};published.mounted_room_mode=p->room_mode;published.mounted=p->config;
+    mounted=*p;server_store=std::move(fixed_store);prepared=true;boot_token=p->room_mode;published={};published.mounted_room_mode=p->room_mode;published.mounted=p->config;
+    published.persistent_host_configured=!server_store.empty();
     std::snprintf(published.message,sizeof published.message,"%s",p->room_mode?"Room CARD selected; restart required to change room":"Personal CARD selected; restart required for a room");return true;
+}
+}
+extern "C" bool bw_network_game_prepare(const BwNetworkPreferences* p){return prepare(p,nullptr);}
+extern "C" bool bw_network_game_prepare_with_store(const BwNetworkPreferences* p,const char* directory){
+    if(p&&p->room_mode&&!directory)return false;return prepare(p,directory);
 }
 extern "C" bool bw_network_game_request_join(const BwNetworkConfig* c){return enqueue(Join,c,nullptr);}
 extern "C" bool bw_network_game_request_host(const BwNetworkConfig* c,const char* bind){return enqueue(Host,c,bind);}

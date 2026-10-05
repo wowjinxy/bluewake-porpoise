@@ -8,6 +8,7 @@ extern "C" {
 typedef struct BwNetworkGameSnapshot {
     bool mounted_room_mode, native_load_authorized, clean_boot_authorized;
     bool pending_command, exporting, local_host;
+    bool persistent_host_configured, persistent_host;
     unsigned deferred_updates;
     uint64_t captured, applied, unchanged, invalid, queue_failures;
     BwNetworkConfig mounted;
@@ -18,6 +19,11 @@ typedef struct BwNetworkGameSnapshot {
  * is immutable until process restart; false room mode never permits joining.
  * Root computes/validates the real compatibility manifest before this call. */
 bool bw_network_game_prepare(const BwNetworkPreferences* mounted);
+/* Production startup: fixes a copied <data_dir>/Network/Server route before
+ * CARD opens. Directory/lease creation happens only when actually hosting.
+ * Personal mode needs no storage path. Legacy prepare remains ephemeral for
+ * explicit source-only fixtures; production must use this durable entry. */
+bool bw_network_game_prepare_with_store(const BwNetworkPreferences* mounted,const char* data_dir);
 /* Game thread only, after GameEvents attach; call retrace after its retrace.
  * Detach cancels authorization/queues and stops workers. A second attach has
  * no clean-boot token: genuine native CARD load must authorize it again. */
