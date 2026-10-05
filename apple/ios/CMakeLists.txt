@@ -107,6 +107,8 @@ add_executable(BlueWake MACOSX_BUNDLE
 set_source_files_properties(${BLUEWAKE_HOST_SRC}/main.c PROPERTIES
     COMPILE_DEFINITIONS "main=bluewake_host_main")
 target_link_libraries(BlueWake PRIVATE gxruntime GXRuntime::aurora z)
+include("${BLUEWAKE_REPO_ROOT}/cmake/BlueWakeInventoryCollector.cmake")
+bluewake_enable_inventory_collector(BlueWake)
 set_target_properties(BlueWake PROPERTIES
     LINKER_LANGUAGE CXX
     OUTPUT_NAME BlueWake

@@ -75,6 +75,8 @@ add_executable(bluewake_host
     src/scheduler_contract.c
     src/save_state.c)
 target_link_libraries(bluewake_host PRIVATE gxruntime GXRuntime::aurora z xxhash)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/BlueWakeInventoryCollector.cmake")
+bluewake_enable_inventory_collector(bluewake_host)
 # The options menu (settings_menu.cpp) draws with Aurora's Dear ImGui.
 if(TARGET imgui)
     target_link_libraries(bluewake_host PRIVATE imgui)
@@ -901,3 +903,7 @@ if(TARGET GXRuntime::gxcore)
 endif()
 
 include("${BLUEWAKE_REPO_ROOT}/cmake/health_host_test.cmake")
+
+if(BUILD_TESTING)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/inventory_collector_test.cmake")
+endif()

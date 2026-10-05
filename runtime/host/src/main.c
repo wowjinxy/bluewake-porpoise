@@ -33,6 +33,14 @@
 #include "song_host_adapter.h"
 #include "hud_host.h"
 #include "health_host.h"
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+#include "inventory_collector_host.h"
+#include "loaded_code_admission.h"
+static void host_inventory_collector_poll(void);
+/* Actual main stack flag lifetime: registered below, cleared before main exits. */
+static const bool* g_inventory_collector_rel_pending;
+static bool g_inventory_collector_headless;
+#endif
 #include "hud_renderer.h"
 #include "quick_items.h"
 #include "dialogue_speed.h"
@@ -178,6 +186,9 @@ static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
     u8* storage = NULL;
     if (g_module_alias_add_shared == NULL)
         return false;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_alias_before();
+#endif
     pthread_mutex_lock(&g_guest_alias_lock);
     bool added = ppc_guest_alias_add(linked_start, size, initial_bytes);
     if (added && !ppc_guest_alias_get_storage(linked_start, size, &storage)) {
@@ -186,18 +197,28 @@ static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
     }
     g_guest_alias_changes++;
     pthread_mutex_unlock(&g_guest_alias_lock);
-    if (!added)
+    if (!added) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        bw_inventory_collector_host_alias_after(g_ppc_guest_alias_generation);
+#endif
         return false;
+    }
     if (g_module_alias_add_shared(linked_start, size, storage)) {
         if (g_state_alias_count < HOST_STATE_MAX_ALIASES)
             g_state_aliases[g_state_alias_count++] =
                 (HostStateAlias){linked_start, size};
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        bw_inventory_collector_host_alias_after(g_ppc_guest_alias_generation);
+#endif
         return true;
     }
     pthread_mutex_lock(&g_guest_alias_lock);
     ppc_guest_alias_remove(linked_start, size);
     g_guest_alias_changes++;
     pthread_mutex_unlock(&g_guest_alias_lock);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_alias_after(g_ppc_guest_alias_generation);
+#endif
     return false;
 }
 
@@ -2164,6 +2185,9 @@ static bool host_autosave_dispatch(CPUState* cpu, u32 address) {
     // owned continuation consumes it or restores the suspended caller.
     if (bluewake_autosave_owns_native_call(cpu, address)) {
         if (address == BLUEWAKE_AUTOSAVE_RETURN) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+            host_inventory_collector_poll();
+#endif
             bluewake_game_events_dispatch(cpu, address);
         } else {
             BluewakeAutosaveAudit audit;
@@ -2200,6 +2224,9 @@ static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
 #endif
     // Observe genuine native entries/returns before feature hooks can redirect.
     // These sites also lie outside the geometry feature interval.
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    host_inventory_collector_poll();
+#endif
     if (address != BLUEWAKE_AUTOSAVE_RETURN)
         bluewake_game_events_dispatch(cpu, address);
     bw_hud_host_dispatch(cpu,address);
@@ -6462,6 +6489,46 @@ static bool g_state_save_armed;
 static u64 g_state_armed_retrace;
 static u64 g_state_poll_retrace = UINT64_MAX;
 static bool g_state_aurora;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+/* Private diagnostic load scope. GCC/Clang cleanup executes on every C
+ * return path; collector subscriptions die before opaque file/image storage. */
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+typedef struct HostInventoryCodeScope { BwIcLoadedCode* lease; uint64_t generation; } HostInventoryCodeScope;
+static void host_inventory_code_release(HostInventoryCodeScope* scope) {
+    if (scope == NULL || scope->lease == NULL) return;
+    bw_inventory_collector_host_shutdown();
+    bw_ic_code_revoke(scope->lease, scope->generation);
+    bw_ic_code_destroy(scope->lease, scope->generation);
+    scope->lease = NULL; scope->generation = 0;
+}
+#endif
+
+/* This proposed collector supports only explicit headless/no-live-pad runs.
+ * Unknown GUI/menu/relaunch providers are refused at start, never defaulted.
+ * This function samples host flags only: no SDL or raw/cached device API. */
+static void host_inventory_collector_poll(void) {
+    if (!bw_inventory_collector_host_enabled()) return;
+    BwInventoryCollectorHostFlags flags = {0};
+    flags.source_initialized = g_inventory_collector_headless && g_inventory_collector_rel_pending != NULL;
+    flags.explicit_headless_no_ui = g_inventory_collector_headless && !g_state_aurora && !g_live_pad_enabled;
+    flags.rel_lifecycle_known = g_inventory_collector_rel_pending != NULL;
+    if (g_inventory_collector_rel_pending)
+        flags.rel_lifecycle_pending = *g_inventory_collector_rel_pending;
+    /* No GUI/input provider exists in the admitted headless mode; initialization
+     * is proved by flags.explicit_headless_no_ui rather than false->unblocked. */
+    flags.machine_capture_pending = g_state_hotkey_save || g_state_save_armed;
+    flags.machine_load_pending = g_state_hotkey_load;
+    flags.native_autosave_active = bluewake_autosave_active();
+    flags.quick_door_active = bluewake_quick_doors_busy();
+    flags.quick_items_overlay_active = bluewake_quick_items_busy();
+    flags.card_callback_active = !dol_hle_callback_idle();
+    flags.shutdown_pending = dol_platform_should_quit();
+    /* Whole CPU/RAM/module/reset/relaunch actions are explicitly suspended at
+     * their actual source sites below. No such action can interleave a callback
+     * on this single game thread; those are known false between those sites. */
+    (void)bw_inventory_collector_host_update_guard(&flags);
+}
+#endif
 static char g_state_last_path[1024];
 static unsigned g_state_refusals;
 
@@ -6610,6 +6677,9 @@ static u64 host_state_now_us(void) {
 static bool host_state_save(const char* path, CPUState* cpu,
                             const StaticRecompModuleDesc* mod,
                             const HostStateLoop* loop) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_suspend(BW_IC_STATE_CAPTURE);
+#endif
     const u64 start_us = host_state_now_us();
     // The GX blob first: it drains the translation worker (and may present the
     // frame it finished), which touches no guest state.
@@ -6621,6 +6691,9 @@ static bool host_state_save(const char* path, CPUState* cpu,
     if (writer == NULL) {
         fprintf(stderr, "[state] cannot write %s\n", path);
         free(gx);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        (void)bw_inventory_collector_host_rebind(cpu, mod, BW_IC_STATE_CAPTURE_DONE);
+#endif
         return false;
     }
     // Host Sprint latches are not serialized: capture the native HIO baseline.
@@ -6711,6 +6784,9 @@ static bool host_state_save(const char* path, CPUState* cpu,
     ok = bw_state_writer_finish(writer, ok);
     if (!ok) {
         fprintf(stderr, "[state] save to %s failed\n", path);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        (void)bw_inventory_collector_host_rebind(cpu, mod, BW_IC_STATE_CAPTURE_DONE);
+#endif
         return false;
     }
     snprintf(g_state_last_path, sizeof g_state_last_path, "%s", path);
@@ -6728,12 +6804,18 @@ static bool host_state_save(const char* path, CPUState* cpu,
             (u32)bw_state_hash(cpu->ram, cpu->ram_size, 0u), g_state_alias_count,
             gx_size, file_size,
             (unsigned long long)((host_state_now_us() - start_us) / 1000u));
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    (void)bw_inventory_collector_host_rebind(cpu, mod, BW_IC_STATE_CAPTURE_DONE);
+#endif
     return true;
 }
 
 static bool host_state_load(const char* path, CPUState* cpu,
                             const StaticRecompModuleDesc* mod,
                             const HostStateLoop* loop) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_suspend(BW_IC_STATE_LOAD);
+#endif
     const u64 start_us = host_state_now_us();
     BwStateReader reader;
     if (!bw_state_reader_open(&reader, path))
@@ -6834,6 +6916,9 @@ static bool host_state_load(const char* path, CPUState* cpu,
     host_audio_diagnostics_report("state-replace");
     host_audio_owner_attach(NULL);
     bluewake_sprint_cancel();
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_suspend(BW_IC_MEMORY_REPLACE);
+#endif
     bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     memcpy(cpu, chunk->data, saved.cpu_pod_size);
@@ -6954,6 +7039,9 @@ static bool host_state_load(const char* path, CPUState* cpu,
        !memcmp(saved.game_id,here.game_id,sizeof saved.game_id)&&saved.mod_mask==here.mod_mask) {
         (void)bw_hud_host_resume(cpu,mod);
         (void)bw_health_host_attach(cpu,mod);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        (void)bw_inventory_collector_host_rebind(cpu, mod, BW_IC_STATE_LOADED);
+#endif
     }
     g_overlap_cached_alias_state = 0xFFFFFFFFu;
     g_overlap_cached_object = 0u;
@@ -7204,7 +7292,18 @@ static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* 
 }
 
 int main(int argc, char** argv) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    HostInventoryCodeScope inventory_code __attribute__((cleanup(host_inventory_code_release))) = {NULL, 0};
+#endif
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_shutdown();
+    g_inventory_collector_rel_pending = NULL;
+    g_inventory_collector_headless = false;
+#endif
     // A repeated in-process invocation cannot retain a borrowed previous CPU.
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_suspend(BW_IC_RELAUNCH);
+#endif
     bw_hud_host_suspend(); bw_health_host_detach(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     // The options menu's saved choices, before anything reads the environment.
@@ -7264,13 +7363,40 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    const char* module_load_path = dylib_path;
+    const char* inventory_requested = getenv("BLUEWAKE_NATIVE_INVENTORY_CAPTURE");
+    if (inventory_requested != NULL && strcmp(inventory_requested, "1") == 0) {
+#ifdef BW_IC_APPROVED_POLICY_SHA256
+        inventory_code.lease = bw_ic_code_prepare(dylib_path,
+            getenv("BLUEWAKE_NATIVE_INVENTORY_POLICY"), BW_IC_APPROVED_POLICY_SHA256, &inventory_code.generation);
+#endif
+        const char* admitted_path = bw_ic_code_load_path(inventory_code.lease, inventory_code.generation);
+        if (admitted_path != NULL) module_load_path = admitted_path;
+        else fprintf(stderr, "[inventory] capture unavailable: no approved loaded-code policy\n");
+    }
+    void* lib = dlopen(module_load_path, RTLD_NOW | RTLD_LOCAL);
+#else
     void* lib = dlopen(dylib_path, RTLD_NOW | RTLD_LOCAL);
+#endif
     if (!lib) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
 
     GetModuleFn get_module = (GetModuleFn)dlsym(lib, "staticrecomp_get_module");
     if (!get_module) { fprintf(stderr, "dlsym: %s\n", dlerror()); return 1; }
 
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    if (inventory_code.lease != NULL && !bw_ic_code_bind(inventory_code.lease, inventory_code.generation, lib, (const void*)get_module)) {
+        host_inventory_code_release(&inventory_code);
+        fprintf(stderr, "[inventory] capture unavailable: loaded code did not match approved artifact\n");
+    }
+#endif
     const StaticRecompModuleDesc* mod = get_module();
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    if (inventory_code.lease != NULL && !bw_ic_code_bind_descriptor(inventory_code.lease, inventory_code.generation, mod)) {
+        host_inventory_code_release(&inventory_code);
+        fprintf(stderr, "[inventory] capture unavailable: descriptor owner did not match loaded code\n");
+    }
+#endif
     if (!bluewake_guest_checkpoint_interval(
             getenv("BLUEWAKE_GUEST_CHECKPOINT_INTERVAL"), &g_guest_checkpoint_interval)) {
         fprintf(stderr, "invalid BLUEWAKE_GUEST_CHECKPOINT_INTERVAL\n");
@@ -7714,6 +7840,9 @@ int main(int argc, char** argv) {
     g_resource_lookup_reports = 0;
     g_resource_info_reports = 0;
     g_rel_lwood_ctor_watch = 0u;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_suspend(BW_IC_MODULE_RELOAD);
+#endif
     bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     memset(g_rel_slots, 0, sizeof(g_rel_slots));
@@ -7906,6 +8035,9 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[rel] composite is missing guest-data alias ABI\n");
             return 1;
         }
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        bw_inventory_collector_host_suspend(BW_IC_ALIAS_REBUILD);
+#endif
         bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
         host_song_owner_revoke();
         module_alias_clear();
@@ -8209,6 +8341,16 @@ int main(int argc, char** argv) {
         BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_ENTERED),
         host_enhancement_reset, &cpu);
     bluewake_game_events_attach(&cpu);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    const char* inventory_capture = getenv("BLUEWAKE_NATIVE_INVENTORY_CAPTURE");
+    const char* inventory_live_pad = getenv("BLUEWAKE_LIVE_PAD");
+    g_inventory_collector_headless = !aurora_enabled && !g_live_pad_enabled &&
+        renderer != NULL && strcmp(renderer, "headless") == 0 &&
+        inventory_live_pad != NULL && strcmp(inventory_live_pad, "0") == 0;
+    if (inventory_capture != NULL && strcmp(inventory_capture, "1") == 0 && g_inventory_collector_headless)
+        (void)bw_inventory_collector_host_start_verified(&cpu, mod,
+            getenv("BLUEWAKE_NATIVE_INVENTORY_RUN_ID"), g_inventory_collector_headless, inventory_code.lease, inventory_code.generation);
+#endif
     host_song_owner_bind(&cpu, mod, false);
     bw_health_host_bind_healing_return((BwHealingReturnSetterFn)
         dlsym(lib,"bluewake_composite_healing_return_v1"),host_healing_return_can_continue,NULL);
@@ -8330,6 +8472,9 @@ int main(int argc, char** argv) {
     bool video_callback_state_reported = false;
     bool profile_prolog_called = false;
     bool rel_prolog_sda_pending = false;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    g_inventory_collector_rel_pending = &rel_prolog_sda_pending;
+#endif
     u32 rel_prolog_saved_r13 = 0u;
     bool message_send_reported = false;
     bool audio_message_send_reported = false;
@@ -8589,6 +8734,9 @@ int main(int argc, char** argv) {
         if (load_state != NULL && load_state[0] != '\0') {
             if (!host_state_load(load_state, &cpu, mod, &state_loop)) {
                 fprintf(stderr, "[state] BLUEWAKE_LOAD_STATE=%s failed\n", load_state);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+                bw_inventory_collector_host_suspend(BW_IC_STATE_LOAD);
+#endif
                 bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
                 host_song_owner_revoke();
                 bluewake_game_events_reset(NULL, BW_GAME_RESET_MODULE_RELOAD);
@@ -8602,6 +8750,11 @@ int main(int argc, char** argv) {
 #endif
                     { bw_hud_host_detach(); bw_health_host_detach(); dol_aurora_shutdown(); }
                 }
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+                bw_inventory_collector_host_shutdown();
+                g_inventory_collector_rel_pending = NULL;
+                g_inventory_collector_headless = false;
+#endif
                 return 1;
             }
         }
@@ -14023,6 +14176,9 @@ int main(int argc, char** argv) {
         // native save call. Its entry needs observation before dispatch too.
         if (autosave_redirected) (void)host_autosave_dispatch(&cpu, cpu.pc);
         if (!autosave_redirected) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+            host_inventory_collector_poll();
+#endif
             if (cpu.pc != BLUEWAKE_AUTOSAVE_RETURN)
                 bluewake_game_events_dispatch(&cpu, cpu.pc);
             bw_hud_host_dispatch(&cpu,cpu.pc);
@@ -16281,6 +16437,11 @@ int main(int argc, char** argv) {
                 g_heap_write_watch_reports + g_heap_write_watch_control_reports);
     (void)bluewake_gather_pipe_configure(
         set_gather_word, set_gather_bytes, NULL, NULL, NULL, NULL, false);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_shutdown();
+    g_inventory_collector_rel_pending = NULL;
+    g_inventory_collector_headless = false;
+#endif
     bw_hud_host_detach(); bw_health_host_detach();
     bluewake_haptics_shutdown();
 #if defined(BLUEWAKE_WINDOWS)
@@ -16338,6 +16499,9 @@ int main(int argc, char** argv) {
     bluewake_dialogue_speed_reset(NULL);
     bluewake_enhancement_hooks_reset(NULL);
     bluewake_autosave_detach();
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_host_suspend(BW_IC_SHUTDOWN);
+#endif
     bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     bluewake_game_events_reset(NULL, BW_GAME_RESET_MODULE_RELOAD);

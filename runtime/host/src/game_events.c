@@ -1,5 +1,8 @@
 #include "game_events.h"
 #include "song_rel_owner.h"
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+#include "inventory_completion_internal.h"
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -76,6 +79,9 @@ typedef struct PendingCall {
     uint32_t hr_actor, hr_id;
     int32_t hr_staff;
     BwSongOwner hr_owner;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    BwInventoryCollectorCallProof inventory_proof;
+#endif
 } PendingCall;
 
 typedef struct FactRange {
@@ -158,6 +164,13 @@ static PendingCall g_pending[kPendingCalls];
 static uint64_t g_mask, g_subscription_token, g_sequence, g_native_token;
 static BwGameEventStats g_stats;
 static BwGameEventSubscription g_trace_subscription;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+void bw_inventory_collector_retire_pending_proofs(void) {
+    for (unsigned i = 0; i < kPendingCalls; ++i)
+        memset(&g_pending[i].inventory_proof, 0, sizeof g_pending[i].inventory_proof);
+    bw_inventory_collector_emit_end();
+}
+#endif
 
 static bool span(const CPUState* cpu, uint32_t address, uint32_t size) {
     if (cpu == NULL || cpu->ram == NULL || address < 0x80000000u || address > 0x81800000u)
@@ -240,6 +253,11 @@ static BwGameEvent event_new(BwGameEventKind kind) {
 }
 static void emit(BwGameEvent event) {
     event.sequence = ++g_sequence;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    if (event.kind == BW_GAME_EVENT_PLAYER_UPDATED &&
+        bw_inventory_collector_completion_enabled())
+        bw_inventory_collector_event_scope_bind(&event);
+#endif
     ++g_stats.emitted[event.kind];
     Subscriber subscribers[kSubscribers];
     memcpy(subscribers, g_subscribers, sizeof subscribers);
@@ -256,7 +274,13 @@ static void clear_pending(void) {
     for (unsigned i = 0; i < kPendingCalls; ++i) {
         if (g_pending[i].active) ++g_stats.cancelled_calls;
         g_pending[i].active = false;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        memset(&g_pending[i].inventory_proof, 0, sizeof g_pending[i].inventory_proof);
+#endif
     }
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+    bw_inventory_collector_emit_end();
+#endif
     g_loading = false;
 }
 static void leave_scene(void) {
@@ -466,6 +490,9 @@ void bluewake_game_events_retrace(CPUState* cpu) {
                 continue;
             if (g_pending[i].kind == CALL_LOAD) g_loading = false;
             g_pending[i].active = false;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+            memset(&g_pending[i].inventory_proof, 0, sizeof g_pending[i].inventory_proof);
+#endif
             ++g_stats.cancelled_calls;
         }
         emit(event_new(BW_GAME_EVENT_GAME_TICK));
@@ -502,13 +529,25 @@ static bool arm(CPUState* cpu, CallKind kind, uint32_t player, uint8_t item, int
      * invocations have different guest stacks; identical SP/LR is not nested. */
     for (unsigned i = 0; i < kPendingCalls; ++i)
         if (g_pending[i].active && g_pending[i].kind == kind &&
-            g_pending[i].stack == stack && g_pending[i].return_address == target)
+            g_pending[i].stack == stack && g_pending[i].return_address == target) {
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+            if (kind == CALL_PLAYER && bw_inventory_collector_completion_enabled() &&
+                !bw_inventory_collector_call_replay(cpu, &g_pending[i].inventory_proof))
+                memset(&g_pending[i].inventory_proof, 0, sizeof g_pending[i].inventory_proof);
+#endif
             return true;
+        }
     for (unsigned i = 0; i < kPendingCalls; ++i) {
         if (g_pending[i].active) continue;
         g_pending[i] = (PendingCall){.active=true,.kind=kind,.return_address=target,
             .stack=stack,.player=player,.item=item,.slot=slot,.token=++g_native_token,
             .epoch=g_stats.epoch,.generation=g_stats.scene_generation,.tick=g_stats.ticks};
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        if (kind == CALL_PLAYER && bw_inventory_collector_completion_enabled())
+            (void)bw_inventory_collector_call_begin(cpu, g_pending[i].token,
+                g_pending[i].epoch, g_pending[i].generation, stack, player,
+                &g_pending[i].inventory_proof);
+#endif
         return true;
     }
     ++g_stats.pending_overflow;
@@ -618,6 +657,9 @@ static void returned(CPUState* cpu, uint32_t address) {
              read8(cpu, kGameInfo + 0x1290u) != (uint8_t)pending->slot)) continue;
         const PendingCall call = *pending;
         pending->active = false; /* Consume before callbacks or a budget replay. */
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        memset(&pending->inventory_proof, 0, sizeof pending->inventory_proof);
+#endif
         if (call.epoch != g_stats.epoch || call.generation != g_stats.scene_generation) {
             ++g_stats.cancelled_calls;
             continue;
@@ -657,7 +699,14 @@ static void returned(CPUState* cpu, uint32_t address) {
         event.item_id = call.item;
         event.save_slot = call.slot;
         event.result = result;
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        if (call.kind == CALL_PLAYER && bw_inventory_collector_completion_enabled())
+            bw_inventory_collector_emit_begin(cpu, &call.inventory_proof);
+#endif
         emit(event);
+#ifdef BW_NATIVE_INVENTORY_COLLECTOR
+        if (call.kind == CALL_PLAYER) bw_inventory_collector_emit_end();
+#endif
     }
 }
 void bluewake_game_events_dispatch(CPUState* cpu, uint32_t address) {
