@@ -80,6 +80,15 @@ VEC_LEAVES = {
 }
 
 
+# Audited GZLE01 inventory bytes consumed by the passive collector. These are
+# data fields, never executable entry/return boundaries. The host scanner reads
+# source before preprocessing, so a default-OFF collector must not add them to
+# the module watch table merely by naming its read-only memory inputs.
+INVENTORY_DATA_ADDRESSES = frozenset((
+    0x803C4C46, 0x803C4C47, 0x803C4C5B, 0x803C4C5C, 0x803C4CC5,
+))
+
+
 def watched_addresses():
     """Guest addresses the host names: its edge service may act at any of them.
     Both mirror forms of each: the service tests a boundary's address with the
@@ -91,7 +100,9 @@ def watched_addresses():
             if path.suffix in (".c", ".h", ".cpp", ".mm", ".m"):
                 for m in re.finditer(r"0x([8C][0-9A-Fa-f]{7})u?\b", path.read_text(errors="replace")):
                     address = int(m.group(1), 16)
-                    found.update((address, address | 0x40000000, address & ~0x40000000))
+                    if (address & ~MIRROR) in INVENTORY_DATA_ADDRESSES:
+                        continue
+                    found.update((address, address | MIRROR, address & ~MIRROR))
     return found
 
 

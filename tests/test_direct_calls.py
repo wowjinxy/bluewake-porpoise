@@ -58,6 +58,32 @@ def convert(source, watched=()):
 
 
 class DirectPreparationTests(unittest.TestCase):
+    def test_inventory_data_does_not_watch_but_completion_boundaries_do(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            host=root/'runtime/host/src';host.mkdir(parents=True)
+            (root/'windows/src').mkdir(parents=True)
+            current_root=direct.ROOT
+            direct.ROOT=root
+            try:
+                source=host/'collector.cpp'
+                # Source scanning runs before macro processing; preserve real
+                # completion boundaries and both mirror forms in the same file.
+                source.write_text('#if DISABLED_COLLECTOR\n' +
+                    '\n'.join(f'auto data_{i} = 0x{address:08X}u;' for i,address in enumerate((
+                        0x803C4C46,0xC03C4C46,0x803C4C47,0x803C4C5B,0x803C4C5C,0x803C4CC5)))+
+                    '\nauto entry=0x8003EF38u; auto returned=0xC0023960u;\n#endif\n',
+                    encoding='utf-8',newline='\n')
+                self.assertEqual(direct.watched_addresses(),{
+                    0x8003EF38,0xC003EF38,0x80023960,0xC0023960})
+                direct.write_watch_list(root,direct.watched_addresses())
+                table=(root/'bw_edge_watch.inc').read_text(encoding='utf-8')
+                self.assertIn('0x8003EF38u',table)
+                self.assertIn('0x80023960u',table)
+                self.assertNotIn('803C4C',table)
+            finally:
+                direct.ROOT=current_root
+
     def test_shared_healing_return_only_guarded_once(self):
         source=(ROOT / 'tests/healing_return_chunk.c.in').read_text()
         for source in (source,source.replace('CPUState* ctx)', 'CPUState* ctx_param)')):
