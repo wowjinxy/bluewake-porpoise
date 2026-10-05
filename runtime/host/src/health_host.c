@@ -7,7 +7,11 @@
 #include <string.h>
 enum { RATE_MASK=8191u, ROOM_LOCK=0x80000000u, NATIVE_PAIR=256u|(256u<<13) };
 static atomic_uint desired=NATIVE_PAIR;
-static atomic_bool attached_flag=false,available=false;
+static atomic_bool attached_flag=false,available=false,healing_available=false;
+static BwHealingReturnSetterFn healing_setter;
+static BwHealingReturnCanContinueFn healing_callback;
+static void* healing_user;
+static bool healing_capability,healing_registered;
 typedef struct HostHealth {
     BwHealthRulesRuntime runtime;
     CPUState* cpu;uint8_t* ram;
@@ -34,6 +38,7 @@ bool bw_health_host_prepare_room(bool room) {
         if(atomic_compare_exchange_weak_explicit(&desired,&old,next,memory_order_acq_rel,memory_order_acquire))return true;}
 }
 bool bw_health_host_available(void){return atomic_load_explicit(&available,memory_order_acquire);}
+bool bw_health_host_healing_available(void){return atomic_load_explicit(&healing_available,memory_order_acquire);}
 bool bw_health_host_room_locked(void){return (atomic_load_explicit(&desired,memory_order_acquire)&ROOM_LOCK)!=0;}
 static uint64_t hash_value(uint64_t h,uint64_t v,unsigned bytes){for(unsigned i=0;i<bytes;++i){h^=(v>>(8*i))&255u;h*=UINT64_C(1099511628211);}return h;}
 static bool module_supported(const StaticRecompModuleDesc* m) {
@@ -47,10 +52,38 @@ static bool module_supported(const StaticRecompModuleDesc* m) {
         previous=r->end;h=hash_value(h,r->start,4);h=hash_value(h,r->end,4);h=hash_value(h,m->chunk_hashes[i],8);}
     return h==BW_HEALTH_MODULE_FINGERPRINT;
 }
-static bool requested(void){return (host.applied&~ROOM_LOCK)!=NATIVE_PAIR;}
+static bool requested(void){return host.runtime.config.damage_q8!=256||host.runtime.config.healing_q8!=256;}
 static bool identity(const CPUState* cpu){return host.attached&&!host.suspended&&host.module_ok&&
     cpu&&cpu==host.cpu&&cpu->ram&&cpu->ram==host.ram&&cpu->ram_size==BW_HEALTH_RULES_HOST_RAM_SIZE;}
-static void cancel(void){bw_health_rules_detach(&host.runtime);host.bound=false;}
+static void healing_clear(void){
+    if(healing_registered&&healing_setter)
+        (void)healing_setter(GXRUNTIME_CPU_ABI_VERSION,sizeof(CPUState),NULL,NULL);
+    healing_registered=false;
+}
+static void cancel(void){healing_clear();bw_health_rules_detach(&host.runtime);host.bound=false;}
+static void healing_publish(void){atomic_store_explicit(&healing_available,
+    host.attached&&!host.suspended&&host.module_ok&&healing_capability,memory_order_release);}
+void bw_health_host_bind_healing_return(BwHealingReturnSetterFn setter,
+                                       BwHealingReturnCanContinueFn callback,void* user){
+    cancel();healing_setter=setter;healing_callback=callback;healing_user=user;
+    healing_capability=setter&&callback&&setter(GXRUNTIME_CPU_ABI_VERSION,sizeof(CPUState),NULL,NULL)==BW_HEALING_RETURN_OBSERVATION_V1;
+    host.applied=UINT32_MAX;healing_publish();
+}
+static void healing_sync(void){
+    const bool needed=healing_capability&&host.bound&&!host.saving&&identity(host.cpu)&&
+        host.runtime.config.healing_q8!=BW_HEALTH_RULES_NATIVE_RATE;
+    if(!needed){healing_clear();return;}
+    if(healing_registered)return;
+    if(healing_setter(GXRUNTIME_CPU_ABI_VERSION,sizeof(CPUState),healing_callback,healing_user)==BW_HEALING_RETURN_OBSERVATION_V1){
+        healing_registered=true;return;
+    }
+    /* A failed registration cannot leave pending changed healing armed. Keep
+     * damage available, the copied preference intact, and native healing. */
+    (void)healing_setter(GXRUNTIME_CPU_ABI_VERSION,sizeof(CPUState),NULL,NULL);
+    healing_capability=false;cancel();
+    BwHealthRulesConfig c=host.runtime.config;c.healing_q8=BW_HEALTH_RULES_NATIVE_RATE;
+    (void)bw_health_rules_configure(&host.runtime,&c);healing_publish();
+}
 static void lifecycle(const BwGameEvent* e,void* unused){(void)unused;if(e&&(e->kind==BW_GAME_EVENT_RESET||
     e->kind==BW_GAME_EVENT_SCENE_LEAVING||e->kind==BW_GAME_EVENT_TRANSITION_STARTED||e->kind==BW_GAME_EVENT_SCENE_ENTERED))cancel();}
 static bool lifetime(CPUState* cpu,BwHealthRulesLifetime* out) {
@@ -61,25 +94,30 @@ static bool lifetime(CPUState* cpu,BwHealthRulesLifetime* out) {
     if(stats.epoch!=epoch||stats.scene_generation!=generation||!identity(cpu))return false;
     *out=(BwHealthRulesLifetime){epoch,generation,stats.ticks};return true;
 }
-void bw_health_host_detach(void) {
+static void release_storage(void) {
     if(host.subscription)bluewake_game_events_unsubscribe(host.subscription);
     cancel();memset(&host,0,sizeof host);
     atomic_store_explicit(&attached_flag,false,memory_order_release);atomic_store_explicit(&available,false,memory_order_release);
+    atomic_store_explicit(&healing_available,false,memory_order_release);
+}
+void bw_health_host_detach(void) {
+    release_storage();healing_setter=NULL;healing_callback=NULL;healing_user=NULL;healing_capability=false;
 }
 bool bw_health_host_attach(CPUState* cpu,const StaticRecompModuleDesc* m) {
-    bw_health_host_detach();bw_health_rules_init(&host.runtime);
+    release_storage();bw_health_rules_init(&host.runtime);
     host.cpu=cpu;host.ram=cpu?cpu->ram:NULL;host.module_ok=module_supported(m);
     host.attached=cpu&&cpu->ram&&cpu->ram_size==BW_HEALTH_RULES_HOST_RAM_SIZE;
     atomic_store_explicit(&attached_flag,host.attached,memory_order_release);
     atomic_store_explicit(&available,host.attached&&host.module_ok,memory_order_release);
-    host.applied=NATIVE_PAIR;bw_health_host_retrace(cpu,false);return bw_health_host_available();
+    host.applied=UINT32_MAX;healing_publish();bw_health_host_retrace(cpu,false);return bw_health_host_available();
 }
 void bw_health_host_retrace(CPUState* cpu,bool saving) {
+    host.saving=saving;
     const unsigned p=atomic_load_explicit(&desired,memory_order_acquire);
-    if(p!=host.applied){const BwHealthRulesConfig c=unpack(p);bw_health_rules_configure(&host.runtime,&c);host.applied=p;cancel();}
+    if(p!=host.applied){BwHealthRulesConfig c=unpack(p);if(!healing_capability)c.healing_q8=256;
+        bw_health_rules_configure(&host.runtime,&c);host.applied=p;cancel();}
     /* Native identity: no guest/event query, aliases, subscriber or watches. */
     if(!requested()){if(host.subscription){bluewake_game_events_unsubscribe(host.subscription);host.subscription=0;}if(host.bound)cancel();return;}
-    host.saving=saving;
     if(!identity(cpu)||saving){cancel();return;}
     if(!host.subscription){const uint64_t mask=BW_GAME_EVENT_MASK(BW_GAME_EVENT_RESET)|BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_LEAVING)|
         BW_GAME_EVENT_MASK(BW_GAME_EVENT_TRANSITION_STARTED)|BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_ENTERED);
@@ -88,6 +126,7 @@ void bw_health_host_retrace(CPUState* cpu,bool saving) {
     if(!host.bound){host.aliases=g_ppc_guest_alias_generation;host.bound=bw_health_rules_attach(&host.runtime,cpu,&l,BW_HEALTH_RULES_ABI_GZLE01);}
     if(host.bound){if(host.aliases!=g_ppc_guest_alias_generation){bw_health_rules_reset(&host.runtime,&l);host.aliases=g_ppc_guest_alias_generation;}
         bw_health_rules_retrace(&host.runtime,cpu,&l);}
+    healing_sync();
 }
 bool bw_health_host_observes(const CPUState* cpu,uint32_t address) {
     if(!requested()||!host.bound||!identity(cpu)||host.saving)return false;
@@ -101,5 +140,5 @@ void bw_health_host_dispatch(CPUState* cpu,uint32_t address,bool saving) {
     bw_health_rules_dispatch(&host.runtime,cpu,address,&l);
 }
 void bw_health_host_reset(void){cancel();}
-void bw_health_host_suspend(void){cancel();host.suspended=true;atomic_store_explicit(&available,false,memory_order_release);}
+void bw_health_host_suspend(void){cancel();host.suspended=true;atomic_store_explicit(&available,false,memory_order_release);healing_publish();}
 void bw_health_host_stats(BwHealthRulesStats* out){bw_health_rules_stats(&host.runtime,out);}

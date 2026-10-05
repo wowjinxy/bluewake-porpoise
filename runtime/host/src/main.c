@@ -2148,6 +2148,13 @@ static bool host_direct_can_skip(void* user, const CPUState* cpu, u32 address) {
     return allowed;
 }
 
+/* Optional shared healing return observation is outside the direct-call
+ * counter: default/native modules install no callback. It only decides
+ * whether the genuine pre-epilogue context needs the ordinary edge service. */
+static bool host_healing_return_can_continue(void* user, const CPUState* cpu, u32 address) {
+    return host_can_skip_observation(user, cpu, address);
+}
+
 static bool host_autosave_dispatch(CPUState* cpu, u32 address) {
     if (address == BLUEWAKE_AUTOSAVE_RETURN && bluewake_autosave_active()) {
         bluewake_mouse_camera_discard_input();
@@ -7198,7 +7205,7 @@ static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* 
 
 int main(int argc, char** argv) {
     // A repeated in-process invocation cannot retain a borrowed previous CPU.
-    bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+    bw_hud_host_suspend(); bw_health_host_detach(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     // The options menu's saved choices, before anything reads the environment.
     bluewake_settings_load();
@@ -8203,6 +8210,8 @@ int main(int argc, char** argv) {
         host_enhancement_reset, &cpu);
     bluewake_game_events_attach(&cpu);
     host_song_owner_bind(&cpu, mod, false);
+    bw_health_host_bind_healing_return((BwHealingReturnSetterFn)
+        dlsym(lib,"bluewake_composite_healing_return_v1"),host_healing_return_can_continue,NULL);
     (void)bw_health_host_attach(&cpu,mod);
     (void)bw_hud_host_attach(&cpu,mod,host_hud_alias_generation,NULL,host_hud_emit,NULL,
         aurora_enabled&&dol_aurora_gxcore_plan_filter_available(),g_hud_four_thirds);

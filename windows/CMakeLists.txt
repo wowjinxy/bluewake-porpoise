@@ -773,6 +773,7 @@ endif()
 include("${BLUEWAKE_REPO_ROOT}/cmake/audio_preview_test.cmake")
 
 include("${BLUEWAKE_REPO_ROOT}/cmake/health_host_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/healing_return_test.cmake")
 
 # Explicit CI/test builds gather all registered source-only fixture executables.
 if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)

@@ -21,6 +21,25 @@ const u32* bw_host_pi_cause = &k_zero;
 const u32* bw_host_pi_mask = &k_zero;
 BwHostCanSkipFn bw_host_can_skip;
 void* bw_host_can_skip_user;
+BwHealingReturnCanContinueFn bw_healing_return_can_continue;
+void* bw_healing_return_user;
+
+BW_DIRECT_EXPORT unsigned bluewake_composite_healing_return_v1(
+    u32 cpu_abi, u32 cpu_size, BwHealingReturnCanContinueFn can_continue, void* user) {
+    /* Removal and a failed handshake always invalidate any previous owner. */
+    bw_healing_return_can_continue = NULL;
+    bw_healing_return_user = NULL;
+#ifdef BLUEWAKE_HEALING_RETURN_CERTIFIED
+    if (cpu_abi == GXRUNTIME_CPU_ABI_VERSION && cpu_size == sizeof(CPUState)) {
+        bw_healing_return_user = can_continue != NULL ? user : NULL;
+        bw_healing_return_can_continue = can_continue;
+        return BW_HEALING_RETURN_OBSERVATION_V1;
+    }
+#else
+    (void)cpu_abi; (void)cpu_size; (void)can_continue; (void)user;
+#endif
+    return 0u;
+}
 
 u32 bw_edge_watch_table[BW_EDGE_WATCH_SLOTS];
 bool bw_edge_watch_ready;

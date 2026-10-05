@@ -17,6 +17,18 @@ static void* notify_user;
 static unsigned scene_queries,stats_queries,subscriptions,unsubscribes;
 static bool scene_active=true,scene_transition=false,subscriber_full=false;
 static StaticRecompModuleDesc module;
+static BwHealingReturnCanContinueFn registered_healing;
+static void* registered_user;
+static unsigned setter_calls;
+static bool setter_fail;
+static unsigned fixture_setter(u32 abi,u32 size,BwHealingReturnCanContinueFn callback,void* user){
+    ++setter_calls;registered_healing=NULL;registered_user=NULL;
+    if(setter_fail||abi!=GXRUNTIME_CPU_ABI_VERSION||size!=sizeof(CPUState))return 0;
+    registered_healing=callback;registered_user=callback?user:NULL;return BW_HEALING_RETURN_OBSERVATION_V1;
+}
+static bool fixture_return(void* user,const CPUState* context,u32 address){
+    CHECK(user==&module);return !bw_health_host_observes(context,address);
+}
 static int module_dispatch(CPUState* c,u32 a){(void)c;(void)a;return 0;}
 BwGameEventSubscription bluewake_game_events_subscribe(uint64_t mask,BwGameEventCallback f,void* user) {
     CHECK(mask==(BW_GAME_EVENT_MASK(BW_GAME_EVENT_RESET)|BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_LEAVING)|
@@ -34,6 +46,9 @@ static void host_setup(void) {
     module.cpu_state_size=sizeof cpu;memcpy(module.game_id,"GZLE01",7);module.dispatch=module_dispatch;
     module.num_chunk_ranges=sizeof fixture_ranges/sizeof fixture_ranges[0];module.chunk_ranges=fixture_ranges;module.chunk_hashes=fixture_hashes;
     scene_queries=stats_queries=subscriptions=unsubscribes=0;CHECK(bw_health_host_attach(&cpu,&module));
+    setter_fail=false;setter_calls=0;
+    bw_health_host_bind_healing_return(fixture_setter,fixture_return,&module);
+    bw_health_host_retrace(&cpu,false);
 }
 #ifdef BW_HEALTH_TEST_HOST
 static void prepare_host_optimized(void){
@@ -44,6 +59,8 @@ static void prepare_host_optimized(void){
     module.cpu_state_size=sizeof cpu;memcpy(module.game_id,"GZLE01",7);module.dispatch=module_dispatch;
     module.num_chunk_ranges=sizeof fixture_ranges/sizeof fixture_ranges[0];module.chunk_ranges=fixture_ranges;module.chunk_hashes=fixture_hashes;
     CHECK(bw_health_host_attach(&cpu,&module));
+    setter_fail=false;bw_health_host_bind_healing_return(fixture_setter,fixture_return,&module);
+    bw_health_host_retrace(&cpu,false);
 }
 #endif
 static void host_entry(void){cpu.gpr[3]=PLAYER;cpu.gpr[1]=STACK;cpu.lr=0x801165F4u;cpu.pc=BW_HEALTH_RULES_DAMAGE;cpu.fpr[1]=-1;bw_health_host_dispatch(&cpu,cpu.pc,false);}
@@ -93,9 +110,40 @@ static void host_module_room_and_capacity(void){
     CHECK(bw_health_host_room_locked());CHECK(!bw_health_host_configure(512,256));CHECK(!bw_health_host_configure(256,0));
     CHECK(bw_health_host_configure(256,256));CHECK(bw_health_host_prepare_room(false));CHECK(!bw_health_host_room_locked());
 }
+static void host_healing_capability(void){
+    host_setup();CHECK(bw_health_host_available()&&bw_health_host_healing_available());
+    CHECK(!registered_healing);const unsigned native_calls=setter_calls;
+    for(unsigned i=0;i<10;++i)bw_health_host_retrace(&cpu,false);
+    CHECK(setter_calls==native_calls&&!registered_healing);
+    CHECK(bw_health_host_configure(512,128));bw_health_host_retrace(&cpu,false);
+    CHECK(registered_healing&&registered_user==&module);
+    cpu.pc=BW_HEALTH_RULES_HEART;cpu.lr=BW_HEALTH_RULES_ITEM_RETURN;cpu.ctr=cpu.gpr[12]=cpu.pc;
+    bw_health_host_dispatch(&cpu,cpu.pc,false);cpu.pc=cpu.lr;
+    CHECK(!registered_healing(registered_user,&cpu,cpu.pc));
+    const CPUState before=cpu;CHECK(!registered_healing(registered_user,&cpu,cpu.pc));CHECK(!memcmp(&before,&cpu,sizeof cpu));
+    bw_health_host_retrace(&cpu,true);CHECK(!registered_healing);
+    bw_health_host_retrace(&cpu,false);CHECK(registered_healing);
+    bw_health_host_reset();CHECK(!registered_healing);
+    bw_health_host_retrace(&cpu,false);CHECK(registered_healing);
+    bw_health_host_suspend();CHECK(!registered_healing&&!bw_health_host_healing_available());
+    CHECK(bw_health_host_attach(&cpu,&module));CHECK(registered_healing&&bw_health_host_healing_available());
+    bw_health_host_bind_healing_return(NULL,NULL,NULL);bw_health_host_retrace(&cpu,false);
+    CHECK(bw_health_host_available()&&!bw_health_host_healing_available()&&!registered_healing);
+    CHECK(bw_health_host_configuration().healing_q8==128);
+    cpu.pc=BW_HEALTH_RULES_HEART;cpu.lr=BW_HEALTH_RULES_ITEM_RETURN;
+    CHECK(!bw_health_host_observes(&cpu,cpu.pc));host_entry();host_return();CHECK(host_stats().adjusted==1);
+    /* Valid probe followed by registration refusal: no stale pending healing
+     * or false UI capability, while separately qualified damage still works. */
+    CHECK(bw_health_host_configure(256,128));setter_fail=false;
+    bw_health_host_bind_healing_return(fixture_setter,fixture_return,&module);setter_fail=true;
+    bw_health_host_retrace(&cpu,false);
+    CHECK(!registered_healing&&!bw_health_host_healing_available()&&bw_health_host_available());
+    CHECK(!bw_health_host_observes(&cpu,BW_HEALTH_RULES_HEART));
+    bw_health_host_detach();CHECK(!registered_healing&&!bw_health_host_healing_available());setter_fail=false;
+}
 int main(void){
     cpu.ram=calloc(1,BW_HEALTH_RULES_HOST_RAM_SIZE);before_ram=malloc(BW_HEALTH_RULES_HOST_RAM_SIZE);CHECK(cpu.ram&&before_ram);
-    host_default();host_calls_and_lifetime();host_module_room_and_capacity();
+    host_default();host_calls_and_lifetime();host_module_room_and_capacity();host_healing_capability();
 #ifdef BW_HEALTH_TEST_HOST
     optimized_callers();
 #endif

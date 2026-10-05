@@ -564,7 +564,9 @@ void setting_widget(const BwSettingDefinition& definition) {
     const bool hud_available=hud_status.availability==BW_HUD_AVAILABLE ||
         hud_status.availability==BW_HUD_WAITING_SCENE;
     const bool health_option=std::strcmp(definition.id,"damage_rate_q8")==0 || std::strcmp(definition.id,"healing_rate_q8")==0;
-    const bool available = (!health_option||(bw_health_host_available()&&!bw_health_host_room_locked())) && (!hud_option||hud_available) && compiled_option(definition.option_name) &&
+    const bool healing_option=std::strcmp(definition.id,"healing_rate_q8")==0;
+    const bool health_available=healing_option?bw_health_host_healing_available():bw_health_host_available();
+    const bool available = (!health_option||(health_available&&!bw_health_host_room_locked())) && (!hud_option||hud_available) && compiled_option(definition.option_name) &&
         (std::strcmp(definition.id, "betterww") != 0 || bluewake_game_mod_available("betterww"));
     const bool enabled = available && bw_setting_enabled(g_session, definition);
     ImGui::PushID(definition.id);
@@ -644,7 +646,8 @@ void setting_widget(const BwSettingDefinition& definition) {
         ImGui::TextWrapped("Hold LB (controller) or Tab (keyboard): Up plays the Wind Waker; Left deploys the cannon at sea, then a fresh Left fires; hold Right to deploy/lower the salvage crane, release to raise it. Change the modifier in Controls. Down and plain D-pad keep their native actions. X/Y/Z item assignments stay unchanged.");
     if (std::strcmp(definition.id, "dialogue_speed") == 0)
         ImGui::TextWrapped("Speeds up supported ordinary NPC and cutscene messages. Scripted waits, page stops, choices and unskippable text stay unchanged. BetterWW Instant text takes priority. Disable Instant text and restart to restore already-patched text.");
-    if(health_option && !available) ImGui::TextWrapped(bw_health_host_room_locked()?"Challenge settings are unavailable for mounted room saves.":"This game translation has not been qualified for health rules.");
+    if(health_option && !available) ImGui::TextWrapped(bw_health_host_room_locked()?"Challenge settings are unavailable for mounted room saves.":
+        healing_option?"This game translation lacks certified healing returns. Pickups keep their native healing rate.":"This game translation has not been qualified for health rules.");
     ImGui::PopID();
 }
 

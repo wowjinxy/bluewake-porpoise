@@ -29,6 +29,7 @@
  * No identifier here may be `ctx`: the chunks define it as a macro. */
 
 #include "core/cpu.h"
+#include "../../runtime/host/src/health_return_observer.h"
 
 #define BW_DIRECT_DEPTH_MAX 32u
 
@@ -50,6 +51,17 @@ int bluewake_composite_direct_calls(bool, const bool*, const bool*, const u32*, 
 int bluewake_composite_direct_calls_v2(bool, const bool*, const bool*, const u32*,
                                      const u32*, BwHostCanSkipFn, void*);
 int bluewake_composite_edge_filter(bool);
+
+/* Only a certified shared healing return case advertises this capability.
+ * Kept separate from counted direct-call queries: native/default execution
+ * has a NULL callback and retains the original query/counting behavior. */
+extern BwHealingReturnCanContinueFn bw_healing_return_can_continue;
+extern void* bw_healing_return_user;
+unsigned bluewake_composite_healing_return_v1(u32, u32, BwHealingReturnCanContinueFn, void*);
+static inline bool bw_healing_return_continue(const CPUState* cpu, u32 address) {
+    return bw_healing_return_can_continue == NULL ||
+        bw_healing_return_can_continue(bw_healing_return_user, cpu, address);
+}
 
 /* The host's edge service has nothing to do at an address it does not watch:
  * its interrupt sources are clean and no interrupt the guest would take is

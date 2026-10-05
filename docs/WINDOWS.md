@@ -537,9 +537,13 @@ Native settings preserve shipping CPU/RAM checkpoints, events and direct-call
 counts. Half damage passes seven genuine scaling transactions, but the timed
 combat route diverged and died before its reward. A genuine native heart pickup
 raises life from 7 to 11 and preserves the rest of saved progress and source
-cards, but its diagnostic trace misses the exact health callback. Source review
-found an internal return path that can bypass that observation. Full changed-rate
-gameplay, adjusted healing, death and save/reload qualification remain pending.
+cards, but its diagnostic trace misses the exact health callback. A new optional
+module callback observes the shared internal healing return before the caller
+continues. The preparation step certifies every relevant variant; older modules
+keep native healing and disable only the healing control. The actual translated
+heart/fairy routines pass optimized, unoptimized and sanitizer source fixtures
+with synthetic RAM. Full changed-rate gameplay, adjusted healing, death and
+save/reload qualification remain pending.
 
 D-pad equipment shortcuts are disabled by default in Enhancements. When enabled,
 hold the modifier and press Up to play the owned Wind Waker, Left to deploy the

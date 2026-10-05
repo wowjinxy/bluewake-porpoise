@@ -212,6 +212,30 @@ if(BLUEWAKE_DIRECT_CALLS)
   target_sources(${MODULE_NAME} PRIVATE direct_calls.c)
   target_include_directories(${MODULE_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_DIRECT_CALLS=1 BLUEWAKE_EDGE_FILTER=1)
+  # Older prepared modules remain native for healing. Advertising the optional
+  # return ABI requires every relevant base/mod variant and the shared ABI
+  # header to pass the generator's exact control-flow manifest validation.
+  file(STRINGS "${COMPOSITE_DIR}/generated.h" HEALING_RETURN_MARKER LIMIT_COUNT 1
+    REGEX "^#define BLUEWAKE_HEALING_RETURN_PREPARED 1$")
+  if(HEALING_RETURN_MARKER OR EXISTS "${COMPOSITE_DIR}/healing_return.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${COMPOSITE_DIR}/generated.h" "${COMPOSITE_DIR}/healing_return.json"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/windows/direct_calls.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../runtime/host/src/health_return_observer.h"
+        ${CHUNK_INPUTS})
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/windows/direct_calls.py"
+        --verify-healing-return "${COMPOSITE_DIR}"
+        RESULT_VARIABLE HEALING_RETURN_VALID OUTPUT_VARIABLE HEALING_RETURN_OUTPUT
+        ERROR_VARIABLE HEALING_RETURN_ERROR)
+    if(NOT HEALING_RETURN_VALID EQUAL 0)
+      message(FATAL_ERROR "Uncertified healing return: ${HEALING_RETURN_OUTPUT}${HEALING_RETURN_ERROR}")
+    endif()
+    if(HEALING_RETURN_MARKER)
+      target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_HEALING_RETURN_CERTIFIED=1)
+    endif()
+  endif()
 endif()
 
 if(BLUEWAKE_FIXED_CPU)

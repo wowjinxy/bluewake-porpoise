@@ -2,6 +2,7 @@
 #ifndef BLUEWAKE_HEALTH_HOST_H
 #define BLUEWAKE_HEALTH_HOST_H
 #include "health_rules.h"
+#include "health_return_observer.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,7 +16,14 @@ BwHealthRulesConfig bw_health_host_configuration(void);
  * This prototype makes no network challenge-compatibility claim. */
 bool bw_health_host_prepare_room(bool room_mode);
 bool bw_health_host_available(void); /* UI safe; audited module attached. */
+bool bw_health_host_healing_available(void); /* Also requires certified native return observation. */
 bool bw_health_host_room_locked(void); /* UI safe, mounted native-only room. */
+/* Game thread only, after loading the module and before attach. NULL revokes
+ * the borrowed module function before unload. The callback is uncounted and
+ * read-only; an old/mismatched module keeps healing native independently of
+ * the saved preference and the separately qualified damage capability. */
+void bw_health_host_bind_healing_return(BwHealingReturnSetterFn setter,
+                                       BwHealingReturnCanContinueFn callback, void* user);
 bool bw_health_host_attach(CPUState* cpu,const struct StaticRecompModuleDesc* module);
 void bw_health_host_retrace(CPUState* cpu,bool saving);
 bool bw_health_host_observes(const CPUState* cpu,uint32_t address);

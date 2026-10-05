@@ -31,4 +31,5 @@ BwSettingsUiEffects bw_settings_ui_mock_effects();
 
 // Fixture-only UI shell policy; no native game/module is attached here.
 void bw_settings_ui_health_policy(bool available,bool room);
+void bw_settings_ui_healing_policy(bool available);
 unsigned bw_settings_ui_health_calls();

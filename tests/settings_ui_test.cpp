@@ -74,12 +74,21 @@ const Item& item(const char* label, ImGuiItemStatusFlags required = 0,
         if (value.label == label && (value.flags & required) == required && !(value.flags & excluded))
             return value;
     // Bundled ImGui's BeginCombo registers ItemAdd but has no ItemInfo hook.
-    // Resolve its actual root-window ID and recorded rectangle, without
+    // Resolve its actual scoped ID and recorded rectangle, without
     // duplicating widget geometry or changing application state.
     if (required == 0 && excluded == 0)
         if (auto* window = ImGui::FindWindowByName("BlueWake settings")) {
             auto found = items.find(window->GetID(label));
             if (found != items.end()) return found->second;
+            size_t count = 0;
+            const auto* definitions = bw_setting_definitions(&count);
+            for (size_t i = 0; i < count; ++i)
+                if (std::strcmp(definitions[i].label, label) == 0) {
+                    // setting_widget pushes the catalog ID before BeginCombo.
+                    const ImGuiID scope = window->GetID(definitions[i].id);
+                    found = items.find(ImHashStr(label, 0, scope));
+                    if (found != items.end()) return found->second;
+                }
         }
     throw std::runtime_error("Actual UI did not expose widget: " + std::string(label));
 }
@@ -250,6 +259,37 @@ void file_line(const std::string& text, const std::string& line) {
             text.find("\n" + line + "\r\n") != std::string::npos,
             "Saved settings missing expected line: " + line);
 }
+void healing_capability_ui_checks(const std::filesystem::path& folder) {
+    const auto* healing=bw_setting_find("healing_rate_q8");
+    const auto* damage=bw_setting_find("damage_rate_q8");
+    require(healing&&damage,"Missing actual health catalog choices");
+    bw_settings_ui_health_policy(true,false);bw_settings_ui_healing_policy(false);
+    const auto saved=bw_settings_ui_test_saved();const unsigned calls=bw_settings_ui_health_calls();
+    search(healing->label);
+    require(item(healing->label).item_flags&ImGuiItemFlags_Disabled,
+            "Missing certified return capability left Healing enabled");
+    require(rendered_text.find("Pickups keep their native healing rate")!=std::string::npos,
+            "Unavailable Healing did not explain its native fallback");
+    click(healing->label);
+    require(bw_settings_ui_test_session().healing_rate_q8==saved.healing_rate_q8&&
+            bw_settings_ui_test_saved().healing_rate_q8==saved.healing_rate_q8&&
+            bw_settings_ui_health_calls()==calls,"Disabled Healing erased or applied the saved preference");
+    clear_search();search(damage->label);
+    require(!(item(damage->label).item_flags&ImGuiItemFlags_Disabled),
+            "Missing Healing capability also disabled qualified Damage");
+    click(damage->label);click("Half");
+    require(bw_settings_ui_test_session().damage_rate_q8==128&&bw_settings_ui_test_saved().damage_rate_q8==128&&
+            bw_settings_ui_test_saved().healing_rate_q8==saved.healing_rate_q8&&bw_settings_ui_health_calls()>calls,
+            "Independent Damage choice did not persist/apply while preserving Healing");
+    clear_search();bw_settings_ui_test_flush();
+    file_line(read_file(folder/"settings.ini"),"healing_rate_q8="+std::to_string(saved.healing_rate_q8));
+    bw_settings_ui_healing_policy(true);search(healing->label);
+    require(!(item(healing->label).item_flags&ImGuiItemFlags_Disabled),
+            "Certified Healing capability did not re-enable its existing preference");
+    require(bw_settings_ui_test_saved().healing_rate_q8==saved.healing_rate_q8,
+            "Restoring Healing capability changed the saved rate");
+    clear_search();
+}
 void clear_launch_environment() {
     // Only this fixture process's environment is changed; never the machine or
     // user's shell. Full explicit list makes a developer's startup overrides
@@ -341,6 +381,7 @@ int main(int argc, char** argv) {
         saved.audio_music = 75;
         saved.audio_sfx = 65;
         saved.dialogue_speed = 2;
+        saved.healing_rate_q8 = 512;
         saved.autosave_interval = 180;
         saved.controller_swap_ab = true;
         saved.options["faster_animations"] = true;
@@ -401,6 +442,8 @@ int main(int argc, char** argv) {
         require(bool(preview),"Cannot create actual optional preview worker");
         bw_settings_ui_mock_preview_bind(preview.get());
         preview_ui_checks(preview.get(),folder);
+        unchanged_profile(controls_file,profile_file_before);
+        healing_capability_ui_checks(folder);
         unchanged_profile(controls_file,profile_file_before);
 
         const auto* hud_opacity = bw_setting_find("hud.hearts.opacity");

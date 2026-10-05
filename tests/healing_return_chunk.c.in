@@ -1,0 +1,37 @@
+/* Authored control-flow analog, not translated game instructions. It models
+ * a native healing leaf and its caller epilogue sharing one dispatch chunk. */
+#include "../generated.h"
+static void HEALING_CHUNK_NAME(CPUState* ctx) {
+    switch(ctx->pc) {
+    case 0x800C2E1Cu: goto synthetic_call;
+    case 0x800C2E7Cu: goto label_800C2E7C;
+    case 0x800C31C8u: goto label_800C31C8;
+    case 0x800C2E20u: goto label_800C2E20;
+    default: return;
+    }
+synthetic_call:
+    --ctx->downcount;
+    ctx->lr=0x800C2E20u;ctx->pc=ctx->ctr;
+    if(bw_direct_call_ready(ctx,ctx->ctr)&&bw_call_translated(ctx,ctx->ctr)&&
+       ctx->pc==0x800C2E20u&&bw_direct_call_ready(ctx,0x800C2E20u))
+        goto label_800C2E20;
+    return;
+label_800C2E7C:
+    synthetic_add(ctx,4.0f);goto synthetic_blr;
+label_800C31C8:
+    synthetic_add(ctx,40.0f);
+synthetic_blr:
+    --ctx->downcount;ctx->pc=ctx->lr;
+    goto return_dispatch_800C16E0;
+label_800C2E20:
+    ++epilogues;ctx->downcount-=5;
+    ctx->gpr[0]=mem_read32(ctx,ctx->gpr[1]+20u);
+    ctx->lr=ctx->gpr[0];ctx->gpr[1]+=16u;ctx->pc=ctx->lr;
+    goto return_dispatch_800C16E0;
+return_dispatch_800C16E0:
+    if(ctx->cycle_budget>0&&ctx->downcount<=-ctx->cycle_budget)return;
+    switch (ctx->pc) {
+    case 0x800C2E20u: goto label_800C2E20;
+    default: return;
+    }
+}

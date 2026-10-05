@@ -58,6 +58,56 @@ def convert(source, watched=()):
 
 
 class DirectPreparationTests(unittest.TestCase):
+    def test_shared_healing_return_only_guarded_once(self):
+        source=(ROOT / 'tests/healing_return_chunk.c.in').read_text()
+        for source in (source,source.replace('CPUState* ctx)', 'CPUState* ctx_param)')):
+            guarded,count=direct.transform_healing_return(source)
+            self.assertEqual(count,1)
+            self.assertEqual(direct.transform_healing_return(guarded),(guarded,0))
+            self.assertIn('case 0x800C2E20u: goto label_800C2E20;',guarded.split('return_dispatch_800C16E0:')[0])
+            self.assertEqual(guarded.count(direct.HEALING_GUARD),1)
+            self.assertNotIn('bw_direct_call_ready',direct.HEALING_GUARD)
+            self.assertEqual(direct.healing_return_contract(guarded)['leaves'],['800C2E7C','800C31C8'])
+        for broken in (source.replace('return_dispatch_800C16E0:', 'other_dispatch:'),
+                       source.replace('label_800C31C8:', 'label_800C31CC:'),
+                       source.replace(direct.HEALING_CASE,'    case 0x800C2E24u: goto label_800C2E20;')):
+            with self.assertRaises(ValueError):direct.transform_healing_return(broken)
+        with self.assertRaises(ValueError):direct.transform_healing_return(guarded.replace(direct.HEALING_GUARD,direct.HEALING_CASE))
+
+    def test_healing_manifest_checks_all_variants_and_abi(self):
+        source=(ROOT / 'tests/healing_return_chunk.c.in').read_text()
+        guarded,_=direct.transform_healing_return(source)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'chunks_dol').mkdir();(root/'chunks_mod_test').mkdir()
+            (root/'generated.h').write_text('/* authored */\n')
+            base=root/'chunks_dol/base.c';variant=root/'chunks_mod_test/variant.c'
+            base.write_text(guarded);variant.write_text(guarded)
+            self.assertEqual(direct.write_healing_return_manifest(root),2)
+            self.assertTrue(direct.validate_healing_return_manifest(root))
+            manifest=(root/'healing_return.json').read_bytes()
+            direct.write_healing_return_manifest(root)
+            self.assertEqual(manifest,(root/'healing_return.json').read_bytes())
+            variant.write_text(source)
+            with self.assertRaises(ValueError):direct.validate_healing_return_manifest(root)
+            variant.write_text(guarded);(root/'healing_return.json').write_text(manifest.decode().replace('"version": 1','"version": 2'))
+            with self.assertRaises(ValueError):direct.validate_healing_return_manifest(root)
+            (root/'healing_return.json').write_bytes(manifest);base.unlink()
+            with self.assertRaises(ValueError):direct.validate_healing_return_manifest(root)
+
+    def test_no_healing_capability_is_legal_and_utf8_repeatable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'chunks_dol').mkdir()
+            (root/'chunks_dol/unsupported.c').write_text(CALL,encoding='utf-8')
+            header=root/'generated.h';header.write_bytes('/* UTF8 \u2603 */\r\n'.encode('utf-8'))
+            self.assertEqual(direct.write_healing_return_manifest(root),0)
+            self.assertFalse(direct.validate_healing_return_manifest(root))
+            before_header=header.read_bytes();before_manifest=(root/'healing_return.json').read_bytes()
+            self.assertIn('\u2603'.encode('utf-8'),before_header)
+            self.assertNotIn(b'\r\r\n',before_header)
+            direct.write_healing_return_manifest(root)
+            self.assertEqual(before_header,header.read_bytes())
+            self.assertEqual(before_manifest,(root/'healing_return.json').read_bytes())
+
     def test_direct_and_fixed_cpu_calls_keep_both_boundary_queries(self):
         for source in (CALL, CALL.replace('CPUState* ctx)', 'CPUState* ctx_param)')):
             with self.subTest(fixed='ctx_param' in source):

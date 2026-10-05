@@ -95,7 +95,8 @@ class PreparedCacheTest(unittest.TestCase):
                        "cmake/composite/inline_fp.h", "cmake/composite/gather_pipe.h",
                        "cmake/composite/gather_pipe.c", "cmake/composite/gather_pipe_batch.h",
                        "scripts/windows/direct_calls.py", "cmake/composite/direct_calls.c",
-                       "cmake/composite/direct_calls.h", "cmake/composite/inline_gpr.h",
+                       "cmake/composite/direct_calls.h", "runtime/host/src/health_return_observer.h",
+                       "cmake/composite/inline_gpr.h",
                        "scripts/windows/inline_save_restore_gpr.py", "scripts/mods/prepare_native_j3d.py",
                        "cmake/composite/native_j3d.c", "cmake/composite/native_j3d.h",
                        "scripts/mods/prepare_native_vec.py", "cmake/composite/native_vec.c", "cmake/composite/native_vec.h",
@@ -163,7 +164,7 @@ label_80004004:
         self.cycle()
         self.assertEqual(before, (self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns))
         host = self.root / "runtime/host/src/synthetic.c"
-        host.parent.mkdir(parents=True)
+        host.parent.mkdir(parents=True, exist_ok=True)
         host.write_text("/* host now watches 0x80006000u */\n", newline="\n")
         self.cycle()
         self.assertNotIn("bw_chunk_fns", self.chunk().read_text())
@@ -178,7 +179,7 @@ label_80004004:
     def test_host_implementation_edits_reuse_cache_but_watch_changes_invalidate(self):
         self.args.direct_calls = True
         host = self.root / "runtime/host/src/synthetic.c"
-        host.parent.mkdir(parents=True)
+        host.parent.mkdir(parents=True, exist_ok=True)
         host.write_text("/* observed 0x80006000u */\n", newline="\n")
         self.cycle()
         original = (self.out / "composite-inputs.digest").read_text()
@@ -206,7 +207,8 @@ label_80004004:
     def test_watch_scanner_and_direct_helpers_remain_fingerprinted(self):
         self.args.direct_calls = True
         self.cycle()
-        for helper in ("scripts/windows/direct_calls.py", "cmake/composite/direct_calls.h", "cmake/composite/direct_calls.c"):
+        for helper in ("scripts/windows/direct_calls.py", "cmake/composite/direct_calls.h", "cmake/composite/direct_calls.c",
+                       "runtime/host/src/health_return_observer.h"):
             original = (self.out / "composite-inputs.digest").read_text()
             path = self.root / helper
             path.write_text(path.read_text() + "\n", newline="\n")
@@ -411,7 +413,7 @@ label_80004004:
         self.cycle()
         self.assertEqual(before, (source.read_bytes(), source.stat().st_mtime_ns))
         fingerprint = (self.out / 'composite-inputs.digest').read_text()
-        host = self.root / 'runtime/host/src/test_watch.c'; host.parent.mkdir(parents=True)
+        host = self.root / 'runtime/host/src/test_watch.c'; host.parent.mkdir(parents=True, exist_ok=True)
         host.write_text('/* watched 0x80001000 */\n', newline="\n")
         self.cycle()
         self.assertNotEqual(fingerprint, (self.out / 'composite-inputs.digest').read_text())

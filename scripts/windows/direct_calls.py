@@ -34,6 +34,7 @@ they finally are.
 """
 import bisect
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -367,7 +368,103 @@ def write_watch_list(root, watched):
     return len(canonical)
 
 
+HEALING_MARK = "/* bluewake: shared healing return observation v1 */\n"
+HEALING_HEADER = "#define BLUEWAKE_HEALING_RETURN_PREPARED 1\n"
+HEALING_CASE = "    case 0x800C2E20u: goto label_800C2E20;"
+HEALING_GUARD = ("    case 0x800C2E20u:\n"
+                 "        if (!bw_healing_return_continue(ctx, 0x800C2E20u)) return;\n"
+                 "        goto label_800C2E20;")
+RETURN_SWITCH = re.compile(r"^return_dispatch_([0-9A-F]{8}):\n.*?^    \}\n", re.M | re.S)
+HEALING_LEAVES = ("label_800C2E7C:", "label_800C31C8:")
+
+
+def healing_return_contract(text):
+    """Validate only the native shared return switch, never the entry switch.
+
+    The digest pins this precise control-flow contract. Other independent
+    preparation passes may change unrelated instructions afterward. Every
+    source/variant containing either leaf is required to contain both leaves
+    and the guarded shared return; missing or ambiguous shapes fail closed.
+    """
+    if not any(leaf in text for leaf in HEALING_LEAVES):
+        if HEALING_MARK in text:
+            raise ValueError("healing marker without native healing leaves")
+        return None
+    if (text.count(HEALING_MARK) != 1 or
+            any(text.count("\n" + leaf + "\n") != 1 for leaf in HEALING_LEAVES) or
+            text.count("\nlabel_800C2E20:\n") != 1):
+        raise ValueError("missing/ambiguous healing leaves or shared return label")
+    switches = list(RETURN_SWITCH.finditer(text))
+    guarded = [m for m in switches if HEALING_GUARD in m.group(0)]
+    if (len(guarded) != 1 or text.count(HEALING_GUARD) != 1 or
+            any(HEALING_CASE in m.group(0) for m in switches)):
+        raise ValueError("shared healing return is not uniquely guarded")
+    return {"dispatcher": guarded[0].group(1), "return_pc": "800C2E20",
+            "leaves": ["800C2E7C", "800C31C8"],
+            "guard_sha256": hashlib.sha256(HEALING_GUARD.encode()).hexdigest()}
+
+
+def transform_healing_return(text):
+    if not any(leaf in text for leaf in HEALING_LEAVES):
+        if HEALING_MARK in text:
+            raise ValueError("healing marker without leaves")
+        return text, 0
+    if HEALING_MARK in text:
+        healing_return_contract(text)
+        return text, 0
+    if INCLUDE not in text or any(text.count("\n" + leaf + "\n") != 1 for leaf in HEALING_LEAVES):
+        raise ValueError("unsupported native healing chunk shape")
+    matches = [m for m in RETURN_SWITCH.finditer(text) if HEALING_CASE in m.group(0)]
+    if len(matches) != 1 or matches[0].group(0).count(HEALING_CASE) != 1:
+        raise ValueError("missing/ambiguous shared healing return switch")
+    m = matches[0]
+    replacement = m.group(0).replace(HEALING_CASE, HEALING_GUARD)
+    converted = text[:m.start()] + replacement + text[m.end():]
+    header = "" if '#include "direct_calls.h"' in converted else '#include "direct_calls.h"\n'
+    converted = converted.replace(INCLUDE, INCLUDE + HEALING_MARK + header, 1)
+    healing_return_contract(converted)
+    return converted, 1
+
+
+def healing_return_records(root):
+    records = {}
+    for path in sorted(root.glob("chunks_*/*.c")):
+        contract = healing_return_contract(path.read_text(encoding="utf-8"))
+        if contract is not None:
+            records[path.relative_to(root).as_posix()] = contract
+    return records
+
+
+def write_healing_return_manifest(root):
+    records = healing_return_records(root)
+    body = {"version": 1, "capability": 1 if records else 0, "chunks": records,
+            "abi_sha256": hashlib.sha256((ROOT / "runtime/host/src/health_return_observer.h").read_bytes()).hexdigest()}
+    with (root / "healing_return.json").open("w",encoding="utf-8",newline="") as file:
+        file.write(json.dumps(body, sort_keys=True, indent=2) + "\n")
+    header = root / "generated.h"
+    text = header.read_text(encoding="utf-8").replace(HEALING_HEADER, "")
+    with header.open("w",encoding="utf-8",newline="") as file:
+        file.write((HEALING_HEADER if records else "") + text)
+    return len(records)
+
+
+def validate_healing_return_manifest(root):
+    manifest = json.loads((root / "healing_return.json").read_text(encoding="utf-8"))
+    records = healing_return_records(root)
+    expected = {"version": 1, "capability": 1 if records else 0, "chunks": records,
+                "abi_sha256": hashlib.sha256((ROOT / "runtime/host/src/health_return_observer.h").read_bytes()).hexdigest()}
+    if manifest != expected:
+        raise ValueError("healing return manifest does not match all current variants")
+    if ((HEALING_HEADER in (root / "generated.h").read_text(encoding="utf-8")) != bool(records)):
+        raise ValueError("healing return capability marker mismatch")
+    return bool(records)
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--verify-healing-return":
+        enabled=validate_healing_return_manifest(Path(sys.argv[2]))
+        print("healing-return-capability=" + ("1" if enabled else "0"))
+        return
     root = Path(sys.argv[1])
     chunks = sorted(root.glob("chunks_*/*.c"))
     if not chunks:
@@ -384,7 +481,7 @@ def main():
         if not matrix_manifest:
             sys.exit('libPorpoise requires native matrix preparation')
         natives = natives | DISPATCHER_PORPOISE
-    sites = files = indirect = fallback = 0
+    sites = files = indirect = fallback = healing = 0
     for path in chunks:
         m = re.search(r"_([0-9A-F]{8})\.c$", path.name)
         own_start = int(m.group(1), 16) if m else None
@@ -393,7 +490,8 @@ def main():
         converted, count = transform(original, own_start, starts, index_of, watched, natives)
         converted, count_indirect = transform_indirect(converted, watched)
         converted, count_fallback = transform_fallback(converted, watched)
-        if count or count_indirect or count_fallback:
+        converted, count_healing = transform_healing_return(converted)
+        if count or count_indirect or count_fallback or count_healing:
             temporary = path.with_suffix(".c.tmp")
             with open(temporary, "w", encoding="utf-8", newline="") as file:
                 file.write(converted)
@@ -401,8 +499,10 @@ def main():
             sites += count
             indirect += count_indirect
             fallback += count_fallback
+            healing += count_healing
             files += 1
     listed = write_watch_list(root, watched)
+    certified_healing = write_healing_return_manifest(root)
     header = root / "generated.h"
     marker = "#define BLUEWAKE_DIRECT_CALLS_PREPARED 2\n"
     text = header.read_text()
@@ -412,6 +512,7 @@ def main():
     print(f"direct calls between chunks: {sites} calls, {indirect} indirect calls and "
           f"{fallback} interpreted instructions in {files} chunks; {listed} watched addresses; "
           f"{len(natives)} certified native matrix targets")
+    print(f"healing return observation: {healing} new guards; {certified_healing} certified variants")
 
 
 if __name__ == "__main__":

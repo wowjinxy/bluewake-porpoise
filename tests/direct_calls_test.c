@@ -31,6 +31,8 @@ static void enable(void) {
 }
 
 int main(void) {
+    /* Merely linking the optional setter cannot claim generated coverage. */
+    assert(bluewake_composite_healing_return_v1(GXRUNTIME_CPU_ABI_VERSION,sizeof(CPUState),NULL,NULL)==0);
     CPUState cpu = {0};
     cpu.cycle_budget = 20;
     cpu.lr = 0x80005000u;
