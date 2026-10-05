@@ -535,8 +535,11 @@ network play and are unavailable for room saves. These rules scale audited
 native pending health changes; they do not grant items or change maximum health.
 Native settings preserve shipping CPU/RAM checkpoints, events and direct-call
 counts. Half damage passes seven genuine scaling transactions, but the timed
-combat route diverged and died before its reward. Full changed-rate gameplay,
-healing, death and save/reload qualification remain pending.
+combat route diverged and died before its reward. A genuine native heart pickup
+raises life from 7 to 11 and preserves the rest of saved progress and source
+cards, but its diagnostic trace misses the exact health callback. Source review
+found an internal return path that can bypass that observation. Full changed-rate
+gameplay, adjusted healing, death and save/reload qualification remain pending.
 
 D-pad equipment shortcuts are disabled by default in Enhancements. When enabled,
 hold the modifier and press Up to play the owned Wind Waker, Left to deploy the
