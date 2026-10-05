@@ -1,0 +1,12 @@
+diff --git a/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp b/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp
+--- a/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp
++++ b/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp
+@@ -1799,7 +1799,7 @@
+       last_sample = dst[remaining_length - 1];
+     }
+     for (u16 i = remaining_length; i < requested_samples_count; ++i)
+-      *dst++ = last_sample;
++      dst[i] = last_sample;
+ 
+     vpb->current_position_h += remaining_length;
+     vpb->SetRemainingLength(0);

@@ -1,0 +1,161 @@
+diff --git a/GXRuntime/graphics/aurora/include/aurora/texture.hpp b/GXRuntime/graphics/aurora/include/aurora/texture.hpp
+index cd32c87ae0305c0821a33f13b58ec1f6f4750715..295ef157f27904b8561b0b5c9e76617ac2f437dc 100644
+--- a/GXRuntime/graphics/aurora/include/aurora/texture.hpp
++++ b/GXRuntime/graphics/aurora/include/aurora/texture.hpp
+@@ -59,6 +59,14 @@ void unregister_replacements(const ReplacementGroup& group);
+ void unregister_replacements(const ReplacementKey& key);
+ void clear_replacements();
+ 
++// Filesystem/decoder inspection for startup pack management. No GPU object is
++// created, and the registry/cache is unchanged. The registration must still
++// exist; missing, undecodable, unsupported, or concurrently changed files fail.
++// Raw registrations are outside this file-pack validation API.
++bool validate_replacement(const ReplacementRegistration& registration);
++// Registry winner only, without decoding/uploading a texture; zero means none.
++uint64_t selected_replacement_id(const ReplacementKey& key);
++
+ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, ReplacementOptions options = {});
+ void reload_replacement_directory(const std::filesystem::path& root, ReplacementGroup& group,
+                                   ReplacementOptions options = {});
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/texture_replacement.cpp b/GXRuntime/graphics/aurora/lib/gfx/texture_replacement.cpp
+index 1d123c8e378f7614f6fe645b26d50ed04d1b5c37..a7f36bc78954fcc431e90321db95edc33cd5dc75 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/texture_replacement.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/texture_replacement.cpp
+@@ -24,6 +24,7 @@
+ #include <charconv>
+ #include <cstring>
+ #include <filesystem>
++#include <fstream>
+ #include <list>
+ #include <condition_variable>
+ #include <deque>
+@@ -590,7 +591,7 @@ bool validate_texture_size(wgpu::TextureFormat format, uint32_t width, uint32_t
+   return false;
+ }
+ 
+-std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const ReplacementEntry& entry) noexcept {
++std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const ReplacementEntry& entry, bool strictMips = false) noexcept {
+   auto base = load_texture_file(entry.path);
+   if (!base.has_value()) {
+     Log.warn("texture_replacement: failed to load texture {}", fs_path_to_string(entry.path));
+@@ -611,7 +612,11 @@ std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const Replace
+ 
+   std::vector<aurora::gfx::ConvertedTexture> more;
+   std::error_code ec;
+-  for (uint32_t mipLevel = 1;; ++mipLevel) {
++  uint32_t lastMip = 0;
++  for (uint32_t dimension = std::max(base->width, base->height); dimension > 1; dimension >>= 1) ++lastMip;
++  // A complete chain has no levels past 1x1. In particular, never shift a
++  // 32-bit dimension by 32 or read an unbounded run of tiny sidecar images.
++  for (uint32_t mipLevel = 1; mipLevel <= lastMip; ++mipLevel) {
+     const auto mipPath = entry.path.parent_path() / fmt::format("{}_mip{}{}", fs_path_to_string(entry.path.stem()),
+                                                                 mipLevel, fs_path_to_string(entry.path.extension()));
+     if (!std::filesystem::is_regular_file(mipPath, ec)) {
+@@ -629,12 +634,13 @@ std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const Replace
+         Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", ew, eh, fs_path_to_string(mipPath),
+                  lvl->width, lvl->height);
+       }
+-
++      if (strictMips) return std::nullopt;
+       break;
+     }
+     // If a sidecar mip file contains mipmaps, keep only the top level mip.
+     if (!remove_mipmaps(*lvl)) {
+       Log.warn("texture_replacement: could not slice first mip {}", fs_path_to_string(mipPath));
++      if (strictMips) return std::nullopt;
+       break;
+     }
+     more.push_back(std::move(*lvl));
+@@ -1119,6 +1125,92 @@ void clear_replacements() {
+   clear_static_texture_cache();
+ }
+ 
++bool validate_replacement(const ReplacementRegistration& registration) {
++  ReplacementEntry entry;
++  {
++    std::lock_guard lk(s_registryMutex);
++    const auto found = s_entriesByKey.find(registration.key);
++    if (registration.id == 0 || found == s_entriesByKey.end()) return false;
++    const auto match = std::find_if(found->second.begin(), found->second.end(),
++        [&](const ReplacementEntry& item) { return item.id == registration.id; });
++    if (match == found->second.end() || match->kind != EntryKind::File) return false;
++    entry = *match;
++  }
++  // Decode outside the registry lock. This is a startup inspection, not a
++  // cache lookup: invalid files never acquire a failed-ID or GPU cache entry.
++  // Bound startup decoder allocations before invoking the normal PNG/DDS
++  // decoder. This is only a budget guard; CRC/layout/mips remain its job.
++  const auto withinBudget = [](const std::filesystem::path& path, uint64_t& aggregate, uint32_t& lastMip) {
++    constexpr uint64_t maxBytes = 256ull * 1024 * 1024;
++    std::error_code error;
++    const auto size = std::filesystem::file_size(path, error);
++    if (error || size > maxBytes) return false;
++    std::array<uint8_t, 32> header{};
++    std::ifstream stream(path, std::ios::binary);
++    stream.read(reinterpret_cast<char*>(header.data()), header.size());
++    if (stream.gcount() != header.size()) return false;
++    uint32_t width = 0, height = 0, mipCount = 1;
++    const auto be32 = [&](size_t at) { return (uint32_t(header[at]) << 24) | (uint32_t(header[at+1]) << 16) |
++        (uint32_t(header[at+2]) << 8) | uint32_t(header[at+3]); };
++    const auto le32 = [&](size_t at) { return uint32_t(header[at]) | (uint32_t(header[at+1]) << 8) |
++        (uint32_t(header[at+2]) << 16) | (uint32_t(header[at+3]) << 24); };
++    if (iequals_ascii(fs_path_to_string(path.extension()), ".png")) {
++      constexpr uint8_t signature[] = {137,80,78,71,13,10,26,10};
++      if (size < 33 || std::memcmp(header.data(), signature, sizeof signature) != 0 ||
++          std::memcmp(header.data()+12, "IHDR", 4) != 0) return false;
++      width = be32(16); height = be32(20);
++    } else {
++      if (size < 128 || std::memcmp(header.data(), "DDS ", 4) != 0) return false;
++      width = le32(16); height = le32(12);
++      mipCount = std::max(le32(28), 1u);
++    }
++    if (width == 0 || height == 0 || width > 16384 || height > 16384) return false;
++    lastMip = 0;
++    for (uint32_t dimension = std::max(width, height); dimension > 1; dimension >>= 1) ++lastMip;
++    if (mipCount > lastMip + 1) return false;
++    for (uint32_t mip = 0; mip < mipCount; ++mip) {
++      const uint64_t cost = uint64_t(std::max(width >> mip, 1u)) * std::max(height >> mip, 1u) * 4;
++      if (cost > maxBytes - aggregate) return false;
++      aggregate += cost;
++    }
++    return true;
++  };
++  uint64_t aggregate = 0; uint32_t lastMip = 0;
++  if (!withinBudget(entry.path, aggregate, lastMip)) return false;
++  std::error_code ec;
++  const auto mipPath = [&](uint32_t mip) {
++    return entry.path.parent_path() / fmt::format("{}_mip{}{}", fs_path_to_string(entry.path.stem()),
++        mip, fs_path_to_string(entry.path.extension()));
++  };
++  for (uint32_t mip = 1; mip <= lastMip; ++mip) {
++    const auto path = mipPath(mip);
++    if (!std::filesystem::is_regular_file(path, ec)) break;
++    uint32_t sidecarLastMip = 0;
++    if (ec || !withinBudget(path, aggregate, sidecarLastMip)) return false;
++  }
++  // Higher suffixes beyond a gap are ignored by the native loader. The first
++  // surplus level of a complete legal chain must not enter its decoder.
++  if (std::filesystem::is_regular_file(mipPath(lastMip + 1), ec)) return false;
++  const auto beforeSize = std::filesystem::file_size(entry.path, ec);
++  if (ec) return false;
++  const auto beforeTime = std::filesystem::last_write_time(entry.path, ec);
++  if (ec || !load_file_replacement(entry, true).has_value()) return false;
++  const auto afterSize = std::filesystem::file_size(entry.path, ec);
++  if (ec || beforeSize != afterSize) return false;
++  const auto afterTime = std::filesystem::last_write_time(entry.path, ec);
++  if (ec || beforeTime != afterTime) return false;
++  std::lock_guard lk(s_registryMutex);
++  const auto found = s_entriesByKey.find(registration.key);
++  return found != s_entriesByKey.end() && std::any_of(found->second.begin(), found->second.end(),
++      [&](const ReplacementEntry& item) { return item.id == registration.id && item.path == entry.path; });
++}
++
++uint64_t selected_replacement_id(const ReplacementKey& key) {
++  std::lock_guard lk(s_registryMutex);
++  const auto* entry = find_selected_entry_locked(key);
++  return entry ? entry->id : 0;
++}
++
+ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, ReplacementOptions options) {
+   ReplacementGroup group;
+   if (root.empty() || !ensure_directory(root)) {

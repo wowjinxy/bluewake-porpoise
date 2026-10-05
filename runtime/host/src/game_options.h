@@ -23,6 +23,8 @@ void bluewake_game_options_retrace(CPUState* cpu);
 // position (the setting's key), its title, whether it is on by default and
 // whether it is on now; NULL past the last, or before the game has started.
 const char* bluewake_game_options_describe(u32 position, const char** title, bool* default_on, bool* on);
+// Availability in this translated module, independent of whether enabled.
+bool bluewake_game_mod_available(const char* name);
 // Better Wind Waker's "invert camera left and right" is on (the game's C-stick
 // then already turns the camera the way the mouse does).
 bool bluewake_game_options_invert_camera_x(void);

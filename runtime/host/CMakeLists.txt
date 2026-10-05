@@ -39,12 +39,26 @@ add_executable(bluewake_host
     src/delivery_digest.c
     src/edge_intercepts.c
     src/game_options.c
+    src/game_events.c
+    src/song_rel_owner.c
+    src/song_host_adapter.c
+    src/hud_customization.c
+    src/hud_host.c
+    src/health_rules.c
+    src/health_host.c
+    src/hud_renderer.cpp
+    src/quick_items.c
+    src/dialogue_speed.c
+    src/autosave.c
+    src/enhancement_hooks.c
+    src/audio_customization.c
     src/fast_load.c
     src/fps_watch.c
     src/jump_button.c
     src/climb.c
     src/settings_menu.cpp
     src/sprint.c
+    src/sprint_input.c
     src/quick_doors.c
     src/haptics.c
     src/draw_tags.c
@@ -847,6 +861,12 @@ set_tests_properties(bluewake_render_worker_identity_test PROPERTIES TIMEOUT 30)
 
 include("${BLUEWAKE_REPO_ROOT}/cmake/fifo_trace_worker_test.cmake")
 include("${BLUEWAKE_REPO_ROOT}/cmake/mouse_motion_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/mouse_camera_pad_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/climb_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/game_events_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/song_host_adapter_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/quick_items_test.cmake")
+include("${BLUEWAKE_REPO_ROOT}/cmake/dialogue_speed_test.cmake")
 
 add_executable(bluewake_renderer_shared_flags_test ../../tests/renderer_shared_flags_test.cpp)
 target_compile_definitions(bluewake_renderer_shared_flags_test PRIVATE GXRUNTIME_HAS_AURORA_RECOMP=1)
@@ -864,3 +884,20 @@ add_executable(bluewake_card_dispatch_lock_test ../../tests/card_dispatch_lock_t
 target_include_directories(bluewake_card_dispatch_lock_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${GXRUNTIME_DIR}/include)
 target_link_libraries(bluewake_card_dispatch_lock_test PRIVATE gxruntime)
 add_test(NAME bluewake_card_dispatch_lock_test COMMAND bluewake_card_dispatch_lock_test)
+
+# Optional source-only HUD host regressions.
+include("${BLUEWAKE_REPO_ROOT}/cmake/hud_host_test.cmake")
+
+
+
+
+
+
+# The legacy renderer retains native identity. Its build has no GXCore types.
+if(TARGET GXRuntime::gxcore)
+  target_sources(bluewake_host PRIVATE src/hud_customization_draw_plan.cpp)
+  target_link_libraries(bluewake_host PRIVATE GXRuntime::gxcore)
+  target_compile_definitions(bluewake_host PRIVATE BLUEWAKE_HUD_GXCORE=1)
+endif()
+
+include("${BLUEWAKE_REPO_ROOT}/cmake/health_host_test.cmake")

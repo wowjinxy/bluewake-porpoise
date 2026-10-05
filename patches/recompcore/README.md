@@ -14,6 +14,40 @@ The dependency lock and build provenance record this recipe.
 - 0154 adapts [s-ilent's sustained rendering overload policy](https://github.com/s-ilent/Wind-Waker-Recomp/commit/f92ba1a43c5a58a08e40ce8a4129c08fe1ab2412)
   to the current seven-step interpolation implementation, keeping its slow-game
   median, hysteresis, settling and recovery behavior. It includes runtime tests.
+- 0155 reconciles controller discovery after missed or duplicate hotplug events,
+  preserves device mappings, and supports independent or cleared axis bindings.
+  The PAD menu gate neutralizes every input field and waits for held keyboard,
+  controller and virtual inputs to release. `tests/pad_backend_test.cpp` tests
+  the production backend using SDL virtual devices without a GPU or game data.
+- 0156 preserves UTF-8 card paths on Windows with local wide-path file, lock,
+  replacement, removal and timestamp helpers. Active cards, validation,
+  temporary files and rotated backups identify the same Unicode paths as the
+  save manager. `tests/card_menu_test.cpp` uses actual serialization and OS
+  locking under a Unicode directory, plus Unicode imports and exact backups.
+- 0157 exposes decoder-only registration validation and the actual registry
+  winner for managed texture packs. Startup removes a broken managed group so
+  lower-priority packs and native textures remain available. Native sidecar
+  mip counts and startup decoder budgets are bounded; inspection creates no GPU
+  objects. The actual loader fixture runs without a renderer or desktop input.
+- 0158 preserves valid samples in the final partial Zelda HLE sound block and
+  fills only its remaining tail. The original code restarted filling at index
+  zero and left the end unwritten. Actual donor tests reproduce that defect
+  with a 64-sample prefix and 56-sample tail, then verify native completion,
+  history, full blocks and looping in optimized, debug and sanitizer builds.
+- 0159 calls the host once per Zelda HLE voice block after native filtering and
+  before dry/reverb mixing. The callback changes scratch samples only; unity
+  keeps native output and unknown ownership retains category volume. The host
+  validates native music, sound-effect and stream ownership before applying a
+  category gain. The target publishes its feature macro to keep header and
+  implementation signatures consistent. Native loaded-game coverage remains
+  a separate requirement from the donor mixer and ownership fixtures.
+- 0160 transports ordered HUD pane descriptors through GXCore and installs a
+  host filter before the renderer worker starts. Presentation flushes preserve
+  descriptors until an explicit native return or reset. The filter changes
+  projection, scissor, visibility and final fragment color; native geometry,
+  textures and destination-alpha behavior remain intact. The shader constant
+  layout changes with pipeline cache version 13. Customization is off by
+  default; native hook and pixel qualification are tracked separately.
 
 These patches record BlueWake's RecompCore changes as they were made. They are history, not a build
 input: the series starts at 0008 (0001-0007 were never exported), so it does not apply to the

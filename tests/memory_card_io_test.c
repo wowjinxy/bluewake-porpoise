@@ -9,6 +9,8 @@
 #include <string.h>
 #ifdef _WIN32
 #include "bw_posix_compat.h"
+#include <windows.h>
+#include <wchar.h>
 #else
 #include <unistd.h>
 #endif
@@ -34,6 +36,16 @@ static int card_test_fflush(FILE* file) {
 #define fflush card_test_fflush
 static int fail_rename;
 static unsigned rename_calls;
+#ifdef _WIN32
+static BOOL card_test_move(const wchar_t* from, const wchar_t* to, DWORD flags) {
+    size_t length = wcslen(to);
+    int live = length >= 5 && wcscmp(to + length - 5, L".card") == 0;
+    if (live) { assert(flush_calls > rename_calls); ++rename_calls; }
+    if (live && fail_rename) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+    return MoveFileExW(from, to, flags);
+}
+#define MoveFileExW card_test_move
+#else
 static int card_test_rename(const char* from, const char* to) {
     size_t length = strlen(to);
     int live = length >= 5 && strcmp(to + length - 5, ".card") == 0;
@@ -43,8 +55,13 @@ static int card_test_rename(const char* from, const char* to) {
 }
 #undef rename
 #define rename card_test_rename
+#endif
 #include "../ref/recompcore/GXRuntime/src/memory_card.c"
+#ifdef _WIN32
+#undef MoveFileExW
+#else
 #undef rename
+#endif
 #undef fflush
 #ifndef _WIN32
 #undef fsync
@@ -66,7 +83,7 @@ static void assert_disk_matches_memory(DolMemoryCard* card) {
 
 int main(void) {
     char path[256];
-    snprintf(path, sizeof path, "card-io-test-%lu.card", (unsigned long)getpid());
+    snprintf(path, sizeof path, "card-io-test-%lu-\xE2\x98\x83.card", (unsigned long)getpid());
     DolMemoryCardConfig config = {.path = path, .size_mbits = 4,
         .game_code = {'G','Z','L','E'}, .company = {'0','1'}};
     DolMemoryCard* card = dol_card_open(&config);
@@ -143,7 +160,7 @@ int main(void) {
     char bad[300];
     snprintf(bad, sizeof bad, "%s.bad", path);
     for (int mode = 0; mode < 2; ++mode) {
-        FILE* file = fopen(bad, "wb");
+        FILE* file = card_fopen(bad, "wb");
         assert(file);
         if (mode == 1) bytes[size - 1] ^= 1;
         assert(fwrite(bytes, 1, mode == 0 ? size - 1 : size, file) == (mode == 0 ? size - 1 : size));
@@ -158,8 +175,8 @@ int main(void) {
         free(check);
     }
     free(bytes);
-    remove(bad);
-    remove(path);
+    assert(card_remove(bad) == 0);
+    assert(card_remove(path) == 0);
     puts("memory-card I/O regression passed");
     return 0;
 }

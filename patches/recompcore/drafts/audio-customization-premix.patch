@@ -1,0 +1,69 @@
+diff --git a/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.h b/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.h
+--- a/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.h
++++ b/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.h
+@@ -48,7 +48,11 @@
+   ~ZeldaAudioRenderer();
+ 
+   void PrepareFrame();
++#ifdef BLUEWAKE_DSP_AUDIO_CUSTOMIZATION
++  void AddVoice(u16 voice_id, u32 ucode_crc);
++#else
+   void AddVoice(u16 voice_id);
++#endif
+   void FinalizeFrame();
+ 
+   void SetFlags(u32 flags) { m_flags = flags; }
+diff --git a/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp b/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp
+--- a/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp
++++ b/Source/Core/Core/HW/DSPHLE/UCodes/Zelda.cpp
+@@ -19,6 +19,10 @@
+ #include "Core/HW/DSPHLE/UCodes/UCodes.h"
+ #include "Core/HW/Memmap.h"
+ #include "Core/System.h"
++
++#ifdef BLUEWAKE_DSP_AUDIO_CUSTOMIZATION
++#include "audio_customization.h"
++#endif
+ 
+ namespace DSP::HLE
+ {
+@@ -551,7 +555,11 @@
+       u16 flags = m_sync_voice_skip_flags[m_rendering_curr_voice >> 4];
+       u8 bit = 0xF - (m_rendering_curr_voice & 0xF);
+       if (flags & (1 << bit))
++#ifdef BLUEWAKE_DSP_AUDIO_CUSTOMIZATION
++        m_renderer.AddVoice(m_rendering_curr_voice, m_crc);
++#else
+         m_renderer.AddVoice(m_rendering_curr_voice);
++#endif
+ 
+       m_rendering_curr_voice++;
+     }
+@@ -1164,7 +1172,11 @@
+   vpb->biquad_yn2 = yn2;
+ }
+ 
++#ifdef BLUEWAKE_DSP_AUDIO_CUSTOMIZATION
++void ZeldaAudioRenderer::AddVoice(u16 voice_id, u32 ucode_crc)
++#else
+ void ZeldaAudioRenderer::AddVoice(u16 voice_id)
++#endif
+ {
+   VPB vpb;
+   FetchVPB(voice_id, &vpb);
+@@ -1192,6 +1204,15 @@
+   {
+     ApplyBiquadFilter(&input_samples, &vpb);
+   }
++
++#ifdef BLUEWAKE_DSP_AUDIO_CUSTOMIZATION
++  // Only scratch samples change. Native resampling, filter histories, voice
++  // ramps, position, completion and VPB feedback retain their own values.
++  // This runs once per voice block, before BOTH dry and reverb sends. Unity
++  // bypasses sample arithmetic; unknown ownership is native category unity.
++  bluewake_audio_customize_voice(ucode_crc, m_vpb_base_addr, voice_id,
++                                  input_samples.data(), input_samples.size());
++#endif
+ 
+   if (vpb.use_dolby_volume)
+   {

@@ -2,15 +2,15 @@
 #define BLUEWAKE_SPRINT_H
 
 #include "core/cpu.h"
+#include "sprint_input.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Holding Shift makes Link run faster than his normal top speed, his run
-// animation sped up to match. On a controller, clicking the left stick starts
-// the sprint; it lasts until Link stops (the stick back in the middle) or the
-// next click.
+// Sprint speeds native running and its animation. Desktop preferences choose
+// Hold or Toggle independently: keyboard defaults to Hold; controller defaults
+// to Toggle until the next click or eight idle retraces. Touch stays Hold.
 //
 //   BLUEWAKE_SPRINT_SPEED=1.5          how much faster (1: off)
 //   BLUEWAKE_SPRINT_TRACE=1            log it and Link's speed
@@ -20,7 +20,11 @@ void bluewake_sprint_attach(CPUState* cpu);
 // Once per retrace, on the thread that pumps SDL's events.
 void bluewake_sprint_retrace(void);
 void bluewake_sprint_touch(bool down);
-// Reads BLUEWAKE_SPRINT_SPEED again (the options menu).
+// Game-thread cancellation before suspended input or a machine mutation.
+void bluewake_sprint_cancel(void);
+// Clears baselines/latches on a reset. NULL detaches without accessing old RAM.
+void bluewake_sprint_reset(CPUState* cpu);
+// UI-safe factor publication; the game thread applies cancellation at retrace.
 void bluewake_sprint_reload(void);
 
 #ifdef __cplusplus

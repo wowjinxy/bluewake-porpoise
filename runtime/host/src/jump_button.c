@@ -1,4 +1,8 @@
 #include "jump_button.h"
+#include "quick_items.h"
+#if defined(BLUEWAKE_WINDOWS)
+#include "controls_bindings.h"
+#endif
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
@@ -119,6 +123,9 @@ static unsigned long long g_jumps;
 // except on the Switch Online GameCube controller (product 0x2073), where it
 // is L.
 static bool g_bumper_was_down;
+#if defined(BLUEWAKE_WINDOWS)
+static uint64_t g_controls_generation;
+#endif
 static const Uint16 kNsoGameCubeProduct = 0x2073;
 
 // BLUEWAKE_JUMP_TEST=retrace,...: presses without a keyboard.
@@ -188,6 +195,16 @@ static void update_armed(void) { bluewake_jump_button_armed = g_pending || g_tar
 bool bluewake_jump_button_enter(CPUState* cpu, u32 address) {
     if (cpu == NULL)
         return false;
+#if defined(BLUEWAKE_WINDOWS)
+    BluewakeControlsActions input;
+    if (bluewake_controls_read_actions(&input) &&
+        (input.blocked || input.generation != g_controls_generation)) {
+        g_controls_generation = input.generation;
+        g_pending = false;
+        update_armed();
+        return false;
+    }
+#endif
     if (address == kPlaySceneExecute && g_targeting) {
         // The test's L: held, and pressed on the first frame.
         if (mem_read8(cpu, kPadHoldLockL) == 0u)
@@ -224,6 +241,12 @@ bool bluewake_jump_button_enter(CPUState* cpu, u32 address) {
 }
 
 void bluewake_jump_button_event(const void* sdl_event) {
+#if defined(BLUEWAKE_WINDOWS)
+    bluewake_controls_action_event(sdl_event);
+    BluewakeControlsActions input;
+    if (bluewake_controls_read_actions(&input))
+        return;
+#endif
     const SDL_Event* event = (const SDL_Event*)sdl_event;
     if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat && event->key.scancode == SDL_SCANCODE_SPACE)
         atomic_fetch_add_explicit(&g_presses, 1u, memory_order_relaxed);
@@ -255,7 +278,7 @@ void bluewake_jump_button_attach(CPUState* cpu) {
         g_trace = true;
 #if !(defined(__APPLE__) && TARGET_OS_IPHONE)
     if (g_enabled)
-        fprintf(stderr, "[jump] Space (or a controller's left bumper) makes Link jump\n");
+        fprintf(stderr, "[jump] Jump button enabled; desktop bindings are in Controls\n");
 #endif
 }
 
@@ -294,22 +317,52 @@ static bool bumper_pressed(void) {
     return pressed;
 }
 
+void bluewake_jump_button_discard_input(void) {
+    g_presses_seen=atomic_load_explicit(&g_presses,memory_order_relaxed);
+    g_touch_was_down=atomic_load_explicit(&g_touch_down,memory_order_relaxed);
+    (void)bumper_pressed(); // Record held LB so resuming cannot invent its edge.
+    g_pending=false;update_armed();
+}
+
 void bluewake_jump_button_retrace(void) {
     ++g_retrace;
     bool pressed = false;
+#if defined(BLUEWAKE_WINDOWS)
+    BluewakeControlsActions input;
+    const bool managed = bluewake_controls_read_actions(&input);
+    if (managed) {
+        if (input.blocked || input.generation != g_controls_generation) {
+            g_controls_generation = input.generation;
+            g_pending = false;
+        }
+        pressed = !input.blocked && input.jump_pressed &&
+                  !(bluewake_quick_items_enabled() && input.jump_modifier_conflict);
+    }
+#endif
     const unsigned presses = atomic_load_explicit(&g_presses, memory_order_relaxed);
     if (presses != g_presses_seen) {
         g_presses_seen = presses;
+#if defined(BLUEWAKE_WINDOWS)
+        if (!managed)
+#endif
         pressed = true;
     }
     const bool touch = atomic_load_explicit(&g_touch_down, memory_order_relaxed);
     if (touch && !g_touch_was_down)
         pressed = true;
     g_touch_was_down = touch;
-    if (g_enabled && bumper_pressed())
+    if (g_enabled &&
+#if defined(BLUEWAKE_WINDOWS)
+        !managed &&
+#endif
+        bumper_pressed())
         pressed = true;
     for (unsigned i = 0; i < g_test_count; ++i)
         pressed = pressed || g_test[i] == g_retrace;
+#if defined(BLUEWAKE_WINDOWS)
+    if (managed && input.blocked)
+        pressed = false;
+#endif
     const bool targeting = g_retrace >= g_target_start && g_retrace < g_target_start + g_target_length;
     if (targeting != g_targeting && g_trace)
         fprintf(stderr, "[jump] test: L %s retrace=%llu\n", targeting ? "held" : "let go", g_retrace);

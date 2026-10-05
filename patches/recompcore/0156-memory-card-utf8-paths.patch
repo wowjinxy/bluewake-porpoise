@@ -1,0 +1,213 @@
+diff --git a/GXRuntime/src/memory_card.c b/GXRuntime/src/memory_card.c
+index c7a898e..2fd8963 100644
+--- a/GXRuntime/src/memory_card.c
++++ b/GXRuntime/src/memory_card.c
+@@ -10,6 +10,7 @@
+ #ifdef _WIN32
+ #include <io.h>
+ #include <windows.h>
++#include <wchar.h>
+ #else
+ #include <fcntl.h>
+ #include <sys/file.h>
+@@ -20,6 +21,82 @@
+ #define DOL_CARD_HEADER_SIZE 40u
+ #define DOL_CARD_RECORD_SIZE 68u
+ 
++// Host paths are UTF-8, including on Windows. Keep these conversions local to
++// the card backend so the CRT's active code page cannot change the identity of
++// its card, lock, temporary or backup files.
++#ifdef _WIN32
++static wchar_t* card_path_wide(const char* path) {
++    if (path == NULL) { errno = EINVAL; return NULL; }
++    int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
++    if (count <= 0) { errno = EINVAL; return NULL; }
++    wchar_t* wide = (wchar_t*)malloc((size_t)count * sizeof(*wide));
++    if (wide == NULL) { errno = ENOMEM; return NULL; }
++    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, count) != count) {
++        free(wide); errno = EINVAL; return NULL;
++    }
++    return wide;
++}
++#endif
++
++static FILE* card_fopen(const char* path, const char* mode) {
++#ifdef _WIN32
++    wchar_t* wide = card_path_wide(path);
++    wchar_t wide_mode[16];
++    if (wide == NULL) return NULL;
++    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mode, -1,
++                          wide_mode, 16) <= 0) {
++        free(wide); errno = EINVAL; return NULL;
++    }
++    FILE* file = _wfopen(wide, wide_mode);
++    free(wide);
++    return file;
++#else
++    return fopen(path, mode);
++#endif
++}
++
++static int card_rename(const char* from, const char* to) {
++#ifdef _WIN32
++    wchar_t* source = card_path_wide(from);
++    wchar_t* target = source != NULL ? card_path_wide(to) : NULL;
++    if (target == NULL) { free(source); return -1; }
++    bool moved = MoveFileExW(source, target, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
++    DWORD error = moved ? ERROR_SUCCESS : GetLastError();
++    free(source); free(target);
++    if (moved) return 0;
++    errno = error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? ENOENT : EACCES;
++    return -1;
++#else
++    return rename(from, to);
++#endif
++}
++
++static int card_remove(const char* path) {
++#ifdef _WIN32
++    wchar_t* wide = card_path_wide(path);
++    if (wide == NULL) return -1;
++    int result = _wremove(wide);
++    free(wide);
++    return result;
++#else
++    return remove(path);
++#endif
++}
++
++static bool card_saved_today(const char* path, unsigned day) {
++#ifdef _WIN32
++    wchar_t* wide = card_path_wide(path);
++    if (wide == NULL) return false;
++    struct _stat64 status;
++    bool same_day = _wstat64(wide, &status) == 0 && (unsigned)(status.st_mtime / 86400) == day;
++    free(wide);
++    return same_day;
++#else
++    struct stat status;
++    return stat(path, &status) == 0 && (unsigned)(status.st_mtime / 86400) == day;
++#endif
++}
++
+ static const u8 k_card_magic[8] = {'D', 'O', 'L', 'C', 'A', 'R', 'D', '1'};
+ 
+ typedef struct DolMemoryCardFile {
+@@ -192,8 +269,10 @@ static bool lock_card(DolMemoryCard* card) {
+         return false;
+     snprintf(path, size, "%s.lock", card->path);
+ #ifdef _WIN32
+-    HANDLE handle = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
+-        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
++    wchar_t* wide = card_path_wide(path);
++    HANDLE handle = wide != NULL ? CreateFileW(wide, GENERIC_READ | GENERIC_WRITE,
++        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL) : INVALID_HANDLE_VALUE;
++    free(wide);
+     OVERLAPPED offset = {0};
+     bool ok = handle != INVALID_HANDLE_VALUE && LockFileEx(handle,
+         LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &offset);
+@@ -216,7 +295,7 @@ static bool lock_card(DolMemoryCard* card) {
+ }
+ 
+ static bool backup_card(const DolMemoryCard* card) {
+-    FILE* source = fopen(card->path, "rb");
++    FILE* source = card_fopen(card->path, "rb");
+     if (source == NULL)
+         return errno == ENOENT;
+     size_t capacity = strlen(card->path) + 64u;
+@@ -227,7 +306,7 @@ static bool backup_card(const DolMemoryCard* card) {
+     }
+     snprintf(temporary, capacity, "%s.backup-tmp", card->path);
+     snprintf(backup, capacity, "%s.bak", card->path);
+-    FILE* output = fopen(temporary, "wb");
++    FILE* output = card_fopen(temporary, "wb");
+     bool ok = output != NULL;
+     u8 buffer[8192];
+     size_t count;
+@@ -239,28 +318,27 @@ static bool backup_card(const DolMemoryCard* card) {
+         if (ok && !flush_card_file(output)) ok = false;
+         if (fclose(output) != 0) ok = false;
+     }
+-    if (ok && rename(temporary, backup) != 0) ok = false;
+-    if (!ok) remove(temporary);
++    if (ok && card_rename(temporary, backup) != 0) ok = false;
++    if (!ok) card_remove(temporary);
+     // Seven fixed daily slots bound storage; update a slot only once per UTC
+     // day. Rotation uses atomic replacement, just like the live card.
+     time_t now = time(NULL);
+     unsigned day = (unsigned)(now / 86400);
+     snprintf(temporary, capacity, "%s.bak-day-%u", card->path, day % 7u);
+-    struct stat status;
+-    if (ok && (stat(temporary, &status) != 0 || (unsigned)(status.st_mtime / 86400) != day)) {
+-        FILE* daily = fopen(temporary, "rb");
++    if (ok && !card_saved_today(temporary, day)) {
++        FILE* daily = card_fopen(temporary, "rb");
+         if (daily != NULL) fclose(daily);
+         // Copy the already flushed .bak, then atomically rotate the daily slot.
+-        source = fopen(backup, "rb");
++        source = card_fopen(backup, "rb");
+         snprintf(backup, capacity, "%s.daily-tmp", card->path);
+-        output = source != NULL ? fopen(backup, "wb") : NULL;
++        output = source != NULL ? card_fopen(backup, "wb") : NULL;
+         ok = source != NULL && output != NULL;
+         while (ok && (count = fread(buffer, 1, sizeof buffer, source)) != 0)
+             ok = fwrite(buffer, 1, count, output) == count;
+         if (source != NULL) { if (ferror(source)) ok = false; if (fclose(source) != 0) ok = false; }
+         if (output != NULL) { if (ok && !flush_card_file(output)) ok = false; if (fclose(output) != 0) ok = false; }
+-        if (ok && rename(backup, temporary) != 0) ok = false;
+-        if (!ok) remove(backup);
++        if (ok && card_rename(backup, temporary) != 0) ok = false;
++        if (!ok) card_remove(backup);
+     }
+     free(temporary); free(backup);
+     return ok;
+@@ -333,7 +411,7 @@ static CardWriteResult write_container(const DolMemoryCard* card) {
+     );
+ 
+     bool success = false;
+-    FILE* output = fopen(temporary_path, "wb");
++    FILE* output = card_fopen(temporary_path, "wb");
+     if (output != NULL) {
+         success = fwrite(bytes, 1, total_size, output) == total_size;
+         if (success && !flush_card_file(output))
+@@ -350,11 +428,11 @@ static CardWriteResult write_container(const DolMemoryCard* card) {
+ #endif
+     if (success && !backup_card(card))
+         success = false;
+-    // POSIX rename and the Windows replacement shim preserve the old card
++    // POSIX rename and the Windows wide-path replacement preserve the old card
+     // on failure. Never delete the destination to retry a failed replacement.
+     bool published = false;
+     if (success) {
+-        published = rename(temporary_path, card->path) == 0;
++        published = card_rename(temporary_path, card->path) == 0;
+         success = published;
+     }
+ #ifndef _WIN32
+@@ -364,7 +442,7 @@ static CardWriteResult write_container(const DolMemoryCard* card) {
+         success = false;
+ #endif
+     if (!success)
+-        remove(temporary_path);
++        card_remove(temporary_path);
+ 
+     free(temporary_path);
+     free(bytes);
+@@ -374,7 +452,7 @@ static CardWriteResult write_container(const DolMemoryCard* card) {
+ }
+ 
+ static bool read_whole_file(const char* path, u8** data, size_t* size) {
+-    FILE* input = fopen(path, "rb");
++    FILE* input = card_fopen(path, "rb");
+     if (input == NULL)
+         return false;
+     if (fseek(input, 0, SEEK_END) != 0) {
+@@ -539,7 +617,7 @@ DolMemoryCard* dol_card_open(const DolMemoryCardConfig* config) {
+         return NULL;
+     }
+     errno = 0;
+-    FILE* existing = card->path != NULL ? fopen(card->path, "rb") : NULL;
++    FILE* existing = card->path != NULL ? card_fopen(card->path, "rb") : NULL;
+     if (existing != NULL) {
+         fclose(existing);
+         if (!load_container(card)) {

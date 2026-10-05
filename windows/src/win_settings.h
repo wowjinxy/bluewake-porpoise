@@ -15,6 +15,8 @@ void bw_settings_load(const char* data_dir);
 void bw_settings_apply_launch(void);
 // Before the host starts: the menu and hotkeys draw in Aurora's frame.
 void bw_settings_install(void);
+// Once Aurora initializes, before the first guest instruction.
+void bw_settings_start_asset_packs(void);
 // Call only after the host has shut down workers and closed its card.
 int bw_settings_relaunch(void);
 // From the game thread's keyboard hook, for a key going down: 1 when BlueWake

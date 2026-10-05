@@ -7,13 +7,32 @@
 #include <errno.h>
 #include <string.h>
 static int failing;
+#ifdef _WIN32
+#include <windows.h>
+static unsigned replacement_failures;
+static BOOL test_move(const wchar_t* from, const wchar_t* to, DWORD flags) {
+    if (failing) {
+        assert((flags & MOVEFILE_REPLACE_EXISTING) != 0);
+        ++replacement_failures;
+        SetLastError(ERROR_ACCESS_DENIED);
+        return FALSE;
+    }
+    return MoveFileExW(from, to, flags);
+}
+#define MoveFileExW test_move
+#else
 static int test_rename(const char* from, const char* to) {
     if (failing) { errno = EACCES; return -1; }
     return rename(from, to);
 }
 #define rename test_rename
+#endif
 #include "atomic_file.h"
+#ifdef _WIN32
+#undef MoveFileExW
+#else
 #undef rename
+#endif
 #include "../runtime/host/src/ipl_sram.c"
 int main(void) {
     char path[256];
@@ -25,6 +44,9 @@ int main(void) {
     d.sram[19] ^= 4;
     failing = 1;
     persist(&d);
+#ifdef _WIN32
+    assert(replacement_failures == 1);
+#endif
     FILE* file = fopen(path, "rb");
     assert(file && fread(bytes, 1, sizeof bytes, file) == sizeof bytes);
     fclose(file);
@@ -38,6 +60,9 @@ int main(void) {
     assert(settings && fputs("settings=new", settings) >= 0);
     assert(!bw_atomic_finish_dirty(settings, pending, path, &dirty));
     assert(dirty);
+#ifdef _WIN32
+    assert(replacement_failures == 2);
+#endif
     failing = 0;
     settings = fopen(pending, "wb");
     assert(settings && fputs("settings=new", settings) >= 0);

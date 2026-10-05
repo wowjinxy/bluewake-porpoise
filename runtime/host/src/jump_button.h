@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-// Jump button: Space, or a controller's left bumper, makes Link jump when he
+// The Jump action (Space/left bumper by default) makes Link jump when he
 // stands, walks or runs on the ground under the player's control. It is the game's own jump,
 // the one Link makes running off a ledge (daPy_lk_c::procAutoJump_init), so
 // its animation, voice, arc, landing, ledge grabs and glides are the game's.
@@ -27,7 +27,7 @@ extern "C" {
 // Once the guest is running.
 void bluewake_jump_button_attach(CPUState* cpu);
 // Every SDL event the Aurora window sees (the mouse camera's observer passes
-// them on): Space presses the button. Nothing on iOS.
+// them on): desktop action bindings latch their brief presses. Nothing on iOS.
 void bluewake_jump_button_event(const void* sdl_event);
 // Once per retrace.
 void bluewake_jump_button_retrace(void);
@@ -35,6 +35,9 @@ void bluewake_jump_button_retrace(void);
 void bluewake_jump_button_touch(bool down);
 // Reads BLUEWAKE_JUMP_BUTTON again (the options menu).
 void bluewake_jump_button_reload(void);
+// Game thread: drop paused Space/touch/controller edges and a pending jump.
+// Samples host levels only; no guest writes or change to menu/input ownership.
+void bluewake_jump_button_discard_input(void);
 
 // At every dispatch boundary (the chassis edge service). While a press waits,
 // Link's next proc call decides it: if it enters his standing, idling or

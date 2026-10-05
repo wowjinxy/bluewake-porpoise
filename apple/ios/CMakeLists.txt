@@ -44,11 +44,25 @@ set(BLUEWAKE_HOST_SOURCES
     ${BLUEWAKE_HOST_SRC}/delivery_digest.c
     ${BLUEWAKE_HOST_SRC}/edge_intercepts.c
     ${BLUEWAKE_HOST_SRC}/game_options.c
+    ${BLUEWAKE_HOST_SRC}/game_events.c
+    ${BLUEWAKE_HOST_SRC}/song_rel_owner.c
+    ${BLUEWAKE_HOST_SRC}/song_host_adapter.c
+    ${BLUEWAKE_HOST_SRC}/hud_customization.c
+    ${BLUEWAKE_HOST_SRC}/hud_host.c
+    ${BLUEWAKE_HOST_SRC}/health_rules.c
+    ${BLUEWAKE_HOST_SRC}/health_host.c
+    ${BLUEWAKE_HOST_SRC}/hud_renderer.cpp
+    ${BLUEWAKE_HOST_SRC}/quick_items.c
+    ${BLUEWAKE_HOST_SRC}/dialogue_speed.c
+    ${BLUEWAKE_HOST_SRC}/autosave.c
+    ${BLUEWAKE_HOST_SRC}/enhancement_hooks.c
+    ${BLUEWAKE_HOST_SRC}/audio_customization.c
     ${BLUEWAKE_HOST_SRC}/fast_load.c
     ${BLUEWAKE_HOST_SRC}/fps_watch.c
     ${BLUEWAKE_HOST_SRC}/jump_button.c
     ${BLUEWAKE_HOST_SRC}/climb.c
     ${BLUEWAKE_HOST_SRC}/sprint.c
+    ${BLUEWAKE_HOST_SRC}/sprint_input.c
     ${BLUEWAKE_HOST_SRC}/quick_doors.c
     ${BLUEWAKE_HOST_SRC}/haptics.c
     ${BLUEWAKE_HOST_SRC}/draw_tags.c
@@ -153,6 +167,8 @@ if(BLUEWAKE_IOS_ENABLE_DSP)
         ${_donor}/Externals/xxhash/xxHash
         ${CMAKE_CURRENT_SOURCE_DIR}/dsp_generated)
     target_include_directories(bluewake_dsp_donor PUBLIC ${_dsp_includes})
+    target_include_directories(bluewake_dsp_donor PRIVATE ${BLUEWAKE_HOST_SRC})
+    target_compile_definitions(bluewake_dsp_donor PUBLIC BLUEWAKE_DSP_AUDIO_CUSTOMIZATION=1)
     target_compile_definitions(bluewake_dsp_donor PUBLIC
         _ARCH_64=1 _M_ARM_64=1 FMT_EXCEPTIONS=0 _DEFAULT_SOURCE
         __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS)
@@ -184,3 +200,18 @@ set_source_files_properties(${BLUEWAKE_APP_ICONS} PROPERTIES MACOSX_PACKAGE_LOCA
 set(BLUEWAKE_PIPELINE_SEED "${CMAKE_CURRENT_SOURCE_DIR}/resources/initial_pipeline_cache.db")
 target_sources(BlueWake PRIVATE ${BLUEWAKE_PIPELINE_SEED})
 set_source_files_properties(${BLUEWAKE_PIPELINE_SEED} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+# Optional source-only HUD host regressions.
+include("${BLUEWAKE_REPO_ROOT}/cmake/hud_host_test.cmake")
+
+
+
+
+
+
+# The legacy renderer retains native identity. Its build has no GXCore types.
+if(TARGET GXRuntime::gxcore)
+  target_sources(BlueWake PRIVATE ${BLUEWAKE_HOST_SRC}/hud_customization_draw_plan.cpp)
+  target_link_libraries(BlueWake PRIVATE GXRuntime::gxcore)
+  target_compile_definitions(BlueWake PRIVATE BLUEWAKE_HUD_GXCORE=1)
+endif()

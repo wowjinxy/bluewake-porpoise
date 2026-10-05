@@ -23,6 +23,30 @@ int main() {
     assert(saved.smooth_steps == 1); // A session override is not a stored edit.
     assert(saved.haptics == 0 && saved.haptics_strength == 25 && !saved.haptics_triggers);
     before = session;
+    session.faster_wind = true;
+    bw_settings_keep_edits(saved, before, session);
+    assert(saved.faster_wind && !saved.faster_boots);
+    // A boots session override must not be persisted by editing wind.
+    session.faster_boots = true;
+    before = session;
+    session.faster_wind = false;
+    bw_settings_keep_edits(saved, before, session);
+    assert(!saved.faster_wind && !saved.faster_boots);
+    session.audio_master = 25; session.audio_music = 30; session.audio_sfx = 40; session.audio_muted = true;
+    before = session;
+    session.audio_music = 55;
+    bw_settings_keep_edits(saved, before, session);
+    assert(saved.audio_music == 55 && saved.audio_master == 100 && saved.audio_sfx == 100 && !saved.audio_muted);
+    before = session; session.audio_sfx = 65;
+    bw_settings_keep_edits(saved, before, session);
+    assert(saved.audio_music == 55 && saved.audio_sfx == 65 && saved.audio_master == 100 && !saved.audio_muted);
+    before = session; session.audio_master = 75;
+    bw_settings_keep_edits(saved, before, session);
+    assert(saved.audio_master == 75 && saved.audio_music == 55 && saved.audio_sfx == 65 && !saved.audio_muted);
+    before = session; session.audio_muted = false;
+    bw_settings_keep_edits(saved, before, session);
+    assert(!saved.audio_muted && saved.audio_master == 75 && saved.audio_music == 55 && saved.audio_sfx == 65);
+    before = session;
     session.haptics = 1; session.haptics_strength = 60; session.haptics_triggers = false;
     bw_settings_keep_edits(saved, before, session);
     assert(saved.haptics == 1 && saved.haptics_strength == 60 && !saved.haptics_triggers);

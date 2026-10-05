@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "purpose": "Reference and planning only; no build or runtime consumes this manifest.",
+  "upstream": {
+    "url": "https://github.com/LagoLunatic/wwrando.git",
+    "commit": "9775811b6fd039992822fbaf30ea6259b339f4b0",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2018 LagoLunatic",
+    "license_file": "LICENSE.txt",
+    "checkout_from_repo_root": "ref/wwrando"
+  },
+  "reference_data": {
+    "locations": "logic/item_locations.txt",
+    "requirements": "logic/macros.txt",
+    "item_pool": "logic/item_types.py",
+    "native_item_names": "data/item_names.txt",
+    "location_count": 320,
+    "macro_count": 307,
+    "locations_with_multiple_paths": 77,
+    "locations_without_paths": 0,
+    "path_counts": {
+      "DOL_byte_patch": 7,
+      "REL_byte_patch": 76,
+      "actor_resource": 24,
+      "chest_resource": 186,
+      "custom_symbol_patch": 3,
+      "event_resource": 11,
+      "scalable_object_resource": 204
+    }
+  },
+  "integration": {
+    "stage": "passive source catalog, logic and partial copied-value inventory",
+    "source_catalog": "config/randomizer-source-catalog.json",
+    "passive_library_cmake": "cmake/BlueWakeRandomizer.cmake",
+    "partial_inventory_library_cmake": "cmake/BlueWakeRandomizerNativeContext.cmake",
+    "partial_inventory_native_reader_enabled": false,
+    "upstream_python_executed": false,
+    "runtime_catalog_enabled": false,
+    "seed_generation_enabled": false,
+    "native_reward_replacement_enabled": false,
+    "assumptions": [
+      "Upstream logic depends on its randomizer start-state, gameplay tweaks and options.",
+      "DOL/REL byte offsets and resource indexes require separate compiled-host ownership contracts.",
+      "One location may have multiple patch paths; these are not separate rewards.",
+      "A location-name hash is not a durable native reward or seed identity."
+    ]
+  }
+}

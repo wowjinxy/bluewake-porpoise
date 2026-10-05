@@ -234,6 +234,10 @@ static void place_player(void) {
     for (u32 i = 0; i < 3u; ++i) {
         write_f32(g_cpu, player + kPos + i * 4u, g_place[i]);
         write_f32(g_cpu, player + kOldPos + i * 4u, g_place[i]);
+        // Retail GZLE01 restores this position cache at the start of Link's
+        // next update, just as setPlayerPosAndAngle updates it when warping.
+        // Keep the test placement after those eight retraces have elapsed.
+        write_f32(g_cpu, 0x803E440Cu + i * 4u, g_place[i]);
     }
     fprintf(stderr, "[test-place] retrace=%llu player=0x%08X now %.0f,%.0f,%.0f\n", g_retrace, player,
             read_f32(g_cpu, player + kPos), read_f32(g_cpu, player + kPos + 4u), read_f32(g_cpu, player + kPos + 8u));

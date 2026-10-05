@@ -108,6 +108,21 @@ const char* bluewake_card_runtime_path(void) {
     return g_card_open ? g_card_path : NULL;
 }
 
+bool bluewake_card_runtime_begin_snapshot(const char* expected_path) {
+    if (expected_path == NULL || expected_path[0] == '\0')
+        return false;
+    pthread_mutex_lock(&g_card_mutex);
+    if (!g_card_open || g_card_suspended || strcmp(expected_path, g_card_path) != 0) {
+        pthread_mutex_unlock(&g_card_mutex);
+        return false;
+    }
+    return true;
+}
+
+void bluewake_card_runtime_end_snapshot(void) {
+    pthread_mutex_unlock(&g_card_mutex);
+}
+
 void bluewake_card_runtime_service_callback(CPUState* cpu) {
     if (dol_hle_handle_callback_return(cpu, cpu->pc))
         return;

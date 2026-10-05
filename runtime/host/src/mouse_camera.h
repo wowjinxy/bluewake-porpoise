@@ -80,5 +80,9 @@ void bluewake_mouse_camera_reload(void);
 // The Windows options overlay applies these directly and blocks gameplay input.
 void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool invert_y);
 void bluewake_mouse_camera_block(bool blocked);
+// Game thread: discard paused host gestures without changing capture, menu
+// blocking, preferences or guest memory. Held synthetic buttons require release.
+// Does not pump native events or call any SDL window/cursor APIs.
+void bluewake_mouse_camera_discard_input(void);
 
 #endif

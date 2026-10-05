@@ -4,6 +4,9 @@
 #include "settings_menu.h"
 #include "save_state.h"
 #include "mouse_motion.h"
+#if defined(BLUEWAKE_WINDOWS)
+#include "controls_bindings.h"
+#endif
 
 #include "gxruntime/aurora_backend.h"
 
@@ -111,6 +114,7 @@ static bool g_enabled;
 static bool g_blocked;
 static bool g_captured;
 static bool g_click; // left button held while the mouse is the camera: A
+static bool g_click_release_guard, g_stick_click_release_guard;
 static SDL_WindowID g_window;
 static double g_sum_x, g_sum_y;
 static double g_wheel; // notches, positive away from the player (zoom in)
@@ -176,6 +180,7 @@ static bool g_stick_on;
 static double g_stick_speed = 360.0;     // degrees a second at full tilt, left and right
 static double g_stick_aim_speed = 180.0; // the same when aiming (first person and items)
 static double g_stick_invert_x = 1.0, g_stick_invert_y = 1.0;
+static bool g_stick_mapped;
 // Tilt (0..1) inside which the stick does nothing, and from which it turns at
 // full speed; up and down turn at this share of left and right's speed.
 static const double kStickDeadZone = 0.12, kStickFull = 0.95, kStickPitchShare = 0.6;
@@ -247,7 +252,7 @@ static void observe(const void* sdl_event, void* user) {
         if (event->button.button != SDL_BUTTON_LEFT)
             break;
         if (g_captured) {
-            g_click = true;
+            if (!g_click_release_guard)g_click = true;
         } else {
             // The click that hands over the mouse is not a press.
             g_window = event->button.windowID;
@@ -255,8 +260,10 @@ static void observe(const void* sdl_event, void* user) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (event->button.button == SDL_BUTTON_LEFT)
+        if (event->button.button == SDL_BUTTON_LEFT) {
             g_click = false;
+            g_click_release_guard = false;
+        }
         break;
     case SDL_EVENT_MOUSE_MOTION:
         if (g_captured) {
@@ -315,8 +322,32 @@ void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool inve
 
 void bluewake_mouse_camera_block(bool blocked) {
     g_blocked = blocked;
-    if (blocked)
+    if (blocked) {
+        // Drop pending synthetic PAD input even when no mouse window was
+        // captured; the settings menu owns all gameplay input until close.
+        g_click = false;
+        g_stick_click_down = false;
+        g_exit_from = 0;
+        g_sum_x = g_sum_y = g_wheel = 0.0;
         set_captured(false);
+    }
+}
+
+static bool SDLCALL discard_queued_motion(void* user, SDL_Event* event) {
+    const SDL_WindowID window=*(const SDL_WindowID*)user;
+    if(event->type==SDL_EVENT_MOUSE_MOTION&&event->motion.windowID==window)return false;
+    if(event->type==SDL_EVENT_MOUSE_WHEEL&&event->wheel.windowID==window)return false;
+    if(event->type==SDL_EVENT_MOUSE_BUTTON_DOWN&&event->button.windowID==window&&
+       event->button.button==SDL_BUTTON_LEFT){g_click_release_guard=true;return false;}
+    return true;
+}
+void bluewake_mouse_camera_discard_input(void) {
+    g_click_release_guard=g_click_release_guard||g_click;
+    g_click=false;g_stick_click_down=false;g_stick_click_release_guard=true;
+    g_exit_from=0;g_sum_x=g_sum_y=g_wheel=0.0;g_aim_yaw_rest=0.0;
+    // Filter only this captured camera's queued gestures. Other windows,
+    // releases and keys/hotkeys stay in order; the menu keeps its own input.
+    if(g_window!=0&&g_captured&&!g_blocked)SDL_FilterEvents(discard_queued_motion,&g_window);
 }
 
 bool bluewake_mouse_camera_scripted(void) { return g_stick_test_count > 0u; }
@@ -426,6 +457,7 @@ void bluewake_mouse_camera_attach(CPUState* cpu) {
 // for, the D-pad's zoom (1 up, -1 down, 0) and the left stick of whichever
 // controller has it tilted most.
 static void read_stick_left(double* x, double* y, bool* click, int* zoom, double* left_x, double* left_y) {
+    g_stick_mapped = false;
     *x = *y = 0.0;
     *click = false;
     if (zoom != NULL)
@@ -445,6 +477,21 @@ static void read_stick_left(double* x, double* y, bool* click, int* zoom, double
             return;
         }
     }
+#if defined(BLUEWAKE_WINDOWS)
+    BluewakeControlsInput mapped;
+    if (bluewake_controls_read_controller(&mapped)) {
+        g_stick_mapped = true;
+        *x = mapped.camera_x;
+        *y = -mapped.camera_y;
+        *click = mapped.camera_click;
+        if (zoom != NULL) *zoom = mapped.zoom;
+        if (left_x != NULL) {
+            *left_x = mapped.stick_x;
+            *left_y = -mapped.stick_y;
+        }
+        return;
+    }
+#endif
     int count = 0;
     SDL_JoystickID* ids = SDL_GetGamepads(&count);
     double most = 0.0;
@@ -492,16 +539,19 @@ static void read_stick(double* x, double* y, bool* click, int* zoom) {
 static void stick_turn(double x, double y, double seconds, double speed, double* yaw, double* pitch) {
     *yaw = *pitch = 0.0;
     const double tilt = sqrt(x * x + y * y);
-    if (tilt <= kStickDeadZone)
+    const double dead_zone = g_stick_mapped ? 0.0 : kStickDeadZone;
+    if (tilt <= dead_zone)
         return;
-    double n = (tilt - kStickDeadZone) / (kStickFull - kStickDeadZone);
+    double n = (tilt - dead_zone) / ((g_stick_mapped ? 1.0 : kStickFull) - dead_zone);
     n = n > 1.0 ? 1.0 : n;
     const double degrees = speed * (0.3 * n + 0.7 * n * n) * seconds / tilt;
-    *yaw = x * degrees * g_stick_invert_x;
-    *pitch = y * degrees * kStickPitchShare * g_stick_invert_y;
+    *yaw = x * degrees * (g_stick_mapped ? 1.0 : g_stick_invert_x);
+    *pitch = y * degrees * kStickPitchShare * (g_stick_mapped ? 1.0 : g_stick_invert_y);
 }
 
 void bluewake_mouse_camera_pad(DolPadState* pad) {
+    if (g_blocked)
+        return;
     if (g_click)
         pad->button |= 0x0100u; // PAD_BUTTON_A
     if (!g_stick_on)
@@ -509,8 +559,11 @@ void bluewake_mouse_camera_pad(DolPadState* pad) {
     double x, y, left_x, left_y;
     bool click;
     read_stick_left(&x, &y, &click, NULL, &left_x, &left_y);
+    if(!click)g_stick_click_release_guard=false;
+    if(g_stick_click_release_guard)click=false;
     const bool pressed = click && !g_stick_click_down;
-    if (g_stick_zooms && sqrt(left_x * left_x + left_y * left_y) > kStickInUse)
+    const double in_use = g_stick_mapped ? 0.00001 : kStickInUse;
+    if (g_stick_zooms && sqrt(left_x * left_x + left_y * left_y) > in_use)
         pad->stick_x = pad->stick_y = 0; // it zooms (aim_frame), so it does not also aim
     g_stick_click_down = click;
     if (g_stick_owns || g_stick_aims) {
@@ -518,9 +571,9 @@ void bluewake_mouse_camera_pad(DolPadState* pad) {
         // the game's own C-stick (its eased camera, first person's push down
         // out, the telescope's zoom) must not also take it. The keyboard's
         // C-stick still goes through while the stick rests.
-        if (sqrt(x * x + y * y) > kStickInUse)
+        if (sqrt(x * x + y * y) > in_use)
             pad->substick_x = pad->substick_y = 0;
-    } else if (sqrt(x * x + y * y) > kStickInUse && !bluewake_game_options_invert_camera_x()) {
+    } else if (sqrt(x * x + y * y) > in_use && !bluewake_game_options_invert_camera_x()) {
         // The game's own camera has the view (swimming, the boat, a target):
         // its C-stick turns the camera the other way from this stick's, so left
         // and right flipped as Link went into the water (Wind-Waker-Recomp

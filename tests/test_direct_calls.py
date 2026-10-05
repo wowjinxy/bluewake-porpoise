@@ -84,6 +84,35 @@ class DirectPreparationTests(unittest.TestCase):
         self.assertEqual(convert(source, {0x80006000}), (source, 0))
         self.assertEqual(convert(source, {0xC0006000}), (source, 0))
 
+    def test_equipment_boundaries_keep_dynamic_admission_and_return(self):
+        for target, site, ret in ((0x8012821C, 0x801198B8, 0x801198BC),
+                                 (0xC008A870, 0xC1F10620, 0xC1F10624)):
+            with self.subTest(target=target):
+                source = CALL.replace('80004000', f'{site:08X}').replace('80004004', f'{ret:08X}').replace('80006000', f'{target:08X}')
+                run = target & ~direct.MIRROR
+                own = site & ~direct.MIRROR
+                starts = sorted((own, run))
+                indexes = {value: index for index, value in enumerate(starts)}
+                watched = {target, run, ret, ret & ~direct.MIRROR}
+                result, count = direct.transform(source, own, starts, indexes, watched)
+                self.assertEqual(count, 1)
+                self.assertIn(f'bw_direct_call_ready(ctx, 0x{run:08X}u)', result)
+                self.assertIn(f'bw_direct_call_ready(ctx, 0x{ret:08X}u)', result)
+                self.assertIn(f'ctx->pc == 0x{ret:08X}u', result)
+                self.assertEqual(direct.transform(source, own, starts, indexes, watched | {site}), (source, 0))
+                missing = source.replace(f'label_{ret:08X}:', 'label_70004004:')
+                self.assertEqual(direct.transform(missing, own, starts, indexes, watched), (missing, 0))
+
+    def test_unrelated_callers_to_boots_animation_remain_dynamic(self):
+        source = CALL.replace('80006000', '8012821C')
+        result, count = direct.transform(source, 0x80004000, [0x80004000, 0x8012821C],
+            {0x80004000: 0, 0x8012821C: 1}, {0x8012821C, 0xC012821C})
+        self.assertEqual(count, 1)
+        self.assertIn('bw_direct_call_ready(ctx, 0x8012821Cu)', result)
+        self.assertIn('bw_direct_call_ready(ctx, 0x80004004u)', result)
+        self.assertEqual(direct.transform(source, 0x80004000, [0x80004000, 0x8012821C],
+            {0x80004000: 0, 0x8012821C: 1}, {0x8012821C, 0x80004004}), (source, 0))
+
     def test_indirect_and_interpreter_continuations_query_the_host(self):
         result, count = direct.transform_indirect(INDIRECT, set())
         self.assertEqual(count, 1)

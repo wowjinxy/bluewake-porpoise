@@ -28,12 +28,15 @@ static char g_state_last_path[512];
 static u32 host_field = 0x4321;
 static const BwStateField k_host_state_fields[] = {{"host_field", &host_field, sizeof host_field}};
 static int fail_alias, fail_pack;
+static unsigned sprint_cancellations;
+static void bluewake_sprint_cancel(void) {++sprint_cancellations;}
 static u8 alias_storage[4] = {1,2,3,4};
 #define ARAM_SIZE 4u
 static u8* aram_buffer(void) { return NULL; }
 static u64 host_state_now_us(void) { return 1; }
 static size_t dol_aurora_gx_save_state(void** data) { *data = NULL; return 0; }
 static void host_state_header(HostStateHeader* header, CPUState* cpu, const StaticRecompModuleDesc* mod) {
+    assert(sprint_cancellations>0);
     (void)cpu; (void)mod; header->cpu_pod_size = sizeof(u32);
 }
 static bool ppc_guest_alias_get_storage(u32 address, u32 size, u8** storage) {
@@ -56,7 +59,11 @@ int main(void) {
     bool prolog = false, pending = false;
     u32 r13 = 0;
     HostStateLoop loop = {&prolog, &pending, &r13};
+    // A writer-open failure must leave an active Sprint latch untouched.
+    assert(!host_state_save("missing-sprint-parent/state.bwstate", &cpu, &mod, &loop));
+    assert(sprint_cancellations==0);
     assert(host_state_save(path, &cpu, &mod, &loop));
+    assert(sprint_cancellations==1);
     BwStateReader reader;
     assert(bw_state_reader_open(&reader, path));
     assert(bw_state_find(&reader, "ALIASES") && bw_state_find(&reader, "HOSTVARS"));
@@ -69,7 +76,9 @@ int main(void) {
     for (int failure = 0; failure < 2; ++failure) {
         fail_alias = failure == 0;
         fail_pack = failure == 1;
+        const unsigned before=sprint_cancellations;
         assert(!host_state_save(path, &cpu, &mod, &loop));
+        assert(sprint_cancellations==before+1);
         assert(bw_state_reader_open(&reader, path));
         assert(reader.buffer_size == old_size && bw_state_hash(reader.buffer, reader.buffer_size, 0) == old_hash);
         bw_state_reader_close(&reader);

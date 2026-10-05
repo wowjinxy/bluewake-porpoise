@@ -1,0 +1,32 @@
+# Build the executables behind Windows source-only CTests, including wrapper
+# drivers and subdirectory fixtures. Test registration/execution stays separate.
+# Call only after every regression target/subdirectory has been declared.
+include_guard(GLOBAL)
+function(_bw_windows_regression_executables directory output)
+  get_property(_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+  set(_executables)
+  foreach(_target IN LISTS _targets)
+    get_target_property(_type "${_target}" TYPE)
+    if(_type STREQUAL "EXECUTABLE" AND _target MATCHES "^bluewake_")
+      list(APPEND _executables "${_target}")
+    endif()
+  endforeach()
+  get_property(_directories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+  foreach(_directory IN LISTS _directories)
+    _bw_windows_regression_executables("${_directory}" _children)
+    list(APPEND _executables ${_children})
+  endforeach()
+  list(REMOVE_DUPLICATES _executables)
+  list(SORT _executables)
+  set(${output} "${_executables}" PARENT_SCOPE)
+endfunction()
+if(NOT TARGET bluewake_windows_regressions)
+  _bw_windows_regression_executables("${CMAKE_CURRENT_SOURCE_DIR}" _bw_regression_executables)
+  if(NOT _bw_regression_executables)
+    message(FATAL_ERROR "Windows regressions enabled without any bluewake_ executable targets")
+  endif()
+  # Not ALL: ordinary player/app builds retain their previous target graph.
+  add_custom_target(bluewake_windows_regressions DEPENDS ${_bw_regression_executables})
+  set_property(TARGET bluewake_windows_regressions PROPERTY
+    BLUEWAKE_REGRESSION_EXECUTABLE_TARGETS "${_bw_regression_executables}")
+endif()

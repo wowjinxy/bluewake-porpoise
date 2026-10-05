@@ -22,14 +22,22 @@ extern "C" {
 // (code 1): at setFrontWallType, only where the game itself found a steep wall
 // Link faces that goes on above where he grabs ledges (not a ledge to pull
 // himself onto; a wall to sidle along stays one); while climbing, each frame,
-// while there is stamina. So its animations, the wall's steepness limit, climbing
-// onto the top, and falling off are the game's.
+// while there is stamina. Its animations, climbing onto the top, and falling
+// off are the game's.
+// Grab validation follows Shipwright's wall-climb policy: keep native collision
+// and ledge transitions, require deliberate input, and discard stale support.
+// Reference: Shipwright cb71e22, z_player.c (FixVineFall / climbing controls).
+// Plain walls additionally accept faces within 30 degrees of vertical and
+// neighboring facets within 30 degrees. Every support still needs a real ray
+// hit; native ivy and the game's facing, ground and ledge checks are unchanged.
 //
 //   BLUEWAKE_CLIMB=1                on
 //   BLUEWAKE_CLIMB_STAMINA=12       seconds of climbing on a full wheel
 //   BLUEWAKE_CLIMB_TRACE=1          log grabs, falls and the wheel
 
 void bluewake_climb_attach(CPUState* cpu);
+// Game-thread VI service (60 Hz), independent of translated player-entry hooks.
+void bluewake_climb_retrace(CPUState* cpu);
 // Reads the settings again (the options menu).
 void bluewake_climb_reload(void);
 
@@ -40,12 +48,14 @@ void bluewake_climb_reload(void);
 bool bluewake_climb_hud(float* fraction, bool* exhausted, float* x, float* y, float* aspect,
                         float* alpha);
 
-// At every dispatch boundary: a flag when off, a few compares when on.
+// At successor boundaries and a host turn's first PC: a flag when off, a few
+// compares when on. Replaying a serviced return preserves plain contact.
 extern bool bluewake_climb_on;
 void bluewake_climb_hook(CPUState* cpu, u32 address);
 static inline bool bluewake_climb_observes(u32 address) {
     return bluewake_climb_on &&
-        (address == 0x8010F0DCu || address == 0x8010F554u || address == 0x80135FE4u ||
+        (address == 0x8010EEBCu || address == 0x8010F01Cu || address == 0x80135FFCu ||
+         address == 0x8010F0DCu || address == 0x8010F554u || address == 0x80135FE4u ||
          address == 0x80122D30u || address == 0x8017C350u);
 }
 static inline void bluewake_climb_dispatch(CPUState* cpu, u32 address) {

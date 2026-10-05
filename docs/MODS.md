@@ -40,6 +40,33 @@ not included (an HD texture pack can supply them); its name stays "Sail". On the
 `BLUEWAKE_MODS=betterww` turns the settings on and `BLUEWAKE_OPTIONS=name,-name,...` changes them
 (`none` first turns them all off); `scripts/mac/run_host.sh` takes `BWW=1` and `OPTIONS=`.
 
+## Experimental wall climbing
+
+The Windows Enhancements tab's **Climb any wall (experimental)** uses Wind Waker's
+ivy animations and collision checks on ordinary steep walls. Steer toward a
+wall to grab it; neutral input does not start a grab. The game still decides
+whether a surface supports climbing, sidling or pulling onto a ledge.
+
+Ordinary walls can tilt up to 30 degrees from vertical. The initial grab's
+collision probes can also land on neighboring faces whose normals differ by
+up to 30 degrees, accommodating Wind Waker's sloped and faceted scenery.
+Both probes must hit real plain-wall geometry in the same registered background.
+The game's facing, ground and ledge checks still apply; a missed collision ray
+does not keep Link attached across a gap. Natural ivy keeps its original limits.
+
+Grab validation adapts the approach used by Shipwright's
+[FixVineFall and climbing controls](https://github.com/HarbourMasters/Shipwright/blob/cb71e22a79bc5d1f688fa881795bbd93094895fc/soh/src/overlays/actors/ovl_player_actor/z_player.c#L11324)
+to Wind Waker's player and collision data. A grab belongs to the current player
+and collision query; old checks cannot keep supporting it after a scene change,
+pause or cutscene.
+
+The stamina wheel advances with the game's 60 Hz clock, independently of display
+interpolation. Moving drains it at the selected rate; hanging still costs 40% of
+that rate. When empty, Link lets go and must refill before grabbing another
+ordinary wall. Standing or walking on solid ground starts refilling after half
+a second, taking three seconds from empty to full. Natural ivy and ladders keep
+their normal behavior and do not consume this stamina.
+
 ## Better Wind Waker's settings as game options
 
 Better Wind Waker patches the disc: assembly patches to the executable and modules, added code, changed
@@ -64,6 +91,91 @@ values and changed message data. BlueWake does the same things at runtime, from
 Better Wind Waker's other changes are left out: its randomizer fixes, the custom player model and colours,
 random enemy colours and the title and memory-card art.
 
+## Named asset packs
+
+Managed texture packs live in the app's data folder under
+`AssetPacks/<folder>/pack.ini`. A pack is initially disabled. The Mods menu lists
+its name, content fingerprint, availability and saved order on Windows. Enable HD textures
+and the desired packs, then restart. Selection and order changes do not replace
+registrations in a running renderer. Explicit Refresh rescans the catalog;
+large packs can take time to fingerprint.
+
+An example manifest is:
+
+```ini
+[pack]
+version=1
+id=my-textures
+name=My texture pack
+kind=textures
+game=GZLE01
+root=textures
+```
+
+Place the Dolphin-format `tex1_...png`/`.dds` files under that pack's `textures`
+directory. Subdirectories and sidecar mipmaps use Aurora's existing loader.
+`id` must be unique and use lowercase ASCII letters, digits, `_` or `-` (at most
+64 characters). `name` is UTF-8. `root` is a relative directory inside the pack;
+use `/` for subdirectories. Absolute paths, `.`/`..`, and linked files or
+directories are rejected. Optional `author`, `license` and `pack_version` fields
+are metadata; they do not grant permission to redistribute assets.
+
+The saved list is ordered from lowest to highest priority. Later enabled packs
+win when they register the same exact texture source key. Aurora provides the
+keys and chooses the registry winner; the managed-to-managed conflict report does not infer keys
+from image names. Within one pack, Aurora's deterministic path sort chooses the
+first duplicate key. Exact, palette-wildcard and texture-wildcard lookups retain
+Aurora's existing specificity rules; a wildcard is not an exact-key conflict.
+The legacy `DOL_AURORA_TEXTURE_PACK` directory retains priority zero. Managed
+packs use priorities one and above; unloading managed groups preserves legacy
+and other registrations.
+
+An enabled selection pins an XXH3-128 content fingerprint covering the manifest,
+portable relative filenames and actual file bytes. This is a revision identifier,
+not an authenticity signature. Missing packs, duplicate IDs, invalid manifests
+and mismatched fingerprints are skipped. Explicitly re-enable a changed pack to
+accept its new revision. Before guest execution, the managed loader registers
+and validates files through Aurora's real PNG/DDS decoder. A broken higher pack
+is fully unregistered so a valid lower pack or the original game texture remains
+available. Startup inspection bounds each image to 16,384 pixels per dimension
+and 256 MiB per file and aggregate decoded RGBA budget. Managed inspection rejects
+malformed contiguous sidecars and the first surplus mip level. Native loading
+stops at the complete legal mip chain; suffixes after a gap remain ignored.
+Registration and
+decode tests do not claim a rendered visual result. Avoid editing pack files while
+the game is open: Aurora reads file replacements on demand.
+
+On Windows, open **Mods > Named texture packs** and use **Refresh pack catalog**
+after installing or editing files. The panel keeps its cached rows visible while
+the filesystem scan runs. Enable packs and move them with **Lower priority** or
+**Higher priority**; later enabled packs win exact-key conflicts. The panel shows
+the requested revision separately from registrations loaded at this launch.
+Selection/order changes are saved and require a restart. A failed save rolls the
+unsaved request back and reports the error. HD textures must be enabled at launch
+for managed packs to load. Shutdown waits for an outstanding filesystem task
+before removing this renderer's managed registrations.
+
+Pack selections are saved atomically in `asset_packs.ini`. Portable
+`.bwpackpreset` files contain only pack IDs, enable state, order and fingerprints.
+They contain no absolute local paths, texture files, game code, saves, control
+bindings or scalar settings. A recipient installs matching packs separately;
+missing or different revisions remain visible and are skipped. Malformed preset
+imports preserve the current selection. Ordinary `.bwpreset` settings and
+`controls.ini` remain separate.
+
+Use **Import pack preset** or **Export pack preset** in that panel for these
+portable arrangements. Export uses the separate `.bwpackpreset` format; importing
+does not install or download the referenced textures. The loaded-conflict list
+comes from Aurora's actual exact-key registrations for this launch. Legacy packs
+and wildcard specificity retain Aurora's selection rules.
+
+These manifests load **texture assets**. They cannot load arbitrary gameplay
+code, Gecko patches, translated modules, models, audio or randomizer logic.
+Widescreen and Better Wind Waker gameplay changes remain compiled options in the
+app. A manifest with `kind=gameplay` is reported as unsupported rather than being
+executed as an asset pack. Model/audio pack formats and gameplay-mod dependency
+resolution remain separate work.
+
 ## How code mods work in a static recompilation
 
 BlueWake runs the game from native code translated ahead of time, so a mod that rewrites game code in
@@ -86,8 +198,10 @@ writes are never executed. Code mods are therefore built into the app:
    chunk cleanly, and the base game is untouched when a mod is off.
 
 The chunks include `generated.h`, which is unchanged, and only `module_export.c` sees the dispatcher
-with the writable chunk table, so adding mods compiles the new variant chunks only (53 today), not the
-748 base chunks.
+with the writable chunk table. Variant chunks are additional compile inputs alongside the 748 base
+chunks. The builder reports their count; the October 4 Windows mod-enabled preparation generated
+65 variant chunk files. Changes to shared preparation or optimization profiles can also rebuild the
+base chunks.
 
 HD textures need no build step. Aurora's Dolphin-compatible texture replacement (the
 `tex1_WxH[_m]_<XXH64>[_<palette XXH64>]_<format>` names, with palettes hashed over the entries the
@@ -111,6 +225,14 @@ fresh player build; see [the current performance comparison](BUILDER.md#optimiza
   ran (guest program-counter samples), and the Swift Sail was used at sea on the iPad on 2026-09-28.
 
 ## Building
+
+The Windows builder (`scripts/windows/build.py`) includes these variants by
+default too. Keep them in normal builds; `--no-mods` is an explicit opt-out for
+base-game comparisons and diagnosis. Compiling the variants does not turn every
+mod on: use Windows Display for widescreen and Enhancements for Better Wind Waker
+and its individual settings, then restart the game. Mods manages installed asset
+packs and identifies compiled gameplay enhancements. A build made with `--no-mods` needs
+rebuilding before those code mods can take effect.
 
 The Builder (`scripts/builder/build.sh`, or `scripts/ios/build_device.sh`) adds the mods itself, as its step 6;
 `--no-mods` leaves them out. It needs only python3. The step runs

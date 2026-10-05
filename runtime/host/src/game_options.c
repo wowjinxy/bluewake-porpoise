@@ -24,6 +24,7 @@ typedef const char* (*OptionFn)(u32, u32*, u32*, const char**);
 
 static volatile unsigned char* g_flags;
 static OptionFn g_option;
+static void* g_module;
 static CPUState* g_cpu;
 static u32 g_instant_text;
 static u32 g_brisk_sail;
@@ -152,6 +153,7 @@ static bool named(const char* list, const char* name, bool* on) {
 }
 
 void bluewake_game_options_enable(void* lib, CPUState* cpu, bool mod_enabled) {
+    g_module = lib;
     typedef volatile unsigned char* (*FlagsFn)(void);
     typedef void (*SetHookFn)(NativeHookFn);
     typedef u32 (*CountFn)(void);
@@ -199,6 +201,21 @@ void bluewake_game_options_enable(void* lib, CPUState* cpu, bool mod_enabled) {
 }
 
 bool bluewake_game_options_invert_camera_x(void) { return option_on(g_invert_camera_x); }
+
+bool bluewake_game_mod_available(const char* wanted) {
+    typedef u32 (*CountFn)(void);
+    typedef const char* (*NameFn)(u32);
+    if (g_module == NULL || wanted == NULL) return false;
+    CountFn count = (CountFn)dlsym(g_module, "bluewake_composite_mod_count");
+    NameFn name = (NameFn)dlsym(g_module, "bluewake_composite_mod_name");
+    if (count == NULL || name == NULL) return false;
+    const u32 available = count();
+    for (u32 i = 0; i < available; ++i) {
+        const char* mod = name(i);
+        if (mod != NULL && strcmp(mod, wanted) == 0) return true;
+    }
+    return false;
+}
 
 const char* bluewake_game_options_describe(u32 position, const char** title, bool* default_on, bool* on) {
     u32 index = 0u, defaults = 0u;

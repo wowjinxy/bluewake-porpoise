@@ -4,6 +4,7 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 bool bluewake_fast_load_fast_forward(void) { return false; }
@@ -13,6 +14,36 @@ void dol_aurora_frame_timing(DolAuroraFrameTiming* out) { memset(out, 0, sizeof(
 unsigned bluewake_host_pipelines_created(void) { return 0; }
 
 static int cause_is(const char* cause, const char* expected) { return strcmp(cause, expected) == 0; }
+
+static void test_placement_survives_player_update(void) {
+#if defined(_WIN32)
+    assert(_putenv_s("BLUEWAKE_TEST_PLACE", "1:10:20:30") == 0);
+    assert(_putenv_s("BLUEWAKE_FPS_WATCH", "0") == 0);
+#else
+    assert(setenv("BLUEWAKE_TEST_PLACE", "1:10:20:30", 1) == 0);
+    assert(setenv("BLUEWAKE_FPS_WATCH", "0", 1) == 0);
+#endif
+    CPUState cpu;
+    assert(cpu_init(&cpu));
+    const u32 player = 0x80010000u;
+    mem_write32(&cpu, 0x803CA74Cu, player);
+    bluewake_fps_watch_attach(&cpu);
+    for (unsigned tick = 0; tick < 8; ++tick)
+        bluewake_fps_watch_retrace();
+    const u32 expected[3] = {0x41200000u, 0x41A00000u, 0x41F00000u};
+    for (u32 axis = 0; axis < 3; ++axis) {
+        // Link restores the retail position cache at the start of execute.
+        mem_write32(&cpu, player + 0x1F8u + axis * 4u,
+                    mem_read32(&cpu, 0x803E440Cu + axis * 4u));
+        assert(mem_read32(&cpu, player + 0x1F8u + axis * 4u) == expected[axis]);
+        assert(mem_read32(&cpu, player + 0x1E4u + axis * 4u) == expected[axis]);
+    }
+    // Once the bounded placement ends, normal player movement stays free.
+    mem_write32(&cpu, player + 0x1F8u, 0x42200000u);
+    bluewake_fps_watch_retrace();
+    assert(mem_read32(&cpu, player + 0x1F8u) == 0x42200000u);
+    cpu_free(&cpu);
+}
 
 int main(void) {
     assert(bluewake_fps_watch_cpu_percent(750000, 250000, 1000000) == 50.0);
@@ -56,5 +87,6 @@ int main(void) {
     assert(cause_is(bluewake_fps_watch_cause(1.0, 40, 30, 92, 20, 5, 40, 0), "interp-helper"));
     // Full speed, nothing saturated: presents late for no visible reason.
     assert(cause_is(bluewake_fps_watch_cause(1.0, 40, 30, 0, 20, 5, 40, 0), "unclear"));
+    test_placement_survives_player_update();
     return 0;
 }

@@ -41,7 +41,10 @@
 #include <aurora/aurora.h>
 
 #include "win_settings.h"
+#include "audio_preview_host_bridge.h"
 #include "win_disc.h"
+#include "card_menu.h"
+#include "network_menu.h"
 #include "win_crash.h"
 #include "launch_marker.h"
 
@@ -625,6 +628,27 @@ int main(int argc, char** argv) {
         if (SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS))
             fprintf(stderr, "[windows] priority above normal\n");
     }
+    // Apply queued card replacements before the backend opens its card. Every
+    // replacement preserves the previous bytes, and an incomplete transaction
+    // stops startup so later gameplay cannot overwrite its recovery artifacts.
+    char room_card_path[4096];
+    if (!bw_network_menu_prepare(g_data_dir, module, room_card_path, sizeof room_card_path)) {
+        fprintf(stderr, "[network] startup stopped: %s\n", bw_network_menu_error());
+        fatal_box(bw_network_menu_error());
+        return 1;
+    }
+    if (*room_card_path && _putenv_s("BLUEWAKE_CARD_PATH", room_card_path) != 0) {
+        fatal_box("The isolated room-card route could not be selected. Startup stopped before any card opened.");
+        bw_network_menu_shutdown();
+        return 1;
+    }
+    if (!bw_card_menu_prepare(getenv("BLUEWAKE_CARD_PATH"))) {
+        fprintf(stderr, "[card-manager] startup stopped: %s\n", bw_card_menu_error());
+        fatal_box(bw_card_menu_error());
+        bw_card_menu_shutdown();
+        bw_network_menu_shutdown();
+        return 1;
+    }
     // The name the volume mixer shows for the game's audio.
     SDL_SetAppMetadata("BlueWake", "0.1", "dev.bluewake.BlueWake");
     g_hotkey_hook = SetWindowsHookExW(WH_KEYBOARD, hotkey_hook, NULL, GetCurrentThreadId());
@@ -636,10 +660,24 @@ int main(int argc, char** argv) {
     snprintf(launch_marker, sizeof launch_marker, "%slaunch.pending", g_data_dir);
     if (!bw_launch_begin(launch_marker)) {
         fatal_box("BlueWake could not create its launch recovery marker. Check that its data folder is writable.");
+        bw_card_menu_shutdown();
+        bw_network_menu_shutdown();
+        if (g_hotkey_hook) { UnhookWindowsHookEx(g_hotkey_hook); g_hotkey_hook = NULL; }
         return 1;
     }
     bw_crash_test();
+    // All startup failure paths above have completed. Preview is optional
+    // and starts OFF; binding remains stable for the whole host/UI lifetime.
+    BwAudioPreview* preview = bluewake_audio_preview_create();
+    if (preview == NULL)
+        fprintf(stderr, "[audio-preview] worker unavailable; native audio remains active\n");
+    bluewake_host_audio_preview_bind(preview);
     const int status = bluewake_host_main(2, host_argv);
+    // Host return follows Aurora/UI, DSP and copied-output shutdown.
+    bluewake_host_audio_preview_bind(NULL);
+    bluewake_audio_preview_destroy(preview);
+    bw_card_menu_shutdown();
+    bw_network_menu_shutdown();
     if (status == 0 && !bw_launch_clear(launch_marker))
         fprintf(stderr, "[safe-mode] could not clear launch marker on clean exit\n");
     fflush(stdout);

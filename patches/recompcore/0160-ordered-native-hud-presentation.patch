@@ -1,0 +1,388 @@
+--- a/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
++++ b/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ #pragma once
++#define GXCORE_HUD_COLOR_PROTOTYPE 1
+ 
+ // gxcore — Dolphin-ported GX semantics core.
+ //
+@@ -256,7 +257,7 @@
+   std::uint8_t ztex_type = 0;
+   // Re-pad the scalar block to a multiple of 4, keeping ShaderKey a
+   // unique-object-representation (memcmp identity) type.
+-  std::uint8_t pad2[1]{};
++  std::uint8_t hud_tint = 0; // dedicated final native fragment multiplier
+   LightChanKey litchan[4]{}; // color0, color1, alpha0, alpha1
+   TexGenKey tex_gens[kMaxTexGens]{};
+   IndirectStageKey ind_stages[kMaxIndirectStages]{};
+@@ -357,9 +358,10 @@
+   // Dolphin I_INDTEXMTX: two signed integer rows per matrix. xyz are the BP
+   // coefficients; w is the post-dot shift (17 - the BP matrix scale).
+   std::int32_t indtexmtx[6][4]{};
++  float hud_multiplier[4]{1.f, 1.f, 1.f, 1.f};
+ };
+ static_assert(sizeof(PixelShaderConstants) ==
+-              (4 + 4 + 1 + 1 + 1 + 1 + 3 + 1 + 8 + 6) * 16);
++              (4 + 4 + 1 + 1 + 1 + 1 + 3 + 1 + 8 + 6 + 1) * 16);
+ 
+ // --- Fixed decoded-vertex layout (slice) ------------------------------------
+ //
+--- a/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
+@@ -569,6 +569,27 @@
+          "    let ztex_depth = 1.0 - f32(ztex_z) / 16777216.0;\n");
+   }
+ 
++  // Preserve the native alpha test/fog first. HUD opacity is presentation,
++  // not a new native alpha-test threshold; hidden groups are filtered earlier.
++  if (key.hud_tint != 0u) {
++    const char* color = "hud_color";
++    emit(out, "    let hud_color = (vec4f(prev) / 255.0) * psc.hud_multiplier;\n");
++  if (key.use_dst_alpha != 0) {
++    if (key.ztex_op != 0)
++      emitf(out, "    return FragmentOut(vec4f((%s).rgb, %u.0 / 255.0), "
++                 "vec4f(0.0, 0.0, 0.0, (%s).a), ztex_depth);\n}\n",
++            color, static_cast<unsigned>(key.dst_alpha), color);
++    else
++      emitf(out, "    return FragmentOut(vec4f((%s).rgb, %u.0 / 255.0), "
++                 "vec4f(0.0, 0.0, 0.0, (%s).a));\n}\n",
++            color, static_cast<unsigned>(key.dst_alpha), color);
++  } else if (key.ztex_op != 0) {
++    emitf(out, "    return FragmentOut(%s, ztex_depth);\n}\n", color);
++  } else {
++    emitf(out, "    return %s;\n}\n", color);
++  }
++    return;
++  }
+   if (key.use_dst_alpha != 0) {
+     if (key.ztex_op != 0)
+       emitf(out,
+@@ -834,7 +855,7 @@
+     emit(out, "    normalmatrices: array<vec4f, 32>,\n");
+   emit(out, "};\n"
+             "@group(1) @binding(0) var<uniform> vsc: VertexShaderConstants;\n");
+-  if (tev) {
++  if (tev || key.hud_tint != 0u) {
+     // PixelShaderConstants (Dolphin I_COLORS/I_KCOLORS/I_ALPHA). Integer TEV.
+     // group(2) here (texture shifts to group(3)) so an untextured TEV draw
+     // leaves no gap in the pipeline's bind-group indices.
+@@ -848,13 +869,15 @@
+               "    fogrange: array<vec4f, 3>,\n"
+               "    zbias: vec4i,\n"
+               "    texdims: array<vec4i, 8>,\n");
+-    if (key.num_ind_stages != 0u)
++    if (key.num_ind_stages != 0u || key.hud_tint != 0u)
+       emit(out, "    indtexmtx: array<vec4i, 6>,\n");
++    if (key.hud_tint != 0u)
++      emit(out, "    hud_multiplier: vec4f,\n");
+     emit(out, "};\n"
+               "@group(2) @binding(0) var<uniform> psc: PixelShaderConstants;\n");
+   }
+   if (key.textured != 0) {
+-    const std::uint32_t tex_group = tev ? 3u : 2u;
++    const std::uint32_t tex_group = (tev || key.hud_tint != 0u) ? 3u : 2u;
+     const std::uint32_t used = used_texmap_mask(key);
+     if (texmap_popcount(used) <= 1u) {
+       emitf(out,
+@@ -1135,6 +1158,8 @@
+     }
+     emit(out, "    prev = textureSample(tex0, samp0, uv);\n");
+   }
++  if (key.hud_tint != 0u)
++    emit(out, "    prev *= psc.hud_multiplier;\n");
+   if (key.use_dst_alpha != 0) {
+     emitf(out,
+           "    return FragmentOut(vec4f(prev.rgb, %u.0 / 255.0), "
+--- a/GXRuntime/graphics/gxcore/src/gxcore_uber.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore_uber.cpp
+@@ -33,6 +33,7 @@
+   K(uv_mask);
+   K(textured);
+   K(tev_valid);
++  K(hud_tint);
+   K(num_tev_stages);
+   K(num_ind_stages);
+   K(alpha_comp0);
+@@ -157,6 +158,7 @@
+     zbias: vec4i,
+     texdims: array<vec4i, 8>,
+     indtexmtx: array<vec4i, 6>,
++    hud_multiplier: vec4f,
+     key: array<vec4u, KEY_WORDS>,
+     extra: vec4u,
+ };
+@@ -849,6 +851,7 @@
+             if (kb(K_num_tex_gens) > 0u && kb(K_tex_gens + TG_projection) != 0u) { uv = in.uv0.xy / max(in.uv0.z, 1e-6); }
+             prev = textureSample(tex0, samp0, uv);
+         }
++        if (kb(K_hud_tint) != 0u) { prev *= psc.hud_multiplier; }
+         return prev;
+     }
+     var prev = tev(in);
+@@ -862,7 +865,9 @@
+     else { passed = ok0 == ok1; }
+     if (!passed) { discard; }
+     prev = fog(prev, in);
+-    return vec4f(prev) / 255.0;
++    var final_color = vec4f(prev) / 255.0;
++    if (kb(K_hud_tint) != 0u) { final_color *= psc.hud_multiplier; }
++    return final_color;
+ }
+ )WGSL";
+ 
+--- a/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp
++++ b/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp
+@@ -131,6 +131,12 @@
+     bp_valid_[kDrawTagRegister] = bp_valid_[kDrawTagAgeRegister] = false;
+     bp_valid_[kDrawScopeRegister] = bp_valid_[kDrawScopeCountRegister] = false;
+   }
++  // Dedicated semantic HUD metadata, never the particle/cloth count scope.
++  void forget_hud_metadata(bool reset_sequence = false) {
++    for (unsigned r = 0x6Au; r <= 0x79u; ++r) bp_valid_[r] = false;
++    hud_pending_mask_ = 0; hud_active_ = false;
++    if (reset_sequence) hud_sequence_ = hud_epoch_ = hud_generation_ = 0;
++  }
+   static constexpr std::uint8_t kDrawTagRegister = 0x7Eu;
+   static constexpr std::uint8_t kDrawTagAgeRegister = 0x7Du;
+   static constexpr std::uint8_t kDrawScopeRegister = 0x7Cu;
+@@ -141,6 +147,9 @@
+   void renew_version() { version_ = next_version(); }
+ 
+ private:
++  std::uint32_t hud_pending_mask_ = 0;
++  std::uint32_t hud_sequence_ = 0, hud_epoch_ = 0, hud_generation_ = 0;
++  bool hud_active_ = false;
+   std::uint32_t bp_regs_[256]{};
+   bool bp_valid_[256]{};
+   // TEV color registers (BP 0xE0-0xE7). Konst and tev-color writes alias the
+@@ -170,6 +179,13 @@
+ class GxCoreSink final : public gxruntime::aurora_recomp::AuroraRenderSink {
+ public:
+   using PlanObserver = void (*)(const DrawPlan& plan, void* user);
++  // Optional game-specific filter/transform, BEFORE interpolation/uniform
++  // dedup/upload. State is the immutable snapshot AT the draw, not live BP.
++  // Renderer thread only; returning false suppresses this one original draw.
++  using PlanFilter = bool (*)(DrawPlan& plan, const GxCoreState& state, void* user);
++  void set_plan_filter(PlanFilter filter, void* user) {
++    plan_filter_ = filter; plan_filter_user_ = user;
++  }
+   // Fires when a CopyDestination packet arrives, AFTER the pending draw is
+   // flushed (its geometry is in the pass) — so a GPU observer can resolve the
+   // EFB into a texture at the copy's stream position.
+@@ -191,7 +207,8 @@
+ 
+   bool submit_packet(
+       const gxruntime::aurora_recomp::RenderPacket& packet) override;
+-  // Frame boundary: plan the final pending draw of the frame.
++  // Host presentation boundary: plan the final pending draw. Ordered stream
++  // state, including an armed native HUD scope, survives ordinary flushes.
+   void flush_frame();
+ 
+   // Save states: the register model the next draws are planned against and
+@@ -232,6 +249,8 @@
+   std::uint32_t scope_left_ = 0;
+   std::uint32_t scope_part_ = 0;
+   bool scope_indexed_ = false;
++  PlanFilter plan_filter_ = nullptr;
++  void* plan_filter_user_ = nullptr;
+   PlanObserver plan_observer_ = nullptr;
+   void* plan_observer_user_ = nullptr;
+   CopyObserver copy_observer_ = nullptr;
+--- a/GXRuntime/graphics/gxcore/src/gxcore.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore.cpp
+@@ -147,11 +147,40 @@
+     if (state.index < 256u) {
+       // The draw tag registers change at nearly every particle draw and feed
+       // no derived state, so they leave the version alone.
+-      const bool tag = state.index >= kDrawScopeCountRegister && state.index <= kDrawTagRegister;
++      const bool hud = state.index >= 0x6Au && state.index <= 0x79u;
++      const bool tag = hud || (state.index >= kDrawScopeCountRegister && state.index <= kDrawTagRegister);
+       if (!tag && (!bp_valid_[state.index] || bp_regs_[state.index] != state.value))
+         version_ = next_version();
+       bp_regs_[state.index] = state.value;
+       bp_valid_[state.index] = true;
++      if (hud && state.index != 0x6Au) {
++        hud_pending_mask_ |= 1u << (state.index - 0x6Bu);
++      } else if (hud) {
++        const std::uint32_t mask = hud_pending_mask_;
++        hud_pending_mask_ = 0;
++        const bool begin = state.value == 0x10001u;
++        const bool end = state.value == 0x10002u;
++        const bool reset = state.value == 0x10003u;
++        const std::uint32_t seq = bp_regs_[0x6Bu];
++        const bool owned = hud_active_;
++        if (reset) {
++          forget_hud_metadata(true);
++        } else if (end && mask == 1u && owned && seq == hud_sequence_) {
++          hud_active_ = false;
++          bp_valid_[0x6Au] = false;
++        } else if (begin && !owned && mask == 0x7FFFu && seq != 0u &&
++                   (hud_sequence_ == 0u || (seq > hud_sequence_ &&
++                    bp_regs_[0x77u] == hud_epoch_ &&
++                    bp_regs_[0x78u] == hud_generation_))) {
++          hud_sequence_ = seq;
++          hud_epoch_ = bp_regs_[0x77u];
++          hud_generation_ = bp_regs_[0x78u];
++          hud_active_ = true;
++        } else {
++          hud_active_ = false;
++          bp_valid_[0x6Au] = false;
++        }
++      }
+       // TEV color/konst registers (BP 0xE0-0xE7, TevReg RA/BG). The TevRegType
+       // bit (23) selects konst vs tev-color; the two alias the same address, so
+       // route each half to its own store to keep both (BPMemory.h TevReg).
+@@ -1990,6 +2019,9 @@
+       self->scope_left_ = 0;
+     }
+   }
++  if (self->plan_filter_ != nullptr &&
++      !self->plan_filter_(plan, self->pending_state_, self->plan_filter_user_))
++    return;
+   self->plan_observer_(plan, self->plan_observer_user_);
+ }
+ 
+@@ -2083,7 +2115,13 @@
+   return ok;
+ }
+ 
+-void GxCoreSink::flush_frame() { consumer_.flush_assembly(); }
++void GxCoreSink::flush_frame() {
++  consumer_.flush_assembly();
++  // A host presentation/display-copy flush can service an ordinary budget
++  // yield inside a native HUD leaf. Its active scope and any next-draw or
++  // partial descriptor packets remain ordered stream state. Only an ordered
++  // END/RESET or explicit load_state revokes that metadata.
++}
+ 
+ namespace {
+ constexpr std::uint32_t kSinkStateMagic = 0x47585343u; // "GXSC"
+@@ -2122,6 +2160,7 @@
+   // The saved version belongs to the run that saved it: in another run it may
+   // be one this run's derived-state cache holds for other registers.
+   live_state_.renew_version();
++  live_state_.forget_hud_metadata(true);
+   pending_state_ = live_state_;
+   since_draw_.clear();
+   replay_overflow_ = false;
+--- a/GXRuntime/src/gx_recomp.c
++++ b/GXRuntime/src/gx_recomp.c
+@@ -889,6 +889,14 @@
+     if (gx == NULL)
+         return false;
+     value &= 0x00FFFFFFu;
++    /* Dedicated host HUD metadata: copied raw, outside native BP masking.
++     * Preserve the pending one-shot mask for the next genuine GX write. */
++    if (reg >= 0x6Au && reg <= 0x79u) {
++        gx->bp_regs[reg] = value;
++        gx->bp_valid[reg] = true;
++        dol_gx_recomp_trace_event(gx, DOL_GX_RECOMP_EVENT_BP_REG, reg, value, 0, 0);
++        return true;
++    }
+     if (reg == DOL_GX_BP_REG_MASK) {
+         gx->bp_regs[reg] = value;
+         gx->bp_valid[reg] = true;
+--- a/GXRuntime/graphics/aurora/lib/gx/command_processor.cpp
++++ b/GXRuntime/graphics/aurora/lib/gx/command_processor.cpp
+@@ -640,6 +640,10 @@
+ // BP register handler - decodes BP (RAS/pixel engine) register writes and updates g_gxState
+ static void handle_bp(u32 value, bool bigEndian) {
+   u32 regId = (value >> 24) & 0xFF;
++  // HUD metadata belongs to the GXCore semantic stream. Legacy fallback
++  // ignores it without consuming the next native BP mask/material write.
++  if (regId >= 0x6Au && regId <= 0x79u)
++    return;
+   // Mask off the register ID from the value for field extraction
+   // (the regId is stored in bits 24-31, data is in bits 0-23)
+ 
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+@@ -393,7 +393,7 @@
+   // never references it); 1 = shared dynamic VS uniform. On the TEV path (S14)
+   // 2 = shared dynamic PS uniform and 3 = texture; else 2 = texture. Putting
+   // the PS uniform before the texture keeps an untextured TEV draw gap-free.
+-  const bool tev = key.shader.tev_valid != 0;
++  const bool tev = key.shader.tev_valid != 0 || key.shader.hud_tint != 0;
+   const bool textured = key.shader.textured != 0;
+   // Multi-texmap: the texture group's layout matches the set of texmaps the WGSL
+   // declares (derived identically from the shader key), so pipeline and bind
+@@ -1803,7 +1803,7 @@
+     }
+   }
+ 
+-  const bool tev = plan.pipeline.shader.tev_valid != 0;
++  const bool tev = plan.pipeline.shader.tev_valid != 0 || plan.pipeline.shader.hud_tint != 0;
+   const size_t vertBytes = plan.vertices.size() * sizeof(float);
+   const size_t indexBytes = plan.indices.size() * sizeof(uint16_t);
+   const size_t pixelUniformBytes = tev ? sizeof(plan.pixel_constants) : 0;
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+@@ -83,7 +83,7 @@
+ // v9: GXSetZCompLoc early depth adds a depth-only pipeline variant. v10:
+ // RGB and alpha blending carry donor-exact independent factors. v11: BP SU
+ // texture-coordinate scales enlarge pixel constants and alter TEV WGSL.
+-constexpr uint32_t GXCorePipelineConfigVersion = 12;
++constexpr uint32_t GXCorePipelineConfigVersion = 13;
+ 
+ struct PipelineConfig {
+   uint32_t version = GXCorePipelineConfigVersion;
+--- a/GXRuntime/include/gxruntime/aurora_backend.h
++++ b/GXRuntime/include/gxruntime/aurora_backend.h
+@@ -25,6 +25,12 @@
+ bool dol_aurora_initialize(int argc, char** argv,
+                            const AuroraBackendConfig* config);
+ void dol_aurora_shutdown(void);
++/* Register only while Aurora is stopped (before init/after shutdown). Filter
++ * sees a mutable copied GXCore DrawPlan and its immutable pending GxCoreState.
++ * Callback/user lifetime must span all FIFO worker use. No CPU/UI reads. */
++typedef bool (*DolAuroraGxCorePlanFilterFn)(void*,const void*,void*);
++bool dol_aurora_set_gxcore_plan_filter(DolAuroraGxCorePlanFilterFn,void*);
++bool dol_aurora_gxcore_plan_filter_available(void);
+ 
+ // Host overlay hooks. The overlay callback runs on the main thread inside the
+ // open Aurora frame, just before it is submitted, so it may issue ImGui draw
+--- a/GXRuntime/backends/aurora/aurora_backend.cpp
++++ b/GXRuntime/backends/aurora/aurora_backend.cpp
+@@ -22,6 +22,14 @@
+ namespace gx_aurora {
+ 
+ bool g_initialized = false;
++DolAuroraGxCorePlanFilterFn g_host_plan_filter=nullptr;
++void* g_host_plan_filter_user=nullptr;
++#if GXRUNTIME_HAS_AURORA_RECOMP
++static bool host_plan_filter(gxruntime::gxcore::DrawPlan& plan,
++                             const gxruntime::gxcore::GxCoreState& state,void*) {
++    return !g_host_plan_filter||g_host_plan_filter(&plan,&state,g_host_plan_filter_user);
++}
++#endif
+ bool g_frame_open = false;
+ bool g_should_quit = false;
+ DolAuroraOverlayFn g_host_overlay = nullptr;
+@@ -249,6 +257,17 @@
+ 
+ extern "C" {
+ 
++bool dol_aurora_set_gxcore_plan_filter(DolAuroraGxCorePlanFilterFn filter,void* user) {
++    if(gx_aurora::g_initialized)return false;
++    gx_aurora::g_host_plan_filter=filter;gx_aurora::g_host_plan_filter_user=user;return true;
++}
++bool dol_aurora_gxcore_plan_filter_available(void) {
++#if GXRUNTIME_HAS_AURORA_RECOMP
++    return gx_aurora::g_initialized&&gx_aurora::g_gx_core_enabled&&gx_aurora::g_host_plan_filter;
++#else
++    return false;
++#endif
++}
+ bool aurora_backend_should_quit(void) {
+     return gx_aurora::g_should_quit;
+ }
+@@ -455,6 +474,8 @@
+         dol_guest_memory_dirty_reset();
+         aurora::gfx::gxcore::set_texture_dirty_epoch_observer(
+             gx_aurora::core_texture_dirty_epoch);
++        gx_aurora::g_core_sink.set_plan_filter(gx_aurora::g_host_plan_filter?
++            gx_aurora::host_plan_filter:nullptr,nullptr);
+         gx_aurora::g_core_sink.set_plan_observer(gx_aurora::core_plan_observer, nullptr);
+         gx_aurora::g_core_sink.set_copy_observer(gx_aurora::core_copy_observer, nullptr);
+         gx_aurora::g_core_submitted.store(0, std::memory_order_relaxed);

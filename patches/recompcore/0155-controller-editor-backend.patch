@@ -1,0 +1,231 @@
+diff --git a/GXRuntime/graphics/aurora/include/dolphin/pad.h b/GXRuntime/graphics/aurora/include/dolphin/pad.h
+index 252fca7..a28fce3 100644
+--- a/GXRuntime/graphics/aurora/include/dolphin/pad.h
++++ b/GXRuntime/graphics/aurora/include/dolphin/pad.h
+@@ -176,6 +176,11 @@ typedef struct PADDefaultMapping {
+   PADAxisMapping axes[PAD_AXIS_COUNT];
+ } PADDefaultMapping;
+ 
++/* Host controller APIs run on the event/game thread, including PADRead.
++ * Mapping, name and SDL handle pointers must not be retained across hotplug or
++ * PADRefreshControllers; SDL's discovery worker does not mutate this registry. */
++/* Reconcile missed hotplug events without replacing existing device mappings. */
++void PADRefreshControllers();
+ /* Returns the total number of controllers */
+ u32 PADCount();
+ /* Returns the controller name for the given index into the controller map */
+@@ -220,6 +225,7 @@ s32 PADGetNativeButtonPressed(u32 port);
+ /* Returns the first native axis which is currently pulled halfway or more */
+ PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
+ void PADRestoreDefaultMapping(u32 port);
++/* Closing a blocked menu suppresses held controls until they are released. */
+ void PADBlockInput(bool block);
+ 
+ void PADSetVirtualStatus(u32 port, const PADStatus* status);
+diff --git a/GXRuntime/graphics/aurora/lib/dolphin/pad/pad.cpp b/GXRuntime/graphics/aurora/lib/dolphin/pad/pad.cpp
+index 63e660d..cd0f39d 100644
+--- a/GXRuntime/graphics/aurora/lib/dolphin/pad/pad.cpp
++++ b/GXRuntime/graphics/aurora/lib/dolphin/pad/pad.cpp
+@@ -295,8 +295,13 @@ bool g_keyboardBindingsLoaded = false;
+ bool g_blockPAD = false;
+ bool g_suppressHeldOnRead = false;
+ std::array<PADButton, PAD_CHANMAX> g_suppressedButtons{};
++std::array<PADExtButton, PAD_CHANMAX> g_suppressedExtButtons{};
+ std::array<bool, PAD_CHANMAX> g_suppressLeftTrigger{};
+ std::array<bool, PAD_CHANMAX> g_suppressRightTrigger{};
++std::array<bool, PAD_CHANMAX> g_suppressStick{};
++std::array<bool, PAD_CHANMAX> g_suppressCamera{};
++std::array<bool, PAD_CHANMAX> g_suppressAnalogA{};
++std::array<bool, PAD_CHANMAX> g_suppressAnalogB{};
+ 
+ bool is_mouse_scancode(const s32 scancode) { return scancode < PAD_KEY_INVALID; }
+ bool is_mouse_button_pressed(const s32 scancode) {
+@@ -606,13 +611,20 @@ static Sint16 _get_axis_value(const aurora::input::GameController* controller, /
+ 
+   if (iter->nativeAxis.nativeAxis != -1) {
+     const auto [nativeAxis, sign] = iter->nativeAxis;
++    if (nativeAxis < 0 || nativeAxis >= SDL_GAMEPAD_AXIS_COUNT ||
++        (sign != AXIS_SIGN_POSITIVE && sign != AXIS_SIGN_NEGATIVE)) {
++      return 0;
++    }
+     // clamp value to avoid overflow when casting to Sint16 if -32768 is negated
+     return static_cast<Sint16>(
+         std::min(SDL_GetGamepadAxis(controller->m_controller, static_cast<SDL_GamepadAxis>(nativeAxis)) * sign,
+                  SDL_JOYSTICK_AXIS_MAX));
+   }
+ 
+-  assert(iter->nativeButton != -1);
++  // Both sources may be cleared by the Controls editor.
++  if (iter->nativeButton < 0 || iter->nativeButton >= SDL_GAMEPAD_BUTTON_COUNT) {
++    return 0;
++  }
+   if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(iter->nativeButton))) {
+     return SDL_JOYSTICK_AXIS_MAX;
+   }
+@@ -621,6 +633,7 @@ static Sint16 _get_axis_value(const aurora::input::GameController* controller, /
+ 
+ static void neutralize_status(PADStatus& status) {
+   status.button = 0;
++  status.extButton = 0;
+   status.stickX = 0;
+   status.stickY = 0;
+   status.substickX = 0;
+@@ -631,15 +644,49 @@ static void neutralize_status(PADStatus& status) {
+   status.analogB = 0;
+ }
+ 
++static Sint16 directional_axis_pair(const Sint16 positive, const Sint16 negative) {
++  // Each binding owns one direction. An unbound half stays neutral and a
++  // button reaches full range. Symmetric default bindings retain their range.
++  return static_cast<Sint16>(std::max<int>(positive, 0) - std::max<int>(negative, 0));
++}
++
+ static void apply_unblock_suppression(PADStatus& status, const u32 port, const bool captureHeldInput) {
+   if (captureHeldInput) {
+     g_suppressedButtons[port] |= status.button;
++    g_suppressedExtButtons[port] |= status.extButton;
+     g_suppressLeftTrigger[port] = g_suppressLeftTrigger[port] || status.triggerLeft > ClampRegion.minTrigger;
+     g_suppressRightTrigger[port] = g_suppressRightTrigger[port] || status.triggerRight > ClampRegion.minTrigger;
++    g_suppressStick[port] = g_suppressStick[port] || status.stickX != 0 || status.stickY != 0;
++    g_suppressCamera[port] = g_suppressCamera[port] || status.substickX != 0 || status.substickY != 0;
++    g_suppressAnalogA[port] = g_suppressAnalogA[port] || status.analogA != 0;
++    g_suppressAnalogB[port] = g_suppressAnalogB[port] || status.analogB != 0;
+   }
+ 
+   g_suppressedButtons[port] &= status.button;
+   status.button &= ~g_suppressedButtons[port];
++  g_suppressedExtButtons[port] &= status.extButton;
++  status.extButton &= ~g_suppressedExtButtons[port];
++
++  // Capturing a binding with a held stick must not move the game at menu
++  // close. Release both directions before accepting another move.
++  if (g_suppressStick[port]) {
++    g_suppressStick[port] = status.stickX != 0 || status.stickY != 0;
++    status.stickX = 0;
++    status.stickY = 0;
++  }
++  if (g_suppressCamera[port]) {
++    g_suppressCamera[port] = status.substickX != 0 || status.substickY != 0;
++    status.substickX = 0;
++    status.substickY = 0;
++  }
++  if (g_suppressAnalogA[port]) {
++    g_suppressAnalogA[port] = status.analogA != 0;
++    status.analogA = 0;
++  }
++  if (g_suppressAnalogB[port]) {
++    g_suppressAnalogB[port] = status.analogB != 0;
++    status.analogB = 0;
++  }
+ 
+   if (g_suppressLeftTrigger[port]) {
+     if (status.triggerLeft <= ClampRegion.minTrigger) {
+@@ -754,8 +801,13 @@ u32 PADRead(PADStatus* status) {
+     if (controller == nullptr && !g_keyboardBindings[i].m_mappingsSet && !g_virtualPadActive[i]) {
+       status[i].err = PAD_ERR_NO_CONTROLLER;
+       g_suppressedButtons[i] = 0;
++      g_suppressedExtButtons[i] = 0;
+       g_suppressLeftTrigger[i] = false;
+       g_suppressRightTrigger[i] = false;
++      g_suppressStick[i] = false;
++      g_suppressCamera[i] = false;
++      g_suppressAnalogA[i] = false;
++      g_suppressAnalogB[i] = false;
+       continue;
+     }
+ 
+@@ -831,7 +883,8 @@ u32 PADRead(PADStatus* status) {
+       bool rightTriggerSet = false;
+       std::ranges::for_each(controller->m_buttonMapping, [&controller, &i, &status, &leftTriggerSet,
+                                                           &rightTriggerSet](const auto& mapping) {
+-        if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
++        if (mapping.nativeButton < SDL_GAMEPAD_BUTTON_COUNT &&
++            SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
+           status[i].button |= mapping.padButton;
+         }
+ 
+@@ -873,9 +926,9 @@ u32 PADRead(PADStatus* status) {
+       const auto ylPos = _get_axis_value(controller, PAD_AXIS_LEFT_Y_POS);
+       const auto ylNeg = _get_axis_value(controller, PAD_AXIS_LEFT_Y_NEG);
+ 
+-      auto xl = static_cast<Sint16>((xlPos + -xlNeg) / 2);
++      auto xl = directional_axis_pair(xlPos, xlNeg);
+       // SDL's gamepad y-axis is inverted from GC's
+-      auto yl = static_cast<Sint16>((-ylPos + ylNeg) / 2);
++      auto yl = static_cast<Sint16>(-directional_axis_pair(ylPos, ylNeg));
+       if (controller->m_deadZones.useDeadzones) {
+         if (std::abs(xl) > controller->m_deadZones.stickDeadZone) {
+           xl /= 256;
+@@ -905,9 +958,9 @@ u32 PADRead(PADStatus* status) {
+       const auto yrPos = _get_axis_value(controller, PAD_AXIS_RIGHT_Y_POS);
+       const auto yrNeg = _get_axis_value(controller, PAD_AXIS_RIGHT_Y_NEG);
+ 
+-      auto xr = static_cast<Sint16>((xrPos + -xrNeg) / 2);
++      auto xr = directional_axis_pair(xrPos, xrNeg);
+       // SDL's gamepad y-axis is inverted from GC's
+-      auto yr = static_cast<Sint16>((-yrPos + yrNeg) / 2);
++      auto yr = static_cast<Sint16>(-directional_axis_pair(yrPos, yrNeg));
+       if (controller->m_deadZones.useDeadzones) {
+         if (std::abs(xr) > controller->m_deadZones.substickDeadZone) {
+           xr /= 256;
+@@ -969,10 +1022,10 @@ u32 PADRead(PADStatus* status) {
+     if (g_blockPAD) {
+       neutralize_status(status[i]);
+     } else {
+-      apply_unblock_suppression(status[i], i, captureHeldInput);
+       if (g_virtualPadActive[i]) {
+         merge_virtual_status(status[i], g_virtualPadStatus[i]);
+       }
++      apply_unblock_suppression(status[i], i, captureHeldInput);
+     }
+   }
+   // Opt-in probe: BLUEWAKE_INPUT_PROBE reports whether SDL itself sees
+diff --git a/GXRuntime/graphics/aurora/lib/input.cpp b/GXRuntime/graphics/aurora/lib/input.cpp
+index 20ac5f7..83cb39b 100644
+--- a/GXRuntime/graphics/aurora/lib/input.cpp
++++ b/GXRuntime/graphics/aurora/lib/input.cpp
+@@ -371,6 +371,17 @@ Sint32 get_instance_for_player(uint32_t player) noexcept {
+ }
+ 
+ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
++  if (const auto it = g_GameControllers.find(which); it != g_GameControllers.end()) {
++    if (SDL_GamepadConnected(it->second.m_controller)) {
++      return which;
++    }
++    remove_controller(which);
++  }
++  // A queued ADDED event can outlive a removed device. Duplicate events must
++  // not reopen its SDL handle or replace in-memory mappings and dead zones.
++  if (!SDL_IsGamepad(which)) {
++    return -1;
++  }
+   auto* ctrl = SDL_OpenGamepad(which);
+   if (ctrl != nullptr) {
+     GameController controller;
+@@ -526,3 +537,26 @@ void shutdown() noexcept {
+   device::shutdown();
+ }
+ } // namespace aurora::input
++
++void PADRefreshControllers() {
++  if ((SDL_WasInit(SDL_INIT_GAMEPAD) & SDL_INIT_GAMEPAD) == 0) {
++    return;
++  }
++  int count = 0;
++  SDL_JoystickID* ids = SDL_GetGamepads(&count);
++  if (ids == nullptr) {
++    return;
++  }
++  // Reconcile on the event/game thread, before consumers obtain map pointers.
++  for (auto it = aurora::input::g_GameControllers.begin(); it != aurora::input::g_GameControllers.end();) {
++    const auto instance = it->first;
++    ++it;
++    if (std::find(ids, ids + count, instance) == ids + count) {
++      aurora::input::remove_controller(instance);
++    }
++  }
++  for (int i = 0; i < count; ++i) {
++    aurora::input::add_controller(ids[i]);
++  }
++  SDL_free(ids);
++}

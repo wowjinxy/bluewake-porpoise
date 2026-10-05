@@ -11,12 +11,30 @@
 //
 // The menu is ImGui, drawn through the host overlay hook inside Aurora's frame
 // (gxruntime/aurora_backend.h). The game keeps running under it; while it is
-// open the keyboard is taken off the game's pad and the mouse camera stands
-// aside, so the menu's clicks and keys do not move Link.
+// open the game's pad is neutral and the mouse camera stands aside. Closing
+// waits for held inputs to be released before they can control Link again.
 #include "win_settings.h"
 #include "settings_state.h"
 #include "smooth_rate.h"
-#include "controller_face_swap.h"
+#include "controls_bindings.h"
+#include "sprint_input.h"
+#include "controls_menu.h"
+#include "quick_items.h"
+#include "dialogue_speed.h"
+#include "autosave.h"
+#include "enhancement_hooks.h"
+#include "audio_customization.h"
+#include "audio_preview_host_bridge.h"
+#include "settings_catalog.h"
+#include "hud_host.h"
+#include "health_host.h"
+#include "settings_presets.h"
+#include "card_menu.h"
+#include "asset_pack_menu.h"
+#include "network_menu.h"
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+#include "settings_ui_test_api.h"
+#endif
 #include "restart_request.h"
 #include "launch_marker.h"
 #include "atomic_file.h"
@@ -29,6 +47,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#include <commdlg.h>
 
 #include <SDL3/SDL.h>
 #include <aurora/aurora.h>
@@ -44,6 +63,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -63,6 +83,7 @@ void bluewake_mouse_camera_reload(void);
 void bluewake_climb_reload(void);
 void bluewake_haptics_block(bool blocked);
 const char* bluewake_game_options_describe(uint32_t position, const char** title, bool* default_on, bool* on);
+bool bluewake_game_mod_available(const char* name);
 // climb.h: the stamina wheel's state for the HUD.
 bool bluewake_climb_hud(float* fraction, bool* exhausted, float* x, float* y, float* aspect, float* alpha);
 }
@@ -87,21 +108,20 @@ bool g_safe_mode;
 bool g_menu_open;
 bool g_toggle_menu, g_toggle_fullscreen;  // from the hotkeys, done in the frame
 bool g_dirty;
+bool g_preset_popup, g_cancel_preset;
+bool g_preview_page_visible;
+std::string g_preview_path, g_preview_message;
 Uint64 g_dirty_at, g_first_frame_at;
 bool g_placed;
-bool g_pad_applied;
-SDL_JoystickID g_pad_connection = 0;
+ImFont* g_menu_font = nullptr;
+ImFont* g_menu_large_font = nullptr;
+ImFontAtlas* g_menu_atlas = nullptr;
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+bool g_menu_test_default_font = false, g_menu_test_large_failure = false;
+#endif
 float g_font_scale = 1.0f;  // the scale the UI font was drawn at (see load_font)
 
-const char* const kScaleNames[] = {"The window's own pixels", "1x (640x480)", "2x (1280x960)",
-                                   "3x (1920x1440)", "4x (2560x1920)"};
-const int kAnisotropy[] = {1, 2, 4, 8, 16};
-const char* const kAnisotropyNames[] = {"The game's own", "2x anisotropic", "4x anisotropic", "8x anisotropic",
-                                        "16x anisotropic"};
-
 // --- the file ---------------------------------------------------------------
-
-bool parse_bool(const std::string& v) { return v == "1" || v == "true" || v == "on" || v == "yes"; }
 
 void load_file() {
     FILE* f = std::fopen(g_path.c_str(), "r");
@@ -116,41 +136,28 @@ void load_file() {
         if (s.empty() || s[0] == '#' || eq == std::string::npos)
             continue;
         const std::string k = s.substr(0, eq), v = s.substr(eq + 1);
-        Settings& d = g_saved;
-        if (k == "fullscreen") d.fullscreen = parse_bool(v);
-        else if (k == "window") std::sscanf(v.c_str(), "%dx%d", &d.window_w, &d.window_h);
-        else if (k == "window_position") std::sscanf(v.c_str(), "%d,%d", &d.window_x, &d.window_y);
-        else if (k == "render_scale") d.render_scale = std::clamp(std::atoi(v.c_str()), 0, 4);
-        else if (k == "anisotropy") d.anisotropy = std::clamp(std::atoi(v.c_str()), 1, 16);
-        else if (k == "smooth_motion") d.smooth_motion = parse_bool(v);
-        else if (k == "smooth_motion_fps") d.smooth_steps = v == "display" ? -1 : std::atoi(v.c_str()) >= 120 ? 3 : 1;
-        else if (k == "show_fps") d.show_fps = parse_bool(v);
-        else if (k == "pause_unfocused") d.pause_unfocused = parse_bool(v);
-        else if (k == "compile_shaders_first") d.shaders_first = parse_bool(v);
-        else if (k == "mouse_camera") d.mouse_camera = parse_bool(v);
-        else if (k == "mouse_sensitivity") d.mouse_sensitivity = std::clamp(std::atof(v.c_str()), 0.1, 10.0);
-        else if (k == "mouse_invert_y") d.mouse_invert_y = parse_bool(v);
-        else if (k == "controller_swap_ab") d.controller_swap_ab = parse_bool(v);
-        else if (k == "controller_swap_xy") d.controller_swap_xy = parse_bool(v);
-        else if (k == "controller_invert_x") d.pad_invert_x = parse_bool(v);
-        else if (k == "controller_invert_y") d.pad_invert_y = parse_bool(v);
-        else if (k == "stick_camera") d.stick_camera = parse_bool(v);
-        else if (k == "stick_camera_speed") d.stick_speed = std::clamp(std::atoi(v.c_str()), 60, 1080);
-        else if (k == "stick_aim_speed") d.stick_aim_speed = std::clamp(std::atoi(v.c_str()), 30, 720);
-        else if (k == "climb") d.climb = parse_bool(v);
-        else if (k == "climb_stamina") d.climb_stamina = std::clamp(std::atoi(v.c_str()), 4, 30);
-        else if (k == "haptics") d.haptics = v == "off" ? 0 : v == "classic" ? 1 : 2;
-        else if (k == "haptics_strength") d.haptics_strength = std::clamp(std::atoi(v.c_str()), 0, 100);
-        else if (k == "haptics_triggers") d.haptics_triggers = parse_bool(v);
-        else if (k == "aspect") d.aspect = (v == "16:9" || v == "16:10") ? v : "4:3";
-        else if (k == "keep_aspect") d.keep_aspect = parse_bool(v);
-        else if (k == "betterww") d.betterww = parse_bool(v);
-        else if (k.rfind("option.", 0) == 0) d.options[k.substr(7)] = parse_bool(v);
-        else if (k == "hd_textures") d.hd_textures = parse_bool(v);
-        else if (k == "lle_audio") d.lle_audio = parse_bool(v);
-        else if (k == "movement_extras") d.movement_extras = parse_bool(v);
-        else if (k == "fast_transitions") d.fast_transitions = parse_bool(v);
-        else if (k == "quick_doors") d.quick_doors = parse_bool(v);
+        if (k == "window") {
+            int width = 0, height = 0;
+            if (std::sscanf(v.c_str(), "%dx%d", &width, &height) == 2 && width >= 320 && height >= 240 &&
+                width <= 32768 && height <= 32768) { g_saved.window_w = width; g_saved.window_h = height; }
+            continue;
+        }
+        if (k == "window_position") {
+            std::sscanf(v.c_str(), "%d,%d", &g_saved.window_x, &g_saved.window_y);
+            continue;
+        }
+        const BwSettingDefinition* definition = bw_setting_find(k.c_str());
+        if (definition && !(definition->flags & BW_SETTING_SESSION_ONLY)) {
+            std::string value = v, error;
+            if (definition->type == BW_SETTING_BOOL) {
+                if (v == "true" || v == "on" || v == "yes") value = "1";
+                else if (v == "false" || v == "off" || v == "no") value = "0";
+            }
+            if (!bw_setting_assign(g_saved, k, value, &error))
+                std::fprintf(stderr, "[settings] ignored %s: %s\n", k.c_str(), error.c_str());
+        } else if (!definition && k.rfind("option.", 0) == 0 && (v == "0" || v == "1")) {
+            g_saved.options[k.substr(7)] = v == "1";
+        }
     }
     std::fclose(f);
 }
@@ -167,26 +174,17 @@ void save_file() {
         std::fprintf(f, "window=%dx%d\n", d.window_w, d.window_h);
     if (d.window_x != INT_MIN && d.window_y != INT_MIN)
         std::fprintf(f, "window_position=%d,%d\n", d.window_x, d.window_y);
-    std::fprintf(f, "render_scale=%d\nanisotropy=%d\nsmooth_motion=%d\nshow_fps=%d\npause_unfocused=%d\n",
-                 d.render_scale, d.anisotropy, d.smooth_motion, d.show_fps, d.pause_unfocused);
-    std::fprintf(f, "compile_shaders_first=%d\n", d.shaders_first);
-    std::fprintf(f, "smooth_motion_fps=%s\n", d.smooth_steps == -1 ? "display" : d.smooth_steps >= 3 ? "120" : "60");
-    std::fprintf(f, "mouse_camera=%d\nmouse_sensitivity=%.2f\nmouse_invert_y=%d\n", d.mouse_camera,
-                 d.mouse_sensitivity, d.mouse_invert_y);
-    std::fprintf(f, "controller_swap_ab=%d\ncontroller_swap_xy=%d\n", d.controller_swap_ab, d.controller_swap_xy);
-    std::fprintf(f, "controller_invert_x=%d\ncontroller_invert_y=%d\n", d.pad_invert_x, d.pad_invert_y);
-    std::fprintf(f, "stick_camera=%d\nstick_camera_speed=%d\nstick_aim_speed=%d\n", d.stick_camera, d.stick_speed,
-                 d.stick_aim_speed);
-    std::fprintf(f, "climb=%d\nclimb_stamina=%d\n", d.climb, d.climb_stamina);
-    std::fprintf(f, "haptics=%s\nhaptics_strength=%d\nhaptics_triggers=%d\n",
-                 d.haptics == 0 ? "off" : d.haptics == 1 ? "classic" : "enhanced",
-                 d.haptics_strength, d.haptics_triggers);
-    std::fprintf(f, "aspect=%s\nkeep_aspect=%d\nbetterww=%d\nhd_textures=%d\nlle_audio=%d\n", d.aspect.c_str(),
-                 d.keep_aspect, d.betterww, d.hd_textures, d.lle_audio);
+    size_t count = 0;
+    const BwSettingDefinition* definitions = bw_setting_definitions(&count);
+    for (size_t i = 0; i < count; ++i) {
+        const auto& definition = definitions[i];
+        if (definition.flags & (BW_SETTING_HIDDEN | BW_SETTING_SESSION_ONLY)) continue;
+        if (std::strcmp(definition.id, "fullscreen") == 0) continue;
+        if (definition.option_name && d.options.find(definition.option_name) == d.options.end()) continue;
+        std::fprintf(f, "%s=%s\n", definition.id, bw_setting_value(d, definition).c_str());
+    }
     for (const auto& [name, on] : d.options)
-        std::fprintf(f, "option.%s=%d\n", name.c_str(), on);
-    std::fprintf(f, "movement_extras=%d\nfast_transitions=%d\nquick_doors=%d\n",
-                 d.movement_extras, d.fast_transitions, d.quick_doors);
+        if (!bw_setting_find(("option." + name).c_str())) std::fprintf(f, "option.%s=%d\n", name.c_str(), on);
     const bool ok = bw_atomic_finish_dirty(f, pending, g_path.c_str(), &g_dirty);
     free(pending);
     if (!ok) std::fprintf(stderr, "[settings] save failed; previous file kept, retry pending\n");
@@ -318,30 +316,12 @@ void reset_window(SDL_Window* w) {
 
 // --- settings that apply at once ------------------------------------------------
 
-// A controller's camera stick, inverted as asked, as the iOS app does it
-// (apple/ios/src/controller_apply.cpp). Only touched once the player inverts
-// an axis, so a mapping set elsewhere is otherwise left alone.
+// Bindings own the PAD mapping. Legacy preferences overlay the selected
+// profile rather than restoring defaults over the player's bindings.
 void apply_controller() {
     const Settings& d = g_session;
-    if (!d.pad_invert_x && !d.pad_invert_y && !d.controller_swap_ab && !d.controller_swap_xy && !g_pad_applied)
-        return;
-    if (PADGetIndexForPort(0) < 0)
-        return;
-    PADRestoreDefaultMapping(0);
-    bw_apply_face_swaps(0, d.controller_swap_ab, d.controller_swap_xy);
-    const PADAxisMapping axes[4] = {
-        {{SDL_GAMEPAD_AXIS_RIGHTX, d.pad_invert_x ? AXIS_SIGN_NEGATIVE : AXIS_SIGN_POSITIVE},
-         SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_X_POS},
-        {{SDL_GAMEPAD_AXIS_RIGHTX, d.pad_invert_x ? AXIS_SIGN_POSITIVE : AXIS_SIGN_NEGATIVE},
-         SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_X_NEG},
-        {{SDL_GAMEPAD_AXIS_RIGHTY, d.pad_invert_y ? AXIS_SIGN_POSITIVE : AXIS_SIGN_NEGATIVE},
-         SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_Y_POS},
-        {{SDL_GAMEPAD_AXIS_RIGHTY, d.pad_invert_y ? AXIS_SIGN_NEGATIVE : AXIS_SIGN_POSITIVE},
-         SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_Y_NEG},
-    };
-    for (const PADAxisMapping& axis : axes)
-        PADSetAxisMapping(0, axis);
-    g_pad_applied = true;
+    bluewake_controls_set_legacy_preferences(d.controller_swap_ab, d.controller_swap_xy,
+                                             d.pad_invert_x, d.pad_invert_y);
 }
 
 // Adapted from Elliott Tate's display-rate selection; resolve the current
@@ -385,6 +365,43 @@ void apply_climb() {
     bluewake_climb_reload();
 }
 
+void apply_sprint_modes() {
+    (void)bluewake_sprint_configure_modes(g_session.sprint_keyboard_mode, g_session.sprint_controller_mode);
+}
+
+void apply_quick_items() {
+    const Settings& d = g_session;
+    bluewake_quick_items_configure(d.quick_items);
+}
+void apply_dialogue_speed() {
+    bluewake_dialogue_speed_configure(static_cast<float>(g_session.dialogue_speed));
+}
+void apply_autosave() {
+    bluewake_autosave_configure(g_session.autosave, static_cast<unsigned>(g_session.autosave_interval));
+}
+void apply_health() {
+    if(!bw_health_host_configure(static_cast<unsigned>(g_session.damage_rate_q8),
+                                  static_cast<unsigned>(g_session.healing_rate_q8))) {
+        const auto native=bw_health_host_configuration();
+        g_session.damage_rate_q8=native.damage_q8;g_session.healing_rate_q8=native.healing_q8;
+    }
+}
+void apply_equipment() {
+    bluewake_enhancement_faster_wind(g_session.faster_wind);
+    bluewake_enhancement_faster_boots(g_session.faster_boots);
+}
+bool g_hud_pending=false;
+void apply_hud() {
+    BwHudConfig desired=g_session.hud;
+    if(!g_session.hud_enabled)bw_hud_config_identity(&desired);
+    g_hud_pending=!bw_hud_host_configure(&desired);
+}
+void apply_audio() {
+    (void)bluewake_audio_configure(static_cast<unsigned>(g_session.audio_master),
+                                 static_cast<unsigned>(g_session.audio_music),
+                                 static_cast<unsigned>(g_session.audio_sfx), g_session.audio_muted);
+}
+
 void apply_live() {
     const Settings& d = g_session;
     aurora_set_frame_buffer_scale(static_cast<float>(d.render_scale));
@@ -393,21 +410,34 @@ void apply_live() {
     aurora_set_frame_interpolation(d.smooth_motion);
     aurora_set_fps_overlay(d.show_fps);
     aurora_set_pause_on_focus_lost(d.pause_unfocused);
+    _putenv_s("BLUEWAKE_MOUSE_CAMERA", d.mouse_camera ? "1" : "0");
+    _putenv_s("BLUEWAKE_MOUSE_SENSITIVITY", std::to_string(d.mouse_sensitivity).c_str());
+    _putenv_s("BLUEWAKE_MOUSE_INVERT_Y", d.mouse_invert_y ? "1" : "0");
     bluewake_mouse_camera_configure(d.mouse_camera, d.mouse_sensitivity, d.mouse_invert_y);
     apply_controller();
     apply_stick();
     apply_climb();
+    apply_sprint_modes();
+    apply_quick_items();
+    apply_dialogue_speed();
+    apply_autosave();
+    apply_equipment();
+    apply_health();
+    apply_audio();
+    apply_hud();
 }
 
 void set_menu_open(bool open) {
     if (open == g_menu_open)
         return;
     g_menu_open = open;
-    PADBlockInput(open);
-    // The menu's keys and clicks are not the game's.
-    PADSetKeyboardActive(0, open ? FALSE : TRUE);
+    bluewake_controls_menu_set_open(open);
     bluewake_mouse_camera_block(open);
     bluewake_haptics_block(open);
+    if (!open) {
+        bluewake_audio_preview_cancel(bluewake_host_audio_preview_get());
+        g_preview_page_visible = false;
+    }
     std::fprintf(stderr, "[windows] settings menu %s\n", open ? "open" : "closed");
     if (!open && g_dirty)
         save_file();
@@ -454,11 +484,13 @@ bool relaunch() {
 // --- the menu ---------------------------------------------------------------
 
 bool needs_restart() {
-    const Settings &a = g_session, &b = g_launched;
-    return a.aspect != b.aspect || a.keep_aspect != b.keep_aspect || a.betterww != b.betterww ||
-           a.options != b.options || a.hd_textures != b.hd_textures || a.lle_audio != b.lle_audio ||
-           a.movement_extras != b.movement_extras || a.fast_transitions != b.fast_transitions ||
-           a.quick_doors != b.quick_doors;
+    if (bw_card_menu_restart_needed() || bw_asset_pack_menu_restart_needed() || bw_network_menu_restart_needed()) return true;
+    size_t count = 0;
+    const BwSettingDefinition* definitions = bw_setting_definitions(&count);
+    for (size_t i = 0; i < count; ++i)
+        if (definitions[i].apply == BW_SETTING_RESTART && !(definitions[i].flags & BW_SETTING_SESSION_ONLY) &&
+            bw_setting_value(g_session, definitions[i]) != bw_setting_value(g_launched, definitions[i])) return true;
+    return false;
 }
 
 void restart_note(bool differs) {
@@ -468,229 +500,202 @@ void restart_note(bool differs) {
     }
 }
 
+bool compiled_option(const char* wanted) {
+    if (wanted == nullptr) return true;
+    for (uint32_t i = 0;; ++i) {
+        const char* name = bluewake_game_options_describe(i, nullptr, nullptr, nullptr);
+        if (name == nullptr) return false;
+        if (std::strcmp(name, wanted) == 0) return true;
+    }
+}
+
+void apply_menu_settings() {
+    SDL_Window* w = game_window();
+    const Settings& d = g_session;
+    const Settings& before = g_before_edit;
+    if (w != nullptr && is_fullscreen(w) != d.fullscreen) SDL_SetWindowFullscreen(w, d.fullscreen);
+    if (d.render_scale != before.render_scale) aurora_set_frame_buffer_scale(static_cast<float>(d.render_scale));
+    if (d.anisotropy != before.anisotropy) aurora_set_forced_anisotropy(static_cast<unsigned>(d.anisotropy));
+    if (d.smooth_steps != before.smooth_steps) apply_smooth_rate(w);
+    if (d.smooth_motion != before.smooth_motion) aurora_set_frame_interpolation(d.smooth_motion);
+    if (d.show_fps != before.show_fps) aurora_set_fps_overlay(d.show_fps);
+    if (d.pause_unfocused != before.pause_unfocused) aurora_set_pause_on_focus_lost(d.pause_unfocused);
+    if (d.mouse_camera != before.mouse_camera || d.mouse_sensitivity != before.mouse_sensitivity ||
+        d.mouse_invert_y != before.mouse_invert_y) {
+        _putenv_s("BLUEWAKE_MOUSE_CAMERA", d.mouse_camera ? "1" : "0");
+        _putenv_s("BLUEWAKE_MOUSE_SENSITIVITY", std::to_string(d.mouse_sensitivity).c_str());
+        _putenv_s("BLUEWAKE_MOUSE_INVERT_Y", d.mouse_invert_y ? "1" : "0");
+        bluewake_mouse_camera_configure(d.mouse_camera, d.mouse_sensitivity, d.mouse_invert_y);
+    }
+    if (d.controller_swap_ab != before.controller_swap_ab || d.controller_swap_xy != before.controller_swap_xy ||
+        d.pad_invert_x != before.pad_invert_x || d.pad_invert_y != before.pad_invert_y) apply_controller();
+    if (d.stick_camera != before.stick_camera || d.stick_speed != before.stick_speed ||
+        d.stick_aim_speed != before.stick_aim_speed || d.pad_invert_x != before.pad_invert_x ||
+        d.pad_invert_y != before.pad_invert_y) apply_stick();
+    if (d.climb != before.climb || d.climb_stamina != before.climb_stamina) apply_climb();
+    if (d.sprint_keyboard_mode != before.sprint_keyboard_mode ||
+        d.sprint_controller_mode != before.sprint_controller_mode)
+        apply_sprint_modes();
+    if (d.quick_items != before.quick_items) apply_quick_items();
+    if (d.dialogue_speed != before.dialogue_speed) apply_dialogue_speed();
+    if (d.autosave != before.autosave || d.autosave_interval != before.autosave_interval) apply_autosave();
+    if (d.faster_wind != before.faster_wind) bluewake_enhancement_faster_wind(d.faster_wind);
+    if (d.faster_boots != before.faster_boots) bluewake_enhancement_faster_boots(d.faster_boots);
+    if (d.damage_rate_q8 != before.damage_rate_q8 || d.healing_rate_q8 != before.healing_rate_q8) apply_health();
+    if (d.audio_master != before.audio_master || d.audio_music != before.audio_music ||
+        d.audio_sfx != before.audio_sfx || d.audio_muted != before.audio_muted) apply_audio();
+    if (d.haptics != before.haptics || d.haptics_strength != before.haptics_strength ||
+        d.haptics_triggers != before.haptics_triggers) apply_haptics();
+    apply_hud();
+    changed();
+}
+
+bool compact_menu_rows() {
+    return g_session.menu_size != 100 &&
+        ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 38.0f;
+}
+
+void setting_widget(const BwSettingDefinition& definition) {
+    const std::string before = bw_setting_value(g_session, definition);
+    std::string value = before;
+    static BwHudHostStatus hud_status{};
+    (void)bw_hud_host_snapshot(&hud_status);
+    const bool hud_option=std::strncmp(definition.id,"hud.",4)==0;
+    const bool hud_available=hud_status.availability==BW_HUD_AVAILABLE ||
+        hud_status.availability==BW_HUD_WAITING_SCENE;
+    const bool health_option=std::strcmp(definition.id,"damage_rate_q8")==0 || std::strcmp(definition.id,"healing_rate_q8")==0;
+    const bool available = (!health_option||(bw_health_host_available()&&!bw_health_host_room_locked())) && (!hud_option||hud_available) && compiled_option(definition.option_name) &&
+        (std::strcmp(definition.id, "betterww") != 0 || bluewake_game_mod_available("betterww"));
+    const bool enabled = available && bw_setting_enabled(g_session, definition);
+    ImGui::PushID(definition.id);
+    ImGui::BeginDisabled(!enabled);
+    const bool reflow = g_session.menu_size != 100 &&
+        ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 38.0f;
+    const std::string compact_label = std::string("##") + definition.id;
+    const char* label = reflow ? compact_label.c_str() : definition.label;
+    if (reflow) ImGui::TextWrapped("%s", definition.label);
+    ImGui::SetNextItemWidth(reflow ? -1.0f : ImGui::GetFontSize() * 19.0f);
+    bool edit = false;
+    switch (definition.type) {
+    case BW_SETTING_BOOL: {
+        bool on = before == "1";
+        edit = ImGui::Checkbox(label, &on);
+        value = on ? "1" : "0";
+        break;
+    }
+    case BW_SETTING_INT: {
+        int n = std::stoi(before);
+        edit = ImGui::SliderInt(label, &n, static_cast<int>(definition.minimum),
+                               static_cast<int>(definition.maximum));
+        value = std::to_string(n);
+        break;
+    }
+    case BW_SETTING_REAL: {
+        float n = std::stof(before);
+        edit = ImGui::SliderFloat(label, &n, static_cast<float>(definition.minimum),
+                                 static_cast<float>(definition.maximum), "%.2f");
+        value = std::to_string(n);
+        break;
+    }
+    case BW_SETTING_CHOICE: {
+        const char* preview = before.c_str();
+        for (size_t i = 0; i < definition.choice_count; ++i)
+            if (before == definition.choices[i].value) preview = definition.choices[i].label;
+        if (ImGui::BeginCombo(label, preview)) {
+            for (size_t i = 0; i < definition.choice_count; ++i) {
+                const BwSettingChoice& choice = definition.choices[i];
+                bool choice_available = true;
+                if (std::strcmp(definition.id, "aspect") == 0 && std::strcmp(choice.value, "4:3") != 0)
+                    choice_available = bluewake_game_mod_available(std::strcmp(choice.value, "16:9") == 0 ? "widescreen" : "widescreen1610");
+                ImGui::BeginDisabled(!choice_available);
+                if (ImGui::Selectable(choice.label, before == choice.value)) {
+                    value = choice.value;
+                    edit = true;
+                }
+                ImGui::EndDisabled();
+                if (!choice_available && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("This game module does not contain the required widescreen mod.");
+            }
+            ImGui::EndCombo();
+        }
+        break;
+    }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+        ImGui::TextUnformatted(definition.help);
+        if (!available) ImGui::TextUnformatted(hud_option?
+            bw_hud_host_availability_name(hud_status.availability):"This game module does not contain this option.");
+        else if (!enabled && definition.dependency_id != nullptr) {
+            const BwSettingDefinition* dependency = bw_setting_find(definition.dependency_id);
+            ImGui::Text("Requires %s = %s.", dependency ? dependency->label : definition.dependency_id,
+                        definition.dependency_value);
+        }
+        if (definition.apply == BW_SETTING_RESTART) ImGui::TextUnformatted("Applies after restarting BlueWake.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    if (edit && bw_setting_assign(g_session, definition.id, value)) apply_menu_settings();
+    if (definition.apply == BW_SETTING_RESTART)
+        restart_note(bw_setting_value(g_session, definition) != bw_setting_value(g_launched, definition));
+    if (std::strcmp(definition.id, "quick_items") == 0)
+        ImGui::TextWrapped("Hold LB (controller) or Tab (keyboard): Up plays the Wind Waker; Left deploys the cannon at sea, then a fresh Left fires; hold Right to deploy/lower the salvage crane, release to raise it. Change the modifier in Controls. Down and plain D-pad keep their native actions. X/Y/Z item assignments stay unchanged.");
+    if (std::strcmp(definition.id, "dialogue_speed") == 0)
+        ImGui::TextWrapped("Speeds up supported ordinary NPC and cutscene messages. Scripted waits, page stops, choices and unskippable text stay unchanged. BetterWW Instant text takes priority. Disable Instant text and restart to restore already-patched text.");
+    if(health_option && !available) ImGui::TextWrapped(bw_health_host_room_locked()?"Challenge settings are unavailable for mounted room saves.":"This game translation has not been qualified for health rules.");
+    ImGui::PopID();
+}
+
+void settings_page(BwSettingPage page) {
+    size_t count = 0;
+    const BwSettingDefinition* definitions = bw_setting_definitions(&count);
+    for (size_t i = 0; i < count; ++i)
+        if (definitions[i].page == page && !(definitions[i].flags & BW_SETTING_HIDDEN))
+            setting_widget(definitions[i]);
+}
+
 void tab_display(SDL_Window* w) {
-    Settings& d = g_session;
-    bool full = w != nullptr && is_fullscreen(w);
-    if (ImGui::Checkbox("Fullscreen   (F11 or Alt+Enter)", &full))
-        set_fullscreen(w, full);
-    if (ImGui::Checkbox("Smooth Motion (experimental)   (F10)", &d.smooth_motion)) {
-        apply_smooth_rate(w);
-        aurora_set_frame_interpolation(d.smooth_motion);
-        changed();
-    }
-    static const char* const rates[] = {"60 FPS", "120 FPS", "Match the display (up to 240 FPS)"};
-    int rate = d.smooth_steps == -1 ? 2 : d.smooth_steps >= 3 ? 1 : 0;
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 23);
-    if (ImGui::Combo("Smooth Motion rate", &rate, rates, IM_ARRAYSIZE(rates))) {
-        d.smooth_steps = rate == 2 ? -1 : rate == 1 ? 3 : 1;
-        apply_smooth_rate(w);
-        changed();
-    }
+    settings_page(BW_PAGE_DISPLAY);
     const float refresh = display_refresh(w);
-    ImGui::TextDisabled("    Target: %d FPS on this %.0f Hz display; pacing may reduce it.",
-                        d.smooth_motion ? (bw_smooth_steps(d.smooth_steps, refresh) + 1) * 30 : 30, refresh);
-    ImGui::TextDisabled("    The game itself still runs at 30. Experimental: off by default.");
-    if (ImGui::Checkbox("Show the frame rate   (F9)", &d.show_fps)) {
-        aurora_set_fps_overlay(d.show_fps);
-        changed();
-    }
-    ImGui::Spacing();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    if (ImGui::Combo("Render resolution", &d.render_scale, kScaleNames, IM_ARRAYSIZE(kScaleNames))) {
-        aurora_set_frame_buffer_scale(static_cast<float>(d.render_scale));
-        changed();
-    }
-    int filtering = 0;
-    for (int i = 0; i < IM_ARRAYSIZE(kAnisotropy); i++)
-        if (kAnisotropy[i] == d.anisotropy)
-            filtering = i;
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    if (ImGui::Combo("Texture filtering", &filtering, kAnisotropyNames, IM_ARRAYSIZE(kAnisotropyNames))) {
-        d.anisotropy = kAnisotropy[filtering];
-        aurora_set_forced_anisotropy(static_cast<unsigned>(d.anisotropy));
-        changed();
-    }
-    if (ImGui::Checkbox("Keep the picture's shape (black bars rather than stretching)", &d.keep_aspect))
-        changed();
-    restart_note(d.keep_aspect != g_launched.keep_aspect);
-    if (ImGui::Checkbox("Pause while the window is in the background", &d.pause_unfocused)) {
-        aurora_set_pause_on_focus_lost(d.pause_unfocused);
-        changed();
-    }
-    if (ImGui::Checkbox("Compile shaders before playing", &d.shaders_first))
-        changed();
-    restart_note(d.shaders_first != g_launched.shaders_first);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("At start, wait until the shaders from earlier play are ready, so nothing is missing "
-                          "from the picture the first time it is drawn. Otherwise they are made while you play.");
-    ImGui::Spacing();
-    if (ImGui::Button("Reset the window"))
-        reset_window(w);
-    ImGui::SameLine();
-    ImGui::TextDisabled("Drag the title bar to move it; drag an edge to size it.");
+    ImGui::TextDisabled("Target %d FPS / display %.0f Hz. Game logic runs at 30 FPS.",
+                       g_session.smooth_motion ? (bw_smooth_steps(g_session.smooth_steps, refresh) + 1) * 30 : 30, refresh);
+    if (ImGui::Button("Reset the window")) reset_window(w);
 }
 
 void tab_controls() {
-    Settings& d = g_session;
-    bool mouse = false;
-    if (ImGui::Checkbox("Mouse camera: click the game, then move the mouse (Esc gives it back)", &d.mouse_camera))
-        mouse = true;
-    float sensitivity = static_cast<float>(d.mouse_sensitivity);
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    if (ImGui::SliderFloat("Mouse sensitivity", &sensitivity, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
-        d.mouse_sensitivity = sensitivity;
-        mouse = true;
-    }
-    if (ImGui::Checkbox("Mouse forward looks down", &d.mouse_invert_y))
-        mouse = true;
-    if (mouse) {
-        bluewake_mouse_camera_configure(d.mouse_camera, d.mouse_sensitivity, d.mouse_invert_y);
-        changed();
-    }
-    ImGui::Spacing();
-    bool stick = ImGui::Checkbox("Fast right-stick camera and aiming (like the mouse; click the stick for first person)",
-                                 &d.stick_camera);
-    ImGui::BeginDisabled(!d.stick_camera);
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    stick |= ImGui::SliderInt("Right-stick turn speed", &d.stick_speed, 120, 720, "%d degrees a second");
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    stick |= ImGui::SliderInt("Right-stick aim speed (first person, items)", &d.stick_aim_speed, 60, 480,
-                              "%d degrees a second");
-    ImGui::EndDisabled();
-    bool pad = ImGui::Checkbox("Controller: camera stick left and right inverted", &d.pad_invert_x);
-    pad |= ImGui::Checkbox("Controller: camera stick up and down inverted", &d.pad_invert_y);
-    pad |= ImGui::Checkbox("Swap A and B", &d.controller_swap_ab);
-    pad |= ImGui::Checkbox("Swap X and Y", &d.controller_swap_xy);
-    if (pad || stick) {
-        apply_controller();
-        apply_stick();
-        changed();
-    }
-    ImGui::Spacing();
-    ImGui::SeparatorText("Haptics");
-    // The game's vibration on an Xbox controller, a DualSense and others:
-    // rendered from what the game asked for, or its own on-off motor.
-    static const char* const kHaptics[] = {"Off", "Classic (the game's own on and off)",
-                                           "Enhanced (shaped, with the triggers)"};
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    bool haptics = ImGui::Combo("Controller vibration", &d.haptics, kHaptics, IM_ARRAYSIZE(kHaptics));
-    ImGui::BeginDisabled(d.haptics != 2);
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    haptics |= ImGui::SliderInt("Vibration strength", &d.haptics_strength, 0, 100, "%d%%");
-    ImGui::EndDisabled();
-    ImGui::BeginDisabled(d.haptics != 2);
-    haptics |= ImGui::Checkbox("Trigger feedback (Xbox impulse triggers, DualSense trigger vibration)",
-                               &d.haptics_triggers);
-    ImGui::EndDisabled();
-    ImGui::TextDisabled(d.haptics == 2   ? "    Hits, falls, explosions and quakes as the game times them, shaped by their strength."
-                        : d.haptics == 1 ? "    The motor on and off, as a GameCube controller's."
-                                         : "    No vibration. (The game's own Vibration option turns it off too.)");
-    if (haptics) {
-        apply_haptics();
-        changed();
-    }
-    ImGui::Spacing();
-    ImGui::SeparatorText("Keyboard");
-    if (ImGui::BeginTable("keys", 2, ImGuiTableFlags_SizingFixedFit)) {
-        const char* const rows[][2] = {
-            {"Control stick", "W A S D"}, {"C-stick", "T F G H"}, {"D-pad", "Arrow keys"},
-            {"A  B  X  Y", "J  K  U  I"}, {"L  R  Z", "E  R  Q"}, {"START", "Return"},
-            {"Jump", "Space (controller: left bumper)"}, {"Sprint", "Shift (controller: click the left stick)"},
-            {"Camera zoom", "Mouse wheel, while the mouse is the camera"},
-            {"Settings", "F1 or Esc"}, {"Fullscreen", "F11 or Alt+Enter"}, {"Smooth Motion", "F10"},
-            {"Frame rate", "F9"},
-        };
-        for (const auto& row : rows) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(row[0]);
-            ImGui::TableNextColumn();
-            ImGui::TextDisabled("%s", row[1]);
-        }
-        ImGui::EndTable();
-    }
-    ImGui::TextDisabled("Game controllers work as they are plugged in (Xbox, PlayStation, Switch Pro, ...).");
+    settings_page(BW_PAGE_CONTROLS);
+    ImGui::SeparatorText("Bindings and device profiles");
+    if (g_session.menu_size != 100 && ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 38.0f)
+        bluewake_controls_menu_draw_compact();
+    else bluewake_controls_menu_draw();
+    ImGui::SeparatorText("Additional shortcuts");
+    ImGui::TextWrapped("Jump, Sprint and first-person camera bindings are editable above. Camera zoom: mouse wheel. "
+                       "Settings: F1 or Esc / Back. Fullscreen: F11 or Alt+Enter. Smooth Motion: F10. Frame rate: F9.");
 }
 
 void tab_enhancements() {
-    Settings& d = g_session;
-    ImGui::SeparatorText("Gameplay (after restart)");
-    if (ImGui::Checkbox("Jump and Run", &d.movement_extras))
-        changed();
-    restart_note(d.movement_extras != g_launched.movement_extras);
-    if (ImGui::Checkbox("Fast transitions", &d.fast_transitions))
-        changed();
-    restart_note(d.fast_transitions != g_launched.fast_transitions);
-    if (ImGui::Checkbox("Quick doors", &d.quick_doors))
-        changed();
-    restart_note(d.quick_doors != g_launched.quick_doors);
-    if (ImGui::Checkbox("Climb any wall (experimental)", &d.climb)) {
-        apply_climb();
-        changed();
-    }
-    ImGui::BeginDisabled(!d.climb);
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
-    if (ImGui::SliderInt("Climbing stamina", &d.climb_stamina, 4, 30, "%d seconds")) {
-        apply_climb();
-        changed();
-    }
-    ImGui::EndDisabled();
-    ImGui::Spacing();
-    ImGui::TextUnformatted("Picture");
-    restart_note(d.aspect != g_launched.aspect);
-    const char* const aspects[][2] = {{"4:3", "4:3, the game's own"},
-                                      {"16:10", "16:10 widescreen"},
-                                      {"16:9", "16:9 widescreen"}};
-    for (const auto& a : aspects) {
-        if (ImGui::RadioButton(a[1], d.aspect == a[0])) {
-            d.aspect = a[0];
-            changed();
-        }
-        ImGui::SameLine();
-    }
-    ImGui::NewLine();
-    ImGui::TextDisabled("    Widescreen widens the camera and moves the HUD to the edges.");
-    ImGui::Spacing();
-    if (ImGui::Checkbox("Better Wind Waker", &d.betterww))
-        changed();
-    restart_note(d.betterww != g_launched.betterww);
-    ImGui::TextDisabled("    Wind Waker HD's changes. Each can be turned on or off:");
-    ImGui::BeginDisabled(!d.betterww);
-    ImGui::Indent();
-    bool any = false;
-    for (uint32_t i = 0;; i++) {
-        const char* title = nullptr;
-        bool default_on = false, on = false;
-        const char* name = bluewake_game_options_describe(i, &title, &default_on, &on);
-        if (name == nullptr)
-            break;
-        any = true;
-        bool value = bw_settings_option_value(d, name, default_on);
-        ImGui::PushID(name);
-        if (ImGui::Checkbox(title != nullptr ? title : name, &value)) {
-            d.options[name] = value;
-            changed();
-        }
-        const bool was = bw_settings_option_value(g_launched, name, default_on);
-        restart_note(value != was);
-        ImGui::PopID();
-    }
-    if (!any)
-        ImGui::TextDisabled("This build has no Better Wind Waker options (build with mods).");
-    ImGui::Unindent();
-    ImGui::EndDisabled();
-    ImGui::Spacing();
-    if (ImGui::Checkbox("HD texture pack", &d.hd_textures))
-        changed();
-    restart_note(d.hd_textures != g_launched.hd_textures);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Open the texture folder"))
-        open_folder(texture_folder());
-    ImGui::TextDisabled("    A Dolphin-format pack for GZLE01 (its folder of .png or .dds files) goes in that folder.");
+    settings_page(BW_PAGE_ENHANCEMENTS);
+    ImGui::TextDisabled("Compiled gameplay options marked * apply after restarting BlueWake.");
 }
 
-void tab_game() {
-    Settings& d = g_session;
+void tab_mods() {
+    ImGui::SeparatorText("Asset packs");
+    settings_page(BW_PAGE_MODS);
+    if (ImGui::Button("Open the texture folder")) open_folder(texture_folder());
+    ImGui::TextWrapped("The legacy texture folder accepts Dolphin-format GZLE01 PNG or DDS textures. "
+                       "Gameplay mods are compiled into the game module and configured in Enhancements.");
+    bw_asset_pack_menu_draw();
+}
+
+void tab_developer() {
+    ImGui::SeparatorText("Diagnostics");
+    const AuroraStats* stats = aurora_get_stats();
+    ImGui::Text("Rendered %.1f FPS / game %.1f FPS", aurora::gfx::calculate_fps(), aurora::gfx::calculate_game_fps());
+    if (stats != nullptr) ImGui::Text("Queued shader pipelines: %u", stats->queuedPipelines);
+    if (ImGui::Button("Open the session logs")) open_folder(g_data_dir + "logs");
+    ImGui::Spacing();
     ImGui::TextUnformatted("Experimental debug save states");
     if (ImGui::Button("Save state (F6)")) {
         bluewake_save_state_hotkey(false);
@@ -702,26 +707,281 @@ void tab_game() {
         set_menu_open(false);
     }
     ImGui::TextDisabled("Keep normal memory-card saves. States depend on this game translation.");
+}
+
+void tab_network() {
+    bw_network_menu_draw();
+}
+
+std::string preview_file_dialog() {
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+    // The local ImGui fixture supplies a path; it must never open a native picker.
+    const std::wstring selected = bw_settings_ui_test_preview_file();
+#else
+    wchar_t file[32768]{};
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof dialog;
+    dialog.hwndOwner = GetActiveWindow();
+    dialog.lpstrFilter = L"Stereo PCM WAV (*.wav)\0*.wav\0";
+    dialog.lpstrFile = file;
+    dialog.nMaxFile = static_cast<DWORD>(std::size(file));
+    dialog.lpstrDefExt = L"wav";
+    dialog.Flags = OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+    if (!GetOpenFileNameW(&dialog)) return {};
+    const std::wstring selected = file;
+#endif
+    if (selected.empty()) return {};
+    const int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, selected.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 1) return {};
+    std::string path(static_cast<size_t>(length), '\0');
+    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, selected.c_str(), -1, path.data(), length, nullptr, nullptr)) return {};
+    path.pop_back();
+    return path;
+}
+
+const char* preview_state_name(BwAudioPreviewState state) {
+    switch (state) {
+    case BW_PREVIEW_IDLE: return "Off";
+    case BW_PREVIEW_LOADING: return "Loading";
+    case BW_PREVIEW_READY: return "Ready; waiting for game audio";
+    case BW_PREVIEW_PLAYING: return "Playing";
+    case BW_PREVIEW_FINISHED: return "Finished";
+    case BW_PREVIEW_STOPPED: return "Stopped";
+    case BW_PREVIEW_CANCELLED: return "Cancelled";
+    case BW_PREVIEW_RESET: return "Stopped after game reset";
+    case BW_PREVIEW_FAILED: return "Unable to play";
+    case BW_PREVIEW_RATE_MISMATCH: return "Sample rate mismatch";
+    case BW_PREVIEW_SHUTDOWN: return "Unavailable";
+    }
+    return "Unavailable";
+}
+
+void audio_preview_menu() {
+    ImGui::SeparatorText("External WAV preview");
+    ImGui::TextWrapped("Preview mixes with game audio. Choose a 16-bit stereo PCM WAV at 32 or 48 kHz matching the game's output rate. Music and Master/mute controls apply.");
+    ImGui::TextDisabled("One pass; leaving this page stops the preview. No file is selected or played automatically.");
+    auto* preview = bluewake_host_audio_preview_get();
+    BwAudioPreviewStatus status{};
+    const bool available = preview && bluewake_audio_preview_status(preview, &status) && status.accepting_requests;
+    ImGui::BeginDisabled(!available);
+    if (ImGui::Button("Choose WAV")) {
+        const auto selected = preview_file_dialog();
+        if (!selected.empty()) {
+            if (selected.size() >= BW_PREVIEW_PATH_BYTES) {
+                g_preview_message = "The selected path is too long for the WAV preview.";
+            } else {
+                if (selected != g_preview_path) bluewake_audio_preview_cancel(preview);
+                g_preview_path = selected;
+                g_preview_message.clear();
+            }
+        }
+    }
+    ImGui::EndDisabled();
+    if (g_preview_path.empty()) ImGui::TextDisabled("No WAV selected.");
+    else ImGui::TextWrapped("Selected: %s", g_preview_path.c_str());
+    ImGui::BeginDisabled(!available || g_preview_path.empty());
+    if (ImGui::Button("Play WAV")) {
+        g_preview_message.clear();
+        if (!bluewake_audio_preview_play_utf8(preview, g_preview_path.c_str()))
+            g_preview_message = "The preview request was not accepted.";
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!available);
+    if (ImGui::Button("Stop preview")) {
+        bluewake_audio_preview_stop(preview);
+        g_preview_message.clear();
+    }
+    ImGui::EndDisabled();
+    if (!available) ImGui::TextWrapped("WAV preview is unavailable. Game audio remains available.");
+    else {
+        ImGui::Text("Preview: %s", preview_state_name(status.state));
+        if (status.path_utf8[0]) ImGui::TextWrapped("Preview file: %s", status.path_utf8);
+        ImGui::Text("File: %u Hz / output: %u Hz", status.sample_rate, status.observed_output_rate);
+        if (status.total_frames) {
+            const float progress = static_cast<float>(std::min(status.cursor_frame, status.total_frames)) / static_cast<float>(status.total_frames);
+            ImGui::ProgressBar(progress, ImVec2(-1.f, 0.f), "Playback progress");
+            if (status.sample_rate)
+                ImGui::Text("Time: %.1f / %.1f seconds", static_cast<double>(status.cursor_frame) / status.sample_rate,
+                            static_cast<double>(status.total_frames) / status.sample_rate);
+        }
+        if (status.error[0]) ImGui::TextWrapped("%s", status.error);
+    }
+    if (!g_preview_message.empty()) ImGui::TextWrapped("%s", g_preview_message.c_str());
     ImGui::Spacing();
-    ImGui::TextUnformatted("Sound");
-    restart_note(d.lle_audio != g_launched.lle_audio);
-    if (ImGui::RadioButton("Fast (Dolphin's high-level Zelda sound)", !d.lle_audio)) {
-        d.lle_audio = false;
-        changed();
-    }
-    if (ImGui::RadioButton("Exact (the sound chip's own program; slower)", d.lle_audio)) {
-        d.lle_audio = true;
-        changed();
-    }
+}
+
+void tab_sound_saves() {
+    audio_preview_menu();
+    settings_page(BW_PAGE_SOUND_SAVES);
+    BluewakeAutosaveStatus autosave{};
+    bluewake_autosave_status(&autosave);
+    ImGui::TextWrapped("Autosave: %s%s", autosave.active ? "Saving; " : "",
+                       bluewake_autosave_reason_text(autosave.reason));
+    ImGui::TextDisabled("Completed %llu / failed %llu", static_cast<unsigned long long>(autosave.completed),
+                        static_cast<unsigned long long>(autosave.failed));
     ImGui::Spacing();
     ImGui::SeparatorText("Your files");
     ImGui::TextDisabled("Saves, settings and logs are kept apart from the build:");
     ImGui::TextUnformatted(g_data_dir.c_str());
     if (ImGui::Button("Open that folder"))
         open_folder(g_data_dir);
-    ImGui::SameLine();
-    if (ImGui::Button("Open the session logs"))
-        open_folder(g_data_dir + "logs");
+    ImGui::Spacing();
+    bw_card_menu_draw();
+}
+
+std::string preset_file_dialog(bool save) {
+    wchar_t file[32768]{};
+    if (save) std::wcscpy(file, L"BlueWake.bwpreset");
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof dialog;
+    dialog.hwndOwner = GetActiveWindow();
+    dialog.lpstrFilter = L"BlueWake preset (*.bwpreset)\0*.bwpreset\0All files\0*.*\0";
+    dialog.lpstrFile = file;
+    dialog.nMaxFile = static_cast<DWORD>(std::size(file));
+    dialog.lpstrDefExt = L"bwpreset";
+    dialog.Flags = OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+    if (!(save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog))) return {};
+    const int length = WideCharToMultiByte(CP_UTF8, 0, file, -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 1) return {};
+    std::string result(static_cast<size_t>(length), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, file, -1, result.data(), length, nullptr, nullptr);
+    result.pop_back();
+    return result;
+}
+
+void preset_menu() {
+    static std::vector<BwSettingsPreset> presets;
+    static int selected;
+    static uint32_t sections;
+    static char name[97] = "My settings";
+    static std::string message;
+    const std::string folder = g_data_dir + "presets";
+    auto reload = [&] {
+        presets = bw_settings_builtin_presets();
+        WIN32_FIND_DATAA entry{};
+        HANDLE find = FindFirstFileA((folder + "\\*.bwpreset").c_str(), &entry);
+        std::vector<std::string> files;
+        if (find != INVALID_HANDLE_VALUE) {
+            do { if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) files.push_back(entry.cFileName); }
+            while (FindNextFileA(find, &entry));
+            FindClose(find);
+        }
+        std::sort(files.begin(), files.end());
+        for (const auto& file : files) {
+            BwSettingsPreset preset;
+            std::string error;
+            if (bw_settings_preset_read(folder + "\\" + file, preset, &error)) presets.push_back(std::move(preset));
+            else std::fprintf(stderr, "[presets] %s: %s\n", file.c_str(), error.c_str());
+        }
+        selected = 0;
+        sections = presets.front().sections;
+    };
+    if (presets.empty()) reload();
+    if (!ImGui::CollapsingHeader("Presets")) return;
+    const bool narrow = compact_menu_rows();
+    if (narrow) ImGui::TextWrapped("Preset");
+    ImGui::SetNextItemWidth(narrow ? -1.0f : ImGui::GetFontSize() * 20);
+    if (ImGui::BeginCombo(narrow ? "##preset-choice" : "Preset", presets[selected].name.c_str())) {
+        for (size_t i = 0; i < presets.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Selectable(presets[i].name.c_str(), selected == static_cast<int>(i))) {
+                selected = static_cast<int>(i);
+                sections = presets[i].sections;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextDisabled("Sections to apply or capture:");
+    if (ImGui::BeginTable("preset-sections", narrow ? 1 : 3)) {
+        for (unsigned i = 0; i < BW_PAGE_COUNT; ++i) {
+            if (i == BW_PAGE_NETWORK || i == BW_PAGE_DEVELOPER) continue;
+            ImGui::TableNextColumn();
+            bool on = (sections & (1u << i)) != 0;
+            if (ImGui::Checkbox(bw_setting_page_name(static_cast<BwSettingPage>(i)), &on)) {
+                if (on) sections |= 1u << i; else sections &= ~(1u << i);
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (ImGui::Button("Preview changes")) {
+        bluewake_controls_menu_cancel_capture();
+        g_preset_popup = true;
+        ImGui::OpenPopup("Apply preset");
+    }
+    if (!narrow) ImGui::SameLine();
+    if (ImGui::Button("Import preset")) {
+        bluewake_controls_menu_cancel_capture();
+        const auto path = preset_file_dialog(false);
+        if (!path.empty()) {
+            BwSettingsPreset imported;
+            if (bw_settings_preset_read(path, imported, &message)) {
+                CreateDirectoryA(folder.c_str(), nullptr);
+                const auto destination = folder + "\\import-" + std::to_string(SDL_GetPerformanceCounter()) + ".bwpreset";
+                if (bw_settings_preset_write(destination, imported, &message)) { reload(); message = "Preset imported."; }
+            }
+        }
+    }
+    if (!narrow) ImGui::SameLine();
+    if (ImGui::Button("Export selected")) {
+        bluewake_controls_menu_cancel_capture();
+        const auto path = preset_file_dialog(true);
+        if (!path.empty() && bw_settings_preset_write(path, presets[selected], &message)) message = "Preset exported.";
+    }
+    if (narrow) ImGui::TextWrapped("Name");
+    ImGui::SetNextItemWidth(narrow ? -1.0f : ImGui::GetFontSize() * 20);
+    ImGui::InputText(narrow ? "##preset-name" : "Name", name, sizeof name);
+    if (!narrow) ImGui::SameLine();
+    if (ImGui::Button(narrow ? "Save preset" : "Save current settings")) {
+        bluewake_controls_menu_cancel_capture();
+        CreateDirectoryA(folder.c_str(), nullptr);
+        const auto preset = bw_settings_capture_preset(name, g_session, sections);
+        const auto path = folder + "\\settings-" + std::to_string(SDL_GetPerformanceCounter()) + ".bwpreset";
+        if (bw_settings_preset_write(path, preset, &message)) { reload(); message = "Preset saved."; }
+    }
+    ImGui::TextDisabled("Presets cover selected settings. Button bindings stay in your device profiles.");
+    if (!message.empty()) ImGui::TextWrapped("%s", message.c_str());
+    // The original popup's fixed 36-font-wide child also overflowed tiny
+    // windows at 100%. This viewport-only popup fix leaves the main menu's
+    // original sizing/metrics untouched at 100%.
+    const ImVec2 popup_display = ImGui::GetIO().DisplaySize;
+    const bool fit_popup = narrow || popup_display.x < ImGui::GetFontSize() * 40.0f ||
+        popup_display.y < ImGui::GetFontSize() * 18.0f;
+    if (fit_popup) {
+        const ImVec2 display = ImGui::GetIO().DisplaySize;
+        ImGui::SetNextWindowSize(ImVec2(display.x * 0.9f, display.y * 0.85f), ImGuiCond_Always);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), display);
+    }
+    if (ImGui::BeginPopupModal("Apply preset", nullptr, fit_popup ? 0 : ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (g_cancel_preset) {
+            g_cancel_preset = g_preset_popup = false;
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
+        }
+        BwPresetPreview preview;
+        if (bw_settings_preset_preview(presets[selected], g_session, sections, preview, &message)) {
+            ImGui::Text("%s: %zu setting changes", presets[selected].name.c_str(), preview.changes.size());
+            ImGui::BeginChild("changes", fit_popup ? ImVec2(0, ImGui::GetIO().DisplaySize.y * 0.25f) :
+                ImVec2(ImGui::GetFontSize() * 36, ImGui::GetFontSize() * 12), true);
+            for (const auto& change : preview.changes)
+                ImGui::TextWrapped("%s: %s -> %s%s", change.definition->label, change.before.c_str(), change.after.c_str(),
+                                   change.definition->apply == BW_SETTING_RESTART ? " (after restart)" : "");
+            for (const auto& warning : preview.warnings) ImGui::TextWrapped("%s", warning.c_str());
+            ImGui::EndChild();
+            if (ImGui::Button("Apply")) {
+                g_session = std::move(preview.candidate);
+                apply_menu_settings();
+                message = "Preset applied.";
+                g_preset_popup = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+        } else ImGui::TextWrapped("%s", message.c_str());
+        if (ImGui::Button("Cancel")) { g_preset_popup = false; ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
 }
 
 // The UI's size for this window: the display's scale (Windows' own, or more
@@ -746,101 +1006,189 @@ float ui_scale(SDL_Window* w) {
 // WebGPU backend rebuild and upload that from the main thread while the
 // render worker submits: Dawn's device is not thread-safe here, and the bigger
 // upload crashed early frames.
+// Keep the original font at its original metrics. A second face at twice
+// the raster size shares this private atlas, so live enlargement needs no
+// atlas rebuild or render-worker upload. The default ImGui atlas stays intact.
 void load_font(SDL_Window* w) {
     float scale = std::max(1.0f, SDL_GetWindowDisplayScale(w));
     if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(w)))
         scale = std::max(scale, mode->h / 900.0f);
     scale = std::min(scale, 4.0f);
     static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2010, 0x205E, 0x2190, 0x2193, 0};
-    auto* atlas = new ImFontAtlas();  // for the life of the process
-    atlas->Flags |= ImFontAtlasFlags_NoMouseCursors;
-    ImFont* font = nullptr;
     char fonts[MAX_PATH];
     const UINT length = GetWindowsDirectoryA(fonts, MAX_PATH);
+    std::string path;
     if (length > 0 && length < MAX_PATH - 32) {
-        const std::string path = std::string(fonts) + "\\Fonts\\segoeui.ttf";
-        if (GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES)
-            font = atlas->AddFontFromFileTTF(path.c_str(), std::round(15.0f * scale), nullptr, ranges);
+        path = std::string(fonts) + "\\Fonts\\segoeui.ttf";
+        if (GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES) path.clear();
     }
-    if (font == nullptr) {
-        // ImGui's own, at a whole multiple so its pixels stay square.
-        scale = std::max(1.0f, std::round(scale));
-        ImFontConfig pixel;
-        pixel.SizePixels = 13.0f * scale;
-        font = atlas->AddFontDefault(&pixel);
-    }
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+    if (g_menu_test_default_font) path.clear();
+#endif
+    std::unique_ptr<ImFontAtlas> atlas;
+    ImFont* font = nullptr;
+    ImFont* large = nullptr;
     unsigned char* pixels = nullptr;
     int width = 0, height = 0;
-    atlas->GetTexDataAsRGBA32(&pixels, &width, &height);
-    if (pixels == nullptr || width <= 0 || height <= 0) {
+    // One retry without the large face retains the original fallback if the
+    // combined atlas cannot be built. Neither attempt touches the GPU.
+    for (unsigned attempt = 0; attempt < 2; ++attempt) {
+        atlas = std::make_unique<ImFontAtlas>();
+        atlas->Flags |= ImFontAtlasFlags_NoMouseCursors;
+        float pixels_per_face = std::round(15.0f * scale);
+        font = path.empty() ? nullptr : atlas->AddFontFromFileTTF(path.c_str(), pixels_per_face, nullptr, ranges);
+        if (font == nullptr) {
+            scale = std::max(1.0f, std::round(scale));
+            ImFontConfig pixel;
+            pixel.SizePixels = 13.0f * scale;
+            pixels_per_face = pixel.SizePixels;
+            font = atlas->AddFontDefault(&pixel);
+        }
+        large = nullptr;
+        if (attempt == 0) {
+            if (!path.empty()) large = atlas->AddFontFromFileTTF(path.c_str(), pixels_per_face * 2.0f, nullptr, ranges);
+            if (!large) {
+                ImFontConfig pixel;
+                pixel.SizePixels = pixels_per_face * 2.0f;
+                large = atlas->AddFontDefault(&pixel);
+            }
+        }
+        pixels = nullptr; width = height = 0;
+        atlas->GetTexDataAsRGBA32(&pixels, &width, &height);
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+        if (attempt == 0 && g_menu_test_large_failure) { pixels = nullptr; width = height = 0; }
+#endif
+        if (pixels && width > 0 && height > 0) break;
+    }
+    if (pixels == nullptr || width <= 0 || height <= 0 || font == nullptr) {
         std::fprintf(stderr, "[windows] the UI font did not build; keeping ImGui's\n");
         return;
     }
+    // Aurora copies this data and uploads on its existing render-worker seam.
     atlas->SetTexID(aurora_imgui_add_texture(static_cast<uint32_t>(width), static_cast<uint32_t>(height), pixels));
     atlas->ClearTexData();
     ImGui::GetIO().FontDefault = font;
     ImGui::GetStyle().ScaleAllSizes(scale);
+    g_menu_font = font;
+    g_menu_large_font = large;
+    g_menu_atlas = atlas.release(); // Stable until process shutdown, like the original UI atlas.
     g_font_scale = scale;
-    std::fprintf(stderr, "[windows] UI scale %.2f (font atlas %dx%d)\n", scale, width, height);
+    std::fprintf(stderr, "[windows] UI scale %.2f (font atlas %dx%d, menu enlargement %s)\n", scale, width, height, large ? "ready" : "uses original font");
 }
 
 void draw_menu(SDL_Window* w) {
+    bool sound_visible = false;
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-    const float scale = ui_scale(w);
+    const float multiplier = std::clamp(g_session.menu_size, 75, 200) / 100.0f;
+    const float scale = ui_scale(w) * multiplier;
+    const bool large_font = multiplier > 1.0f && g_menu_large_font != nullptr;
+    ImFont* menu_font = large_font ? g_menu_large_font : g_menu_font;
+    if (menu_font) ImGui::PushFont(menu_font);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, style.ScrollbarSize * multiplier);
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, style.GrabMinSize * multiplier);
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(style.CellPadding.x * multiplier, style.CellPadding.y * multiplier));
+    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, style.IndentSpacing * multiplier);
     bluewake_ui::begin_theme(scale);
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
                             ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(io.DisplaySize.x * 0.95f, io.DisplaySize.y * 0.9f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(io.DisplaySize.x * 0.95f, 1050.f * scale),
+                                  std::min(io.DisplaySize.y * 0.9f, 750.f * scale)), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.94f);
     bool open = true;
-    // A scrollbar only when the menu is taller than the window allows (the Mods
-    // tab in a small window): at fractional scales the auto-sized window came
-    // out a pixel short of its contents and showed one for nothing.
-    static bool overflows;
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize |
-                                   (overflows ? 0 : ImGuiWindowFlags_NoScrollbar);
+                                   ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("BlueWake settings", &open, flags)) {
-        ImGui::SetWindowFontScale(scale / g_font_scale);
+        ImGui::SetWindowFontScale(scale / (g_font_scale * (large_font ? 2.0f : 1.0f)));
         bluewake_ui::heading("Play your way", "Display, controls and enhancements, all in one place.");
         // Esc normally closes it in the keyboard hook (bw_settings_key), which
         // keeps the key from SDL; one that reaches ImGui instead closes it too.
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !bluewake_controls_menu_capturing() &&
+            !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
             open = false;
-        if (ImGui::BeginTabBar("tabs")) {
+        static char search[160]{};
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFontSize() * 5);
+        if (ImGui::InputTextWithHint("##search", "Search settings", search, sizeof search))
+            bluewake_controls_menu_cancel_capture();
+        ImGui::SameLine();
+        if (ImGui::Button("Clear")) search[0] = '\0';
+        if (search[0] == '\0') preset_menu();
+        ImGui::Separator();
+        bool controls_visible = false;
+        if (search[0] != '\0') {
+            const auto results = bw_settings_search(search);
+            BwSettingPage previous = BW_PAGE_COUNT;
+            for (const auto* definition : results) {
+                if (definition->page != previous) {
+                    ImGui::SeparatorText(bw_setting_page_name(definition->page));
+                    previous = definition->page;
+                }
+                setting_widget(*definition);
+            }
+            if (results.empty()) ImGui::TextDisabled("No matching settings.");
+        } else if (ImGui::BeginTabBar("tabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
             if (ImGui::BeginTabItem("Display")) {
                 tab_display(w);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Controls")) {
+                controls_visible = true;
                 tab_controls();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Mods")) {
+            if (ImGui::BeginTabItem("Enhancements")) {
                 tab_enhancements();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Sound and files")) {
-                tab_game();
+            if (ImGui::BeginTabItem("Mods")) {
+                tab_mods();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Network")) {
+                tab_network();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Sound & Saves")) {
+                sound_visible = true;
+                tab_sound_saves();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("HUD")) {
+                settings_page(BW_PAGE_HUD);
+                if(ImGui::Button("Reset native HUD")) {
+                    g_session.hud_enabled=false;bw_hud_config_identity(&g_session.hud);apply_menu_settings();
+                }
+                ImGui::TextWrapped("Experimental native pane customization. Separate rupee glow, particles, minimap, compass and timers keep their native presentation.");
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Developer")) {
+                tab_developer();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
         }
+        if (!controls_visible) bluewake_controls_menu_cancel_capture();
         ImGui::Separator();
         if (needs_restart()) {
-            ImGui::TextUnformatted("* Takes effect when BlueWake starts again.");
-            ImGui::SameLine();
+            if (compact_menu_rows()) ImGui::TextWrapped("* Takes effect when BlueWake starts again.");
+            else ImGui::TextUnformatted("* Takes effect when BlueWake starts again.");
+            if (!compact_menu_rows()) ImGui::SameLine();
             if (ImGui::Button("Restart now"))
                 restart();
             ImGui::SameLine();
         }
         if (ImGui::Button("Close   (F1 or Esc)"))
             open = false;
-        overflows = ImGui::GetScrollMaxY() > 4.0f * scale;
     }
     ImGui::End();
     bluewake_ui::end_theme();
+    ImGui::PopStyleVar(4);
+    if (menu_font) ImGui::PopFont();
+    if (g_preview_page_visible && !sound_visible)
+        bluewake_audio_preview_cancel(bluewake_host_audio_preview_get());
+    g_preview_page_visible = sound_visible;
     if (!open)
         set_menu_open(false);
 }
@@ -965,6 +1313,8 @@ void frame(void*) {
         return;
     if (g_first_frame_at == 0) {
         g_first_frame_at = SDL_GetTicks();
+        if (!bluewake_controls_init(g_data_dir.c_str()))
+            std::fprintf(stderr, "[controls] %s\n", bluewake_controls_error());
         apply_live();
         load_font(w);
         return;  // the font is ImGui's default from the next frame
@@ -981,6 +1331,7 @@ void frame(void*) {
         g_toggle_menu = false;
         set_menu_open(!g_menu_open);
     }
+    if(g_hud_pending)apply_hud();
     track_window(w);
     // The frame rate in the session log, a line a second beside the host's
     // [perf] line: frames shown (60 with Smooth Motion at full speed) and the
@@ -1004,15 +1355,10 @@ void frame(void*) {
         fps_logged = now;
         timing_before = timing;
     }
-    // A controller that connects starts from Aurora's mapping: look twice a
-    // second whether the one on port 0 changed.
-    static unsigned frames;
-    if ((++frames % 30u) == 0u) {
-        const SDL_JoystickID connection = bw_controller_connection(0);
-        if (connection != g_pad_connection) {
-            g_pad_connection = connection;
-            apply_controller();
-        }
+    static Uint64 controllers_refreshed;
+    if (now - controllers_refreshed >= 500) {
+        bluewake_controls_refresh();
+        controllers_refreshed = now;
     }
     static unsigned healthy_frames;
     if (!g_menu_open && ++healthy_frames == 600u && !bw_launch_clear((g_data_dir + "launch.pending").c_str()))
@@ -1035,9 +1381,45 @@ void frame(void*) {
 void save_at_exit() {
     if (g_dirty)
         save_file();
+    if (bluewake_controls_dirty() && !bluewake_controls_save())
+        std::fprintf(stderr, "[controls] %s\n", bluewake_controls_error());
 }
 
 }  // namespace
+
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+void bw_settings_ui_test_reset(const char* data_dir, const Settings& saved) {
+    if (g_menu_open) set_menu_open(false);
+    g_saved = g_session = g_before_edit = g_launched = saved;
+    g_data_dir = data_dir;
+    g_path = g_data_dir + "settings.ini";
+    g_safe_mode = g_menu_open = g_toggle_menu = g_toggle_fullscreen = g_dirty = false;
+    g_preset_popup = g_cancel_preset = g_placed = false;
+    g_first_frame_at = g_dirty_at = 0;
+    g_environment.clear();
+    g_restart = RestartRequest{};
+    g_font_scale = 1.f;
+    g_preview_page_visible = false;
+    g_preview_path.clear();
+    g_preview_message.clear();
+    set_menu_open(true);
+}
+void bw_settings_ui_test_draw() { draw_menu(nullptr); }
+const Settings& bw_settings_ui_test_session() { return g_session; }
+const Settings& bw_settings_ui_test_saved() { return g_saved; }
+bool bw_settings_ui_test_menu_open() { return g_menu_open; }
+bool bw_settings_ui_test_preset_open() { return g_preset_popup; }
+void bw_settings_ui_test_flush() { save_file(); }
+void bw_menu_size_test_load_font() { load_font(nullptr); }
+void bw_menu_size_test_release_font() {
+    ImGui::GetIO().FontDefault = nullptr;
+    delete g_menu_atlas; g_menu_atlas = nullptr;
+    g_menu_font = g_menu_large_font = nullptr;
+}
+bool bw_menu_size_test_restart_needed() { return needs_restart(); }
+float bw_menu_size_test_auto_scale() { return ui_scale(nullptr); }
+float bw_menu_size_test_raster_scale() { return g_font_scale; }
+#endif
 
 extern "C" void bw_settings_capture_environment(void) {
     wchar_t* block = GetEnvironmentStringsW();
@@ -1068,6 +1450,10 @@ extern "C" void bw_settings_load(const char* data_dir) {
             g_saved.hd_textures = false;
             g_saved.lle_audio = false;
             g_saved.movement_extras = false;
+            g_saved.quick_items = false;
+            g_saved.faster_wind = false;
+            g_saved.faster_boots = false;
+            g_saved.autosave = false;
             g_saved.fast_transitions = false;
             g_saved.quick_doors = false;
             g_dirty = true;
@@ -1093,6 +1479,14 @@ extern "C" void bw_settings_apply_launch(void) {
     // What the command line chose wins for this session (and is shown).
     g_session = g_saved;
     Settings& d = g_session;
+    if (g_safe_mode) { d.quick_items = false; d.autosave = false; d.faster_wind = false; d.faster_boots = false; }
+    if (env_set("BLUEWAKE_CLIMB")) d.climb = std::getenv("BLUEWAKE_CLIMB")[0] != '0';
+    if (env_set("BLUEWAKE_CLIMB_STAMINA")) d.climb_stamina = std::clamp(std::atoi(std::getenv("BLUEWAKE_CLIMB_STAMINA")), 4, 30);
+    if (env_set("BLUEWAKE_STICK_CAMERA")) d.stick_camera = std::getenv("BLUEWAKE_STICK_CAMERA")[0] != '0';
+    if (env_set("BLUEWAKE_STICK_CAMERA_SPEED")) d.stick_speed = std::clamp(std::atoi(std::getenv("BLUEWAKE_STICK_CAMERA_SPEED")), 60, 1080);
+    if (env_set("BLUEWAKE_STICK_AIM_SPEED")) d.stick_aim_speed = std::clamp(std::atoi(std::getenv("BLUEWAKE_STICK_AIM_SPEED")), 30, 720);
+    if (env_set("BLUEWAKE_STICK_CAMERA_INVERT_X")) d.pad_invert_x = std::getenv("BLUEWAKE_STICK_CAMERA_INVERT_X")[0] == '1';
+    if (env_set("BLUEWAKE_STICK_CAMERA_INVERT_Y")) d.pad_invert_y = std::getenv("BLUEWAKE_STICK_CAMERA_INVERT_Y")[0] == '1';
     if (env_set("BLUEWAKE_JUMP_BUTTON"))
         d.movement_extras = std::getenv("BLUEWAKE_JUMP_BUTTON")[0] != '0';
     if (env_set("BLUEWAKE_FAST_FORWARD"))
@@ -1199,9 +1593,20 @@ extern "C" void bw_settings_apply_launch(void) {
         }
     }
     g_launched = g_before_edit = g_session;
+    apply_health();
 }
 
 extern "C" void bw_settings_install(void) {
+    // These game-thread features use atomic desired settings and must be
+    // initialized even before an Aurora frame (including a headless launch).
+    apply_sprint_modes();
+    apply_quick_items();
+    apply_dialogue_speed();
+    apply_autosave();
+    apply_equipment();
+    apply_health();
+    apply_audio();
+    apply_hud();
     dol_aurora_set_overlay(frame, nullptr);
     // BLUEWAKE_SHADERS_FIRST=0/1 overrides the setting (testing).
     const char* first = std::getenv("BLUEWAKE_SHADERS_FIRST");
@@ -1212,8 +1617,29 @@ extern "C" void bw_settings_install(void) {
     }
     std::atexit(save_at_exit);
 }
+extern "C" void bw_settings_start_asset_packs(void) {
+    if (!bw_asset_pack_menu_start(g_data_dir.c_str(), g_launched.hd_textures))
+        std::fprintf(stderr, "[asset-packs] %s\n", bw_asset_pack_menu_error());
+}
 
 extern "C" int bw_settings_key(unsigned virtual_key, int alt) {
+    if (g_preset_popup && (virtual_key == VK_ESCAPE || virtual_key == VK_F1)) {
+        g_cancel_preset = true;
+        return 1;
+    }
+    if (g_menu_open && (virtual_key == VK_F6 || virtual_key == VK_F8)) return 1;
+    if (bluewake_controls_menu_capturing()) {
+        if (virtual_key == VK_ESCAPE) {
+            bluewake_controls_menu_cancel_capture();
+            return 1;
+        }
+        if (virtual_key == VK_F1 || virtual_key == VK_F6 || virtual_key == VK_F8 ||
+            virtual_key == VK_F9 || virtual_key == VK_F10 || virtual_key == VK_F11 ||
+            (virtual_key == VK_RETURN && alt)) {
+            bluewake_controls_menu_reject_reserved_key();
+            return 1;
+        }
+    }
     switch (virtual_key) {
     case VK_F1:
         g_toggle_menu = true;
@@ -1261,9 +1687,23 @@ extern "C" int bw_settings_relaunch(void) {
 
 extern "C" bool bluewake_settings_menu_event(const void* sdl_event) {
     const SDL_Event* event = static_cast<const SDL_Event*>(sdl_event);
+    if (event->type == SDL_EVENT_GAMEPAD_ADDED || event->type == SDL_EVENT_GAMEPAD_REMOVED)
+        bluewake_controls_refresh();
+    if (bluewake_controls_menu_capturing()) {
+        bluewake_controls_menu_event(sdl_event);
+        return true;
+    }
     if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && event->gbutton.button == SDL_GAMEPAD_BUTTON_BACK) {
+        if (g_preset_popup) { g_cancel_preset = true; return true; }
         set_menu_open(!g_menu_open);
         return true;
     }
+    bluewake_controls_menu_event(sdl_event);
     return g_menu_open;
 }
+
+#if defined(BLUEWAKE_SETTINGS_UI_TEST)
+void bw_menu_size_test_font_mode(bool fallback, bool failed_large) {
+    g_menu_test_default_font = fallback; g_menu_test_large_failure = failed_large;
+}
+#endif

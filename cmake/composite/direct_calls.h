@@ -15,8 +15,9 @@
  *
  * The one thing the loop does that the module cannot is the edge service. The
  * service answers "nothing to do" at every address the host does not name
- * whenever its state flags are clear; the transform leaves every call whose
- * target or return address the host names alone, and bw_direct_call_ready
+ * whenever its state flags are clear; the transform leaves watched calls
+ * alone except the four audited dynamic equipment boundaries, whose entry
+ * and return queries still consult the host. bw_direct_call_ready
  * reads the host's flags (the interrupt sources, a pending interrupt the guest
  * would take) through pointers the host hands over. Until it does, and in any
  * diagnostic mode, direct calls are off and every call goes round the loop.

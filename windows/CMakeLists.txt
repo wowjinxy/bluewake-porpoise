@@ -70,11 +70,26 @@ set(BLUEWAKE_HOST_SOURCES
     ${BLUEWAKE_HOST_SRC}/climb.c
     ${BLUEWAKE_HOST_SRC}/save_state.c
     ${BLUEWAKE_HOST_SRC}/sprint.c
+    ${BLUEWAKE_HOST_SRC}/sprint_input.c
     ${BLUEWAKE_HOST_SRC}/quick_doors.c
     ${BLUEWAKE_HOST_SRC}/haptics.c
     ${BLUEWAKE_HOST_SRC}/draw_tags.c
     ${BLUEWAKE_HOST_SRC}/fps_watch.c
     ${BLUEWAKE_HOST_SRC}/game_options.c
+    ${BLUEWAKE_HOST_SRC}/game_events.c
+    ${BLUEWAKE_HOST_SRC}/song_rel_owner.c
+    ${BLUEWAKE_HOST_SRC}/song_host_adapter.c
+    ${BLUEWAKE_HOST_SRC}/hud_customization.c
+    ${BLUEWAKE_HOST_SRC}/hud_host.c
+    ${BLUEWAKE_HOST_SRC}/health_rules.c
+    ${BLUEWAKE_HOST_SRC}/health_host.c
+    ${BLUEWAKE_HOST_SRC}/hud_renderer.cpp
+    ${BLUEWAKE_HOST_SRC}/quick_items.c
+    ${BLUEWAKE_HOST_SRC}/dialogue_speed.c
+    ${BLUEWAKE_HOST_SRC}/autosave.c
+    ${BLUEWAKE_HOST_SRC}/enhancement_hooks.c
+    ${BLUEWAKE_HOST_SRC}/audio_customization.c
+    ${BLUEWAKE_HOST_SRC}/audio_preview.cpp
     ${BLUEWAKE_HOST_SRC}/mouse_camera.c)
 
 # The manifest (DPI awareness, long paths, UTF-8 code page) is merged into the
@@ -84,6 +99,18 @@ add_executable(BlueWake
     src/win_disc.c
     ${BLUEWAKE_REPO_ROOT}/apple/ios/src/disc_import.c
     src/win_settings.cpp
+    src/settings_catalog.cpp
+    src/settings_presets.cpp
+    src/card_menu.cpp
+    src/asset_pack_menu.cpp
+    src/network_menu.cpp
+    ${BLUEWAKE_HOST_SRC}/card_manager.cpp
+    ${BLUEWAKE_HOST_SRC}/card_import.cpp
+    ${BLUEWAKE_HOST_SRC}/asset_packs.cpp
+    ${BLUEWAKE_HOST_SRC}/asset_packs_aurora.cpp
+    ${BLUEWAKE_HOST_SRC}/setting_definitions.cpp
+    ${BLUEWAKE_HOST_SRC}/controls_bindings.cpp
+    ${BLUEWAKE_HOST_SRC}/controls_menu.cpp
     src/win_crash.cpp
     src/bluewake.rc
     resources/BlueWake.manifest
@@ -93,6 +120,8 @@ add_executable(BlueWake
 set_source_files_properties(${BLUEWAKE_HOST_SRC}/main.c PROPERTIES
     COMPILE_DEFINITIONS "main=bluewake_host_main")
 target_link_libraries(BlueWake PRIVATE gxruntime GXRuntime::aurora xxhash bluewake_posix_compat winmm bcrypt comctl32 comdlg32)
+include(${BLUEWAKE_REPO_ROOT}/cmake/BlueWakeNetwork.cmake)
+target_link_libraries(BlueWake PRIVATE bluewake_network)
 if(TARGET imgui)
     target_link_libraries(BlueWake PRIVATE imgui)
 endif()
@@ -154,6 +183,8 @@ target_include_directories(bluewake_dsp_donor PUBLIC
     ${_donor}/Source/Core ${_donor}/Source ${_donor}/Externals
     ${_donor}/Externals/xxhash/xxHash
     ${BLUEWAKE_REPO_ROOT}/apple/ios/dsp_generated)
+target_include_directories(bluewake_dsp_donor PRIVATE ${BLUEWAKE_HOST_SRC})
+target_compile_definitions(bluewake_dsp_donor PUBLIC BLUEWAKE_DSP_AUDIO_CUSTOMIZATION=1)
 # No _M_X86_64: that selects Dolphin's x64 DSP JIT, and BlueWake runs the DSP
 # interpreter everywhere (DSPEmitterNull), as on iOS.
 target_compile_definitions(bluewake_dsp_donor PUBLIC
@@ -348,6 +379,7 @@ if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)
     add_executable(bluewake_native_entries_guard_test
         ${BLUEWAKE_REPO_ROOT}/tests/native_entries_guard_test.c
         ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_entries.c
+        ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_search.c
         ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_fifo.c
         ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_bg.c
         ${BLUEWAKE_REPO_ROOT}/cmake/composite/native_vec.c
@@ -408,9 +440,11 @@ if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)
     target_link_libraries(bluewake_windows_disc_test PRIVATE bluewake_posix_compat comctl32 comdlg32)
     target_compile_definitions(bluewake_windows_disc_test PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
     add_test(NAME bluewake_windows_disc_test COMMAND bluewake_windows_disc_test)
-    set_tests_properties(bluewake_windows_disc_test PROPERTIES TIMEOUT 30)
+    # Three synthetic cache builds each create 415 files; allow slow-filesystem margin.
+    set_tests_properties(bluewake_windows_disc_test PROPERTIES TIMEOUT 120)
 
     enable_testing()
+    include("${BLUEWAKE_REPO_ROOT}/cmake/randomizer_logic_test.cmake")
     add_executable(bluewake_card_dispatch_lock_test ${BLUEWAKE_REPO_ROOT}/tests/card_dispatch_lock_test.c)
     target_include_directories(bluewake_card_dispatch_lock_test PRIVATE ${BLUEWAKE_HOST_SRC} ${GXRUNTIME_DIR}/include ${BLUEWAKE_COMPAT_INCLUDES})
     target_compile_options(bluewake_card_dispatch_lock_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
@@ -500,6 +534,53 @@ add_executable(bluewake_settings_state_test ${BLUEWAKE_REPO_ROOT}/tests/settings
 target_compile_features(bluewake_settings_state_test PRIVATE cxx_std_17)
 add_test(NAME bluewake_settings_state_test COMMAND bluewake_settings_state_test)
 
+add_executable(bluewake_settings_catalog_test
+    ${BLUEWAKE_REPO_ROOT}/tests/settings_catalog_test.cpp
+    src/settings_catalog.cpp src/settings_presets.cpp
+    ${BLUEWAKE_HOST_SRC}/setting_definitions.cpp)
+target_compile_features(bluewake_settings_catalog_test PRIVATE cxx_std_17)
+target_compile_options(bluewake_settings_catalog_test PRIVATE -UNDEBUG)
+add_test(NAME bluewake_settings_catalog_test COMMAND bluewake_settings_catalog_test)
+
+foreach(_controls_test bindings menu)
+    add_executable(bluewake_controls_${_controls_test}_test
+        ${BLUEWAKE_REPO_ROOT}/tests/controls_${_controls_test}_test.cpp
+        ${BLUEWAKE_HOST_SRC}/controls_bindings.cpp)
+    target_compile_features(bluewake_controls_${_controls_test}_test PRIVATE cxx_std_17)
+    target_compile_definitions(bluewake_controls_${_controls_test}_test PRIVATE AURORA TARGET_PC)
+    target_compile_options(bluewake_controls_${_controls_test}_test PRIVATE -UNDEBUG)
+    target_include_directories(bluewake_controls_${_controls_test}_test PRIVATE
+        ${BLUEWAKE_HOST_SRC} ${GXRUNTIME_DIR}/graphics/aurora/include
+        $<TARGET_PROPERTY:${AURORA_SDL3_TARGET},INTERFACE_INCLUDE_DIRECTORIES>)
+    add_test(NAME bluewake_controls_${_controls_test}_test COMMAND bluewake_controls_${_controls_test}_test)
+endforeach()
+target_sources(bluewake_controls_menu_test PRIVATE ${BLUEWAKE_HOST_SRC}/controls_menu.cpp)
+target_link_libraries(bluewake_controls_menu_test PRIVATE imgui)
+include(${BLUEWAKE_REPO_ROOT}/cmake/pad_backend_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/settings_ui_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/menu_size_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/sprint_modes_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/mouse_camera_pad_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/controls_process_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/card_manager_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/card_import_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/asset_packs_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/asset_pack_menu_test.cmake)
+include(${BLUEWAKE_REPO_ROOT}/cmake/network_menu_test.cmake)
+add_subdirectory(${BLUEWAKE_REPO_ROOT}/scripts/network ${CMAKE_CURRENT_BINARY_DIR}/network_tools)
+include(${BLUEWAKE_REPO_ROOT}/cmake/card_menu_test.cmake)
+
+add_executable(bluewake_card_runtime_test
+    ${BLUEWAKE_REPO_ROOT}/tests/card_runtime_test.c
+    ${BLUEWAKE_HOST_SRC}/card_runtime.c)
+target_include_directories(bluewake_card_runtime_test PRIVATE
+    ${BLUEWAKE_HOST_SRC} ${BLUEWAKE_COMPAT_INCLUDES})
+target_compile_options(bluewake_card_runtime_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+target_link_libraries(bluewake_card_runtime_test PRIVATE gxruntime bluewake_posix_compat)
+set_target_properties(bluewake_card_runtime_test PROPERTIES LINKER_LANGUAGE CXX)
+add_test(NAME bluewake_card_runtime_test COMMAND bluewake_card_runtime_test)
+set_tests_properties(bluewake_card_runtime_test PROPERTIES TIMEOUT 30)
+
 
 add_executable(bluewake_launch_marker_test ${BLUEWAKE_REPO_ROOT}/tests/launch_marker_test.c)
 target_include_directories(bluewake_launch_marker_test PRIVATE ${BLUEWAKE_HOST_SRC})
@@ -512,6 +593,14 @@ target_include_directories(bluewake_atomic_copy_race_test PRIVATE ${BLUEWAKE_HOS
 target_compile_options(bluewake_atomic_copy_race_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
 target_link_libraries(bluewake_atomic_copy_race_test PRIVATE bluewake_posix_compat)
 add_test(NAME bluewake_atomic_copy_race_test COMMAND bluewake_atomic_copy_race_test)
+
+add_executable(bluewake_atomic_file_test ${BLUEWAKE_REPO_ROOT}/tests/atomic_file_test.c)
+target_include_directories(bluewake_atomic_file_test PRIVATE
+    ${BLUEWAKE_HOST_SRC} ${GXRUNTIME_DIR}/include ${BLUEWAKE_COMPAT_INCLUDES})
+target_compile_options(bluewake_atomic_file_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+target_link_libraries(bluewake_atomic_file_test PRIVATE bluewake_posix_compat)
+add_test(NAME bluewake_atomic_file_test COMMAND bluewake_atomic_file_test)
+set_tests_properties(bluewake_atomic_file_test PROPERTIES TIMEOUT 15)
 
 add_executable(bluewake_save_state_test ${BLUEWAKE_REPO_ROOT}/tests/save_state_test.c ${BLUEWAKE_HOST_SRC}/save_state.c)
 target_include_directories(bluewake_save_state_test PRIVATE ${BLUEWAKE_HOST_SRC} ${BLUEWAKE_COMPAT_INCLUDES})
@@ -559,6 +648,50 @@ target_link_libraries(bluewake_memory_card_io_test PRIVATE bluewake_posix_compat
     set_target_properties(bluewake_feature_dispatch_test PROPERTIES LINKER_LANGUAGE CXX)
     add_test(NAME bluewake_feature_dispatch_test COMMAND bluewake_feature_dispatch_test)
     set_tests_properties(bluewake_feature_dispatch_test PROPERTIES TIMEOUT 30)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/climb_test.cmake")
+    target_include_directories(bluewake_climb_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_climb_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_climb_test PRIVATE bluewake_posix_compat)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/game_events_test.cmake")
+    target_include_directories(bluewake_game_events_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_game_events_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_game_events_test PRIVATE bluewake_posix_compat)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/song_host_adapter_test.cmake")
+    target_include_directories(bluewake_song_host_adapter_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_song_host_adapter_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_song_host_adapter_test PRIVATE bluewake_posix_compat)
+    set_target_properties(bluewake_song_host_adapter_test PROPERTIES LINKER_LANGUAGE CXX)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/quick_items_test.cmake")
+    target_include_directories(bluewake_quick_items_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_quick_items_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_quick_items_test PRIVATE bluewake_posix_compat)
+    set_target_properties(bluewake_quick_items_test PROPERTIES LINKER_LANGUAGE CXX)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/dialogue_speed_test.cmake")
+    target_include_directories(bluewake_dialogue_speed_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_dialogue_speed_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_dialogue_speed_test PRIVATE bluewake_posix_compat)
+    set_target_properties(bluewake_dialogue_speed_test PROPERTIES LINKER_LANGUAGE CXX)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/autosave_test.cmake")
+    target_include_directories(bluewake_autosave_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_autosave_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_autosave_test PRIVATE bluewake_posix_compat)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/enhancement_hooks_test.cmake")
+    target_include_directories(bluewake_enhancement_hooks_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_enhancement_hooks_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_enhancement_hooks_test PRIVATE bluewake_posix_compat)
+    set_target_properties(bluewake_enhancement_hooks_test PROPERTIES LINKER_LANGUAGE CXX)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/audio_owner_test.cmake")
+    target_include_directories(bluewake_audio_owner_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
+    target_compile_options(bluewake_audio_owner_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})
+    target_link_libraries(bluewake_audio_owner_test PRIVATE bluewake_posix_compat)
+    set_target_properties(bluewake_audio_owner_test PROPERTIES LINKER_LANGUAGE CXX)
+    include("${BLUEWAKE_REPO_ROOT}/cmake/audio_customization_test.cmake")
+    foreach(_audio_fixture bluewake_audio_customization_test bluewake_audio_native_baseline
+            bluewake_audio_native_fixed_baseline bluewake_audio_customization_fixed_test
+            bluewake_audio_completion_original bluewake_audio_completion_fixed)
+        target_link_libraries(${_audio_fixture} PRIVATE bluewake_posix_compat)
+    endforeach()
+    include("${BLUEWAKE_REPO_ROOT}/cmake/jump_input_test.cmake")
     add_executable(bluewake_windows_getenv_cache_test
         ${BLUEWAKE_REPO_ROOT}/tests/windows_getenv_cache_test.c)
     target_compile_options(bluewake_windows_getenv_cache_test PRIVATE -Wall -Wextra -Werror)
@@ -601,9 +734,47 @@ endif()
 # first visit draws everything from its first frame. Its rows are pipeline
 # state keys, not game data.
 include(${GXRUNTIME_DIR}/graphics/aurora/cmake/AuroraCopyRuntimeDLLs.cmake)
+
+# Aurora-linked regression executables need the same transitive runtime DLLs
+# when built individually. Pure static fixtures retain their existing graph.
+if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)
+  foreach(_bw_aurora_fixture IN ITEMS
+      bluewake_renderer_shared_flags_test bluewake_asset_packs_aurora_test
+      bluewake_desktop_controller_test bluewake_audio_sink_test
+      bluewake_pipeline_shutdown_test)
+    if(TARGET ${_bw_aurora_fixture})
+      aurora_copy_runtime_dlls(${_bw_aurora_fixture})
+    endif()
+  endforeach()
+endif()
 aurora_copy_runtime_dlls(BlueWake)
 set(BLUEWAKE_PIPELINE_SEED "${BLUEWAKE_REPO_ROOT}/windows/resources/initial_pipeline_cache.db")
 add_custom_command(TARGET BlueWake POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${BLUEWAKE_PIPELINE_SEED}" $<TARGET_FILE_DIR:BlueWake>
     VERBATIM)
+
+# Optional source-only HUD host regressions.
+include("${BLUEWAKE_REPO_ROOT}/cmake/hud_host_test.cmake")
+
+
+
+
+
+
+# The legacy renderer retains native identity. Its build has no GXCore types.
+if(TARGET GXRuntime::gxcore)
+  target_sources(BlueWake PRIVATE ${BLUEWAKE_HOST_SRC}/hud_customization_draw_plan.cpp)
+  target_link_libraries(BlueWake PRIVATE GXRuntime::gxcore)
+  target_compile_definitions(BlueWake PRIVATE BLUEWAKE_HUD_GXCORE=1)
+endif()
+
+# Source-only external WAV preview and copied-output regressions.
+include("${BLUEWAKE_REPO_ROOT}/cmake/audio_preview_test.cmake")
+
+include("${BLUEWAKE_REPO_ROOT}/cmake/health_host_test.cmake")
+
+# Explicit CI/test builds gather all registered source-only fixture executables.
+if(BLUEWAKE_WINDOWS_REGRESSION_TESTS)
+  include("${BLUEWAKE_REPO_ROOT}/cmake/windows_regression_targets.cmake")
+endif()

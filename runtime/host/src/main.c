@@ -29,6 +29,19 @@
 #include "guest_checkpoint.h"
 #include "edge_intercepts.h"
 #include "game_options.h"
+#include "game_events.h"
+#include "song_host_adapter.h"
+#include "hud_host.h"
+#include "health_host.h"
+#include "hud_renderer.h"
+#include "quick_items.h"
+#include "dialogue_speed.h"
+#include "autosave.h"
+#include "enhancement_hooks.h"
+#include "audio_customization.h"
+#if defined(BLUEWAKE_WINDOWS)
+#include "audio_preview_host_bridge.h"
+#endif
 #include "fast_load.h"
 #include "fps_watch.h"
 #include "jump_button.h"
@@ -52,6 +65,12 @@
 #include "scheduler_contract.h"
 #include "save_state.h"
 #include "climb.h"
+#if defined(BLUEWAKE_WINDOWS)
+#include "controls_bindings.h"
+#include "network_game.h"
+#include "../../../windows/src/win_settings.h"
+#include "../../../windows/src/asset_pack_menu.h"
+#endif
 #include "gxruntime/hle.h"
 #include <aurora/gfx.h>
 #include "external_memory.h"
@@ -182,6 +201,46 @@ static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
     return false;
 }
 
+/* Native Hr ownership bridge, game thread only. Existing private saved structs
+ * are copied field-by-field; their layout and HOSTVARS entries are unchanged. */
+static BwSongHostAdapter g_song_host;
+static uint32_t host_song_alias_generation(void* user) {
+    (void)user;return g_ppc_guest_alias_generation;
+}
+static bool host_song_fixed_backing(void* user,const uint8_t** out,uint32_t* generation) {
+    (void)user;uint8_t* storage=NULL;
+    const uint32_t before=host_song_alias_generation(NULL);
+    if(!out||!generation||!ppc_guest_alias_get_storage(0xC0E96420u,0x390u,&storage)||!storage||
+       host_song_alias_generation(NULL)!=before)return false;
+    *out=storage;*generation=before;return true;
+}
+static void host_song_project_slots(BwSongHostSlot* slots) {
+    for(uint32_t i=0;i<BLUEWAKE_MAX_REL_SLOTS;++i)
+        slots[i]=(BwSongHostSlot){g_rel_slots[i].owner,g_rel_slots[i].address,g_rel_slots[i].capacity};
+}
+static bool host_song_owner_query(void* user,const CPUState* cpu,BwSongOwner* out) {
+    if(out)memset(out,0,sizeof *out);
+    if(user!=&g_song_host||!cpu||!g_song_host.active||cpu!=g_song_host.cpu||
+       cpu->ram!=g_song_host.ram||cpu->ram_size!=g_song_host.ram_size||
+       g_rel_alias_count>BLUEWAKE_MAX_REL_ALIASES)return false;
+    BwSongHostAlias aliases[BLUEWAKE_MAX_REL_ALIASES];BwSongHostSlot slots[BLUEWAKE_MAX_REL_SLOTS];
+    for(uint32_t i=0;i<g_rel_alias_count;++i)aliases[i]=(BwSongHostAlias){g_rel_aliases[i].raw_start,
+        g_rel_aliases[i].raw_end,g_rel_aliases[i].linked_start,g_rel_aliases[i].text_size};
+    host_song_project_slots(slots);
+    return bw_song_host_query(&g_song_host,cpu,aliases,g_rel_alias_count,slots,BLUEWAKE_MAX_REL_SLOTS,out);
+}
+static void host_song_owner_revoke(void) {
+    bluewake_game_events_set_song_owner_query(NULL,NULL);
+    bw_song_host_revoke(&g_song_host);
+}
+static void host_song_owner_bind(CPUState* cpu,const StaticRecompModuleDesc* mod,bool restored) {
+    host_song_owner_revoke();
+    if(!bw_song_host_bind(&g_song_host,cpu,mod,host_song_fixed_backing,host_song_alias_generation,NULL))return;
+    if(restored){BwSongHostSlot slots[BLUEWAKE_MAX_REL_SLOTS];host_song_project_slots(slots);
+        if(!bw_song_host_restore_slots(&g_song_host,cpu,slots,BLUEWAKE_MAX_REL_SLOTS)){bw_song_host_revoke(&g_song_host);return;}}
+    bluewake_game_events_set_song_owner_query(host_song_owner_query,&g_song_host);
+}
+
 // The composite keeps REL code/data at deterministic linked addresses;
 // module 1 begins at 0x81F80000, beyond the retail 24 MiB MEM1 ceiling.
 // Dynamic raw REL images stay in the lower scratch window and are reclaimed
@@ -222,6 +281,16 @@ static unsigned g_dsp_mail_reports;
 static unsigned g_dsp_irq_reports;
 static unsigned g_dsp_irq_route_reports;
 static DolAudioDma g_audio_dma;
+#if defined(BLUEWAKE_WINDOWS)
+// Startup/shutdown-owned pointer; never replace it while any worker can read.
+static BwAudioPreview* g_audio_preview;
+void bluewake_host_audio_preview_bind(BwAudioPreview* preview) {
+    g_audio_preview = preview;
+}
+BwAudioPreview* bluewake_host_audio_preview_get(void) {
+    return g_audio_preview;
+}
+#endif
 static BluewakeAudioCapture g_audio_capture;
 // SRAM on EXI channel 0 (ipl_sram.h); off unless BLUEWAKE_SRAM is set.
 static BluewakeIplSram g_ipl_sram;
@@ -258,6 +327,9 @@ static DolInterrupts g_interrupts;
 static DolSiDevice g_si;
 static DolPadState g_virtual_pad[4];
 static bool g_live_pad_enabled;
+// Internal guest-controller qualification; never reads or drives desktop input.
+static bool g_shortcut_test_enabled;
+static u64 g_shortcut_test_start, g_shortcut_test_length;
 BLUEWAKE_TRACE_STORAGE(g_pad_trace);
 BLUEWAKE_TRACE_STORAGE(g_pad_wire_trace);
 BLUEWAKE_TRACE_STORAGE(g_pad_si_trace);
@@ -398,8 +470,11 @@ static BluewakePadEventSchedule g_name_confirm_pulse;
 // file static, which belongs to the name-entry and game-over screens: reading it
 // here is why a run that really did save reported "save screen never opened".
 #define BLUEWAKE_DMC_OFF_SAVE_MENU 0x2784u
+#define BLUEWAKE_DMS_OFF_FILE_ERROR 0x0524u
 #define BLUEWAKE_DMS_OFF_PROC 0x052Cu
 #define BLUEWAKE_DMS_OFF_SAVE_STATUS 0x0531u
+#define BLUEWAKE_FILE_ERROR_OFF_STATE 0x02F4u
+#define BLUEWAKE_FILE_ERROR_OFF_YES_NO 0x02F6u
 // The pause menu's own gate, from d_menu_window.cpp's dMs_Execute: the menu
 // only opens on START when dMenu_pause is clear, the menu status is the old
 // menu's, the event wait has run out, and no message window is up. Reading them
@@ -413,7 +488,7 @@ static BluewakePadEventSchedule g_name_confirm_pulse;
 // play.mNextStage (0x803C4C08 + 0x12A0 + 0x3EA0, then dStage_nextStage_c's
 // 0xC): two more of dMs_Execute's conditions, both guest state.
 #define BLUEWAKE_GUEST_HEAP_LOCK 0x803CA80Au
-#define BLUEWAKE_GUEST_NEXT_STAGE_ENABLE 0x803C8AB4u
+#define BLUEWAKE_GUEST_NEXT_STAGE_ENABLE 0x803C9D54u
 #define BLUEWAKE_SAVE_MENU_ITEM 7u
 #define BLUEWAKE_SAVE_MENU_MODE 3u
 // The unattended route's scripted presses end at retrace 20,402. The save route
@@ -534,6 +609,8 @@ typedef struct BluewakePadScriptPress {
 static BluewakePadScriptPress g_pad_script[BLUEWAKE_PAD_SCRIPT_MAX];
 static unsigned g_pad_script_count;
 static u64 g_host_retrace_count;
+static bool g_autosave_host_safe;
+static bool g_autosave_trace;
 static bool g_live_takeover;  // see host_note_live_input
 
 // Guest PC sampler (BLUEWAKE_PC_SAMPLE=path). A thread reads the guest pc the
@@ -756,6 +833,7 @@ typedef void (*ModWriteFn)(void* user, u32 address, const u8* bytes, u32 size);
 typedef u32 (*ModWritesFn)(u32 mask, u32 per_frame_only, ModWriteFn fn, void* user);
 static ModWritesFn g_mod_writes;
 static u32 g_mod_mask;
+static bool g_hud_four_thirds=true;
 // Whether the mod that carries the game options' sites is on (game_options.h).
 static bool g_options_mod;
 
@@ -772,6 +850,7 @@ static void host_mods_reapply(CPUState* cpu) {
 }
 
 static void host_mods_enable(void* lib, CPUState* cpu) {
+    g_hud_four_thirds=true;
     typedef u32 (*CountFn)(void);
     typedef const char* (*NameFn)(u32);
     typedef u32 (*ApplyFn)(u32);
@@ -813,6 +892,7 @@ static void host_mods_enable(void* lib, CPUState* cpu) {
     for (u32 i = 0; i < available && name != NULL; ++i) {
         const char* mod = name(i);
         const bool on = (g_mod_mask & (1u << i)) != 0u;
+        if(on&&mod&&(strcmp(mod,"widescreen")==0||strcmp(mod,"widescreen1610")==0))g_hud_four_thirds=false;
         snprintf(list + strlen(list), sizeof list - strlen(list), "%s%s%s",
                  i ? "," : "", mod ? mod : "?", on ? "+" : "");
     }
@@ -1906,10 +1986,137 @@ static inline bool host_chassis_requires_full(const CPUState* cpu, u32 address) 
 
 static bool g_direct_call_trace;
 static u64 g_direct_call_queries, g_direct_call_allowed;
+static BwGameEventSubscription g_enhancement_reset_subscription;
+
+/* Synchronous HLE voice reads belong to this CPU/RAM lifetime. Native aliases
+ * can be replaced without moving RAM; include that generation in ownership.
+ * UI threads publish audio preferences without ever reading guest memory. */
+static CPUState* g_audio_owner_cpu;
+static u8* g_audio_owner_ram;
+static u32 g_audio_owner_ram_size, g_audio_owner_alias_generation;
+static u64 g_audio_owner_epoch;
+static bool g_audio_category_trace;
+static u64 g_audio_diagnostic_window;
+static unsigned g_audio_diagnostic_reports;
+
+static void host_audio_diagnostics_report(const char* reason) {
+    if (!g_audio_category_trace) return;
+    BwAudioDiagnostics stats;
+    bluewake_audio_diagnostics(&stats);
+    fprintf(stderr, "[voice-summary] reason=%s tick=%llu epoch=%llu window=%llu callbacks=%llu classifications=%llu unknown=%llu music=%llu sfx=%llu fanfare=%llu stream=%llu identities=%u unrecorded=%llu\n",
+            reason, (unsigned long long)g_host_retrace_count, (unsigned long long)stats.epoch,
+            (unsigned long long)g_audio_diagnostic_window,
+            (unsigned long long)stats.callbacks, (unsigned long long)stats.classifications,
+            (unsigned long long)stats.category_callbacks[BW_AUDIO_UNKNOWN],
+            (unsigned long long)stats.category_callbacks[BW_AUDIO_MUSIC],
+            (unsigned long long)stats.category_callbacks[BW_AUDIO_SFX],
+            (unsigned long long)stats.category_callbacks[BW_AUDIO_FANFARE],
+            (unsigned long long)stats.category_callbacks[BW_AUDIO_STREAM],
+            (unsigned)stats.identity_count, (unsigned long long)stats.unrecorded_callbacks);
+    for (unsigned i = 0; i < stats.identity_count; ++i) {
+        const BwAudioDiagnosticIdentity* identity = &stats.identities[i];
+        fprintf(stderr, "[voice-owner] known=%u category=%u crc=%08X base=%08X voice=%u dsp=%08X channel=%08X track=%08X root=%08X sound=%08X id=%08X callbacks=%llu\n",
+                identity->classified ? 1u : 0u, (unsigned)identity->owner.category,
+                identity->ucode_crc, identity->vpb_base, (unsigned)identity->voice_id,
+                identity->owner.dsp_channel, identity->owner.logical_channel,
+                identity->owner.track, identity->owner.root_track, identity->owner.sound,
+                identity->owner.sound_id, (unsigned long long)identity->callbacks);
+    }
+}
+
+static void host_audio_diagnostics_retrace(void) {
+    if (!g_audio_category_trace || g_host_retrace_count % 2000u != 0u ||
+        g_audio_diagnostic_reports >= 8u)
+        return;
+    host_audio_diagnostics_report("retrace");
+    ++g_audio_diagnostic_reports;
+    // Rotate only diagnostic samples on the game thread. Later scenes get
+    // their own bounded voice identities; reader ownership and gains survive.
+    bluewake_audio_diagnostics_enable(false);
+    bluewake_audio_diagnostics_enable(true);
+    if (++g_audio_diagnostic_window == 0u) ++g_audio_diagnostic_window;
+}
+
+static u64 host_audio_owner_epoch(void* user) {
+    CPUState* cpu = (CPUState*)user;
+    if (cpu == NULL || cpu != g_audio_owner_cpu || cpu->ram != g_audio_owner_ram ||
+        cpu->ram_size != g_audio_owner_ram_size)
+        return 0u;
+    if (g_audio_owner_alias_generation != g_ppc_guest_alias_generation) {
+        g_audio_owner_alias_generation = g_ppc_guest_alias_generation;
+        if (++g_audio_owner_epoch == 0u) ++g_audio_owner_epoch;
+    }
+    return g_audio_owner_epoch;
+}
+
+static bool host_audio_owner_read(void* user, u32 address, void* out, size_t size) {
+    CPUState* cpu = (CPUState*)user;
+    if (out == NULL || size == 0u || size > 0x01800000u || address < 0x80000000u ||
+        address - 0x80000000u > 0x01800000u - size || host_audio_owner_epoch(user) == 0u)
+        return false;
+    const u8* bytes = get_ram_ptr(cpu, address, (u32)size, NULL);
+    if (bytes == NULL) return false;
+    memcpy(out, bytes, size);
+    return true;
+}
+
+static void host_audio_owner_attach(CPUState* cpu) {
+#if defined(BLUEWAKE_WINDOWS)
+    // Native CARD reset, machine replacement and shutdown cancel publications
+    // before borrowed native audio ownership/RAM can change.
+    bluewake_audio_preview_reset(g_audio_preview);
+#endif
+    bluewake_audio_reset();
+    if (++g_audio_diagnostic_window == 0u) ++g_audio_diagnostic_window;
+    g_audio_owner_cpu = cpu;
+    g_audio_owner_ram = cpu != NULL ? cpu->ram : NULL;
+    g_audio_owner_ram_size = cpu != NULL ? cpu->ram_size : 0u;
+    g_audio_owner_alias_generation = g_ppc_guest_alias_generation;
+    if (++g_audio_owner_epoch == 0u) ++g_audio_owner_epoch;
+    if (cpu != NULL && cpu->ram != NULL)
+        bluewake_audio_attach(host_audio_owner_read, host_audio_owner_epoch, cpu);
+}
+
+// Native CARD loads can reuse both RAM and the player address. Clear pending
+// enhancement invocations on the actual game reset event, as on host loads.
+static void host_enhancement_reset(const BwGameEvent* event, void* user) {
+    if (event->kind == BW_GAME_EVENT_SCENE_LEAVING ||
+        event->kind == BW_GAME_EVENT_TRANSITION_STARTED ||
+        event->kind == BW_GAME_EVENT_SCENE_ENTERED) {
+        // A scene boundary cancels only Sprint's latch and borrowed HIO baseline.
+        // The controls generation suppresses still-held sources until release.
+        bluewake_sprint_reset((CPUState*)user);
+        return;
+    }
+    if (event->kind == BW_GAME_EVENT_SAVE_COMPLETED) {
+        bluewake_autosave_note_native_save((CPUState*)user);
+        return;
+    }
+    if (event->kind != BW_GAME_EVENT_RESET)
+        return;
+    // The event epoch already cancels pending native calls on CARD load.
+    // Other machine replacements revoke borrowed CPU/RAM/module ownership.
+    // Do not change the observer callback from within its notification.
+    if (event->reset_reason != BW_GAME_RESET_GAME_LOAD)
+        bw_song_host_revoke(&g_song_host);
+    bluewake_quick_items_reset((CPUState*)user);
+    bluewake_sprint_reset((CPUState*)user);
+    bluewake_dialogue_speed_reset((CPUState*)user);
+    bluewake_enhancement_hooks_reset((CPUState*)user);
+    bw_health_host_reset();
+    host_audio_diagnostics_report("native-reset");
+    host_audio_owner_attach((CPUState*)user);
+    bluewake_autosave_reset((CPUState*)user, event->reset_reason == BW_GAME_RESET_GAME_LOAD);
+}
 
 /* Read-only handshake for direct calls. Use the same dynamic predicate as
  * ordinary edges, including overlap-phase changes that interrupt flags alone
  * do not describe. Feature ranges and an armed jump must retain their hooks. */
+static uint32_t host_hud_alias_generation(void* unused){(void)unused;return g_ppc_guest_alias_generation;}
+static void host_hud_emit(uint8_t reg,uint32_t value,void* unused) {
+    (void)unused;dol_platform_gx_write(0x61u,1);
+    dol_platform_gx_write(((uint32_t)reg<<24)|(value&0xFFFFFFu),4);
+}
 static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 address) {
     (void)user;
 #if BLUEWAKE_ENABLE_DEVELOPER_TRACING || BLUEWAKE_EDGE_CENSUS
@@ -1919,6 +2126,13 @@ static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 addre
     const bool allowed = !g_deadline_census_enabled && !g_delivery_safety_census_enabled &&
            !g_guest_state_trace_enabled && !bluewake_jump_button_armed &&
            !bluewake_feature_observes(address) &&
+           !bluewake_game_events_observes(address) &&
+           !bw_hud_host_observes(cpu,address) &&
+           !bw_health_host_observes(cpu,address) &&
+           !bluewake_quick_items_observes(address) &&
+           !bluewake_dialogue_speed_observes(address) &&
+           !bluewake_enhancement_hooks_observes_context(cpu, address) &&
+           !bluewake_autosave_observes(address) &&
            !(address == BW_SEARCH_JUDGE_FILTER && g_actor_search_native) &&
            !host_chassis_requires_full(cpu, address);
     return allowed;
@@ -1934,11 +2148,73 @@ static bool host_direct_can_skip(void* user, const CPUState* cpu, u32 address) {
     return allowed;
 }
 
+static bool host_autosave_dispatch(CPUState* cpu, u32 address) {
+    if (address == BLUEWAKE_AUTOSAVE_RETURN && bluewake_autosave_active()) {
+        bluewake_mouse_camera_discard_input();
+        bluewake_jump_button_discard_input();
+    }
+    // Native save observations must see the real return value before the
+    // owned continuation consumes it or restores the suspended caller.
+    if (bluewake_autosave_owns_native_call(cpu, address)) {
+        if (address == BLUEWAKE_AUTOSAVE_RETURN) {
+            bluewake_game_events_dispatch(cpu, address);
+        } else {
+            BluewakeAutosaveAudit audit;
+            bluewake_autosave_audit(cpu, &audit);
+            (void)bluewake_game_events_arm_host_save(cpu, address, (int8_t)audit.slot, audit.scratch);
+        }
+    }
+    const bool redirected = bluewake_autosave_dispatch(cpu, address);
+    if (g_autosave_trace) {
+        static unsigned phase_before = UINT_MAX, reason_before = UINT_MAX, reports;
+        BluewakeAutosaveStatus status;
+        bluewake_autosave_status(&status);
+        if ((unsigned)status.phase != phase_before || (unsigned)status.reason != reason_before) {
+            phase_before = status.phase; reason_before = status.reason;
+            if (++reports <= 80u || status.phase == BW_AUTOSAVE_IDLE || status.phase == BW_AUTOSAVE_QUARANTINED) {
+                BluewakeAutosaveAudit audit;
+                bluewake_autosave_audit(cpu, &audit);
+                fprintf(stderr, "[autosave-phase] tick=%llu address=%08X phase=%u reason=%u pc=%08X sp=%08X thread=%08X context=%08X fpu=%08X owner=%u heap=%08X scratch=%08X slot=%u command=%u state=%u completed=%llu failed=%llu\n",
+                        (unsigned long long)g_host_retrace_count, address, (unsigned)status.phase,
+                        (unsigned)status.reason, cpu->pc, cpu->gpr[1], audit.current_thread,
+                        audit.current_context, audit.fpu_context, audit.boundary_owner_valid ? 1u : 0u,
+                        audit.heap, audit.scratch, audit.slot, audit.card_command, audit.card_state,
+                        (unsigned long long)status.completed, (unsigned long long)status.failed);
+            }
+        }
+    }
+    return redirected;
+}
+
 static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
+    if (host_autosave_dispatch(cpu, address)) return true;
 #if BLUEWAKE_ENABLE_DEVELOPER_TRACING
     host_trace_bgm_stream(cpu, address);
 #endif
+    // Observe genuine native entries/returns before feature hooks can redirect.
+    // These sites also lie outside the geometry feature interval.
+    if (address != BLUEWAKE_AUTOSAVE_RETURN)
+        bluewake_game_events_dispatch(cpu, address);
+    bw_hud_host_dispatch(cpu,address);
+    bw_health_host_dispatch(cpu,address,bluewake_autosave_active());
+    if (bluewake_autosave_active()) {
+        // Native scheduler, card callbacks, FPU ownership and device edges
+        // still run; gameplay hooks cannot mutate the suspended actor/save.
+        return host_chassis_requires_full(cpu, address) ?
+            host_chassis_edge_service_full(user, cpu, address) : false;
+    }
+    bluewake_dialogue_speed_dispatch(cpu, address);
+    bluewake_enhancement_hooks_dispatch(cpu, address);
+    const u32 shortcut_pc = cpu->pc;
+    bluewake_quick_items_dispatch(cpu, address);
+    if (cpu->pc != shortcut_pc)
+        return true;
+    const u32 feature_pc = cpu->pc;
     bluewake_feature_dispatch(cpu, address);
+    // A feature can choose a validated guest continuation. End this turn so
+    // the chassis resumes there instead of dispatching the old edge address.
+    if (cpu->pc != feature_pc)
+        return true;
     if (bluewake_jump_button_dispatch(cpu, address))
         return true;
     if (host_chassis_requires_full(cpu, address))
@@ -2496,6 +2772,7 @@ static bool host_materialize_rel(CPUState* cpu, const char* name, u32 owner,
         if ((int)i != slot_index && !host_rel_slot_is_live(cpu, slot) &&
             slot.owner != 0u && (u64)address < slot_end &&
             allocation_end > slot.address) {
+            bw_song_host_clear_slot(&g_song_host, i);
             g_rel_slots[i] = (BlueWakeRelSlot){0};
         }
     }
@@ -2503,6 +2780,8 @@ static bool host_materialize_rel(CPUState* cpu, const char* name, u32 owner,
     g_rel_slots[slot_index] = (BlueWakeRelSlot){owner, address, capacity};
     for (u32 offset = 0; offset < (u32)size; offset++)
         mem_write8(cpu, address + offset, bytes[offset]);
+    // Only a real byte-copy commit gives this slot a fresh materialization.
+    bw_song_host_materialized(&g_song_host, cpu, (u32)slot_index);
     free(bytes);
     *guest_ptr = address;
     *byte_count = (u32)size;
@@ -4028,8 +4307,44 @@ static void save_route_step(CPUState* cpu) {
         // is that cursor), 23 auto-advances the completion message, 25 waits
         // for a key, 29 raises the "return to the title screen?" question with
         // 30 taking its answer, and 31 is that answer acting: it requests the
-        // reset. Everything else in the chain is the card work itself.
-        if (proc == 0u || proc == 25u) {
+        // reset. A fresh card also asks to create its game file (13), then
+        // acknowledges creation (4). Use native cursor/message readiness;
+        // this diagnostic route supplies PAD input only.
+        const u32 file_error = mem_read32(cpu, dms_collect + BLUEWAKE_DMS_OFF_FILE_ERROR);
+        const bool file_error_valid = file_error >= 0x80000000u &&
+            cpu->ram_size >= BLUEWAKE_FILE_ERROR_OFF_YES_NO + 1u &&
+            file_error - 0x80000000u <= cpu->ram_size - (BLUEWAKE_FILE_ERROR_OFF_YES_NO + 1u);
+        const u8 file_error_state = file_error_valid
+            ? mem_read8(cpu, file_error + BLUEWAKE_FILE_ERROR_OFF_STATE) : 0xFFu;
+        if (proc == 13u) {
+            if (file_error_state != 4u || retrace < g_save_route_next_retrace)
+                return;
+            const u8 yes_no = mem_read8(cpu, file_error + BLUEWAKE_FILE_ERROR_OFF_YES_NO);
+            if (yes_no > 1u)
+                return;
+            if (proc == g_save_route_acted_proc &&
+                (yes_no == 1u || g_save_route_acted_status == status) &&
+                retrace < g_save_route_acted_retrace + 150u)
+                return;
+            g_save_route_acted_proc = proc;
+            g_save_route_acted_retrace = retrace;
+            if (yes_no == 1u) {
+                // The create-file question defaults to No. Left selects Yes;
+                // wait before A and verify the guest actually moved its cursor.
+                g_save_route_acted_status = 0xFFu;
+                save_route_press_stick(1u, 3u);
+                g_save_route_next_retrace = retrace + 20u;
+                fprintf(stderr, "[save-milestone] press=stick-left create-file retrace=%llu\n",
+                        (unsigned long long)(retrace + 1u));
+            } else {
+                g_save_route_acted_status = status;
+                save_route_press(&g_save_confirm_pulse);
+                fprintf(stderr, "[save-milestone] press=A create-file retrace=%llu\n",
+                        (unsigned long long)(retrace + 1u));
+            }
+            return;
+        }
+        if (proc == 0u || proc == 25u || (proc == 4u && file_error_state == 3u)) {
             // A prompt that needs a key: press it, and press it again if the
             // save screen has not moved on, because an A that lands while the
             // panel is still fading in is dropped and one press is not proof
@@ -4199,10 +4514,11 @@ static void host_si_complete_pad_transfer(u32 control) {
     DolPadState merged_pad;
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
-        bluewake_mouse_camera_pad(&live_pad[0]);
+        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]);
     } else if (bluewake_mouse_camera_scripted()) {
-        bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
+        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
+    if (bluewake_autosave_active()) bluewake_mouse_camera_discard_input();
     host_note_live_input(&live_pad[0]);
     bluewake_pad_merge(g_live_takeover ? &live_pad[channel] : &g_virtual_pad[channel],
                        &live_pad[channel], &merged_pad);
@@ -4302,10 +4618,11 @@ static void host_si_latch_pad_poll(void) {
     DolPadState live_pad[4] = {{0}};
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
-        bluewake_mouse_camera_pad(&live_pad[0]);
+        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]);
     } else if (bluewake_mouse_camera_scripted()) {
-        bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
+        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
+    if (bluewake_autosave_active()) bluewake_mouse_camera_discard_input();
     host_note_live_input(&live_pad[0]);
     for (u32 channel = 0; channel < 4u; channel++) {
         if ((channel_mask & (1u << channel)) == 0u)
@@ -4774,6 +5091,13 @@ static bool host_audio_dma_read_guest(void* user, u32 source_address,
     // the runtime's PCM decoder/platform sink. Never change guest RAM.
     if (!bluewake_audio_dma_rl_to_lr(data, size))
         return false;
+#if defined(BLUEWAKE_WINDOWS)
+    // One preview insertion per copy; native RAM is untouched. Music is applied
+    // to preview here, then one existing Master/mute gain covers final output.
+    (void)bluewake_audio_preview_mix_be16(g_audio_preview, data, size,
+                                          dol_audio_dma_sample_rate(&g_audio_dma));
+#endif
+    (void)bluewake_audio_customize_output_be16(data, size);
     if (!bluewake_audio_capture_append_be16_stereo(
             &g_audio_capture, data, size,
             dol_audio_dma_sample_rate(&g_audio_dma)) &&
@@ -5005,15 +5329,55 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         host_trace_bgm_stream(cpu, 0u);
 #endif
         aurora_backend_service_present();
+        bluewake_game_events_retrace(cpu);
+        host_audio_diagnostics_retrace();
+        const bool autosaving = bluewake_autosave_active();
+        bw_hud_host_retrace(cpu,g_host_retrace_count,autosaving);
+        bw_health_host_retrace(cpu,autosaving);
+        if (autosaving) {
+            bluewake_mouse_camera_discard_input();
+            bluewake_jump_button_discard_input();
+            bluewake_sprint_cancel();
+        }
+        if (!autosaving) {
+#if defined(BLUEWAKE_WINDOWS)
+        bw_network_game_retrace(cpu);
+#endif
         host_mods_reapply(cpu);
         bluewake_game_options_retrace(cpu);
-        bluewake_mouse_camera_retrace();
-        bluewake_jump_button_retrace();
-        bluewake_sprint_retrace();
-        bluewake_fps_watch_retrace();
-        bluewake_fast_load_retrace(bluewake_host_thread_cpu_us());
-        bluewake_quick_doors_retrace();
-        bluewake_haptics_retrace();
+        bluewake_climb_retrace(cpu);
+        }
+        bool autosave_input_blocked = false;
+#if defined(BLUEWAKE_WINDOWS)
+        bluewake_controls_retrace();
+        BluewakeControlsActions shortcut_input;
+        const bool shortcut_managed = bluewake_controls_read_actions(&shortcut_input);
+        autosave_input_blocked = shortcut_input.blocked;
+        if (!g_shortcut_test_enabled)
+            bluewake_quick_items_input(shortcut_managed && shortcut_input.quick_items_down,
+                                      autosaving || !shortcut_managed || shortcut_input.blocked,
+                                      shortcut_managed ? shortcut_input.generation : 0u,
+                                      shortcut_managed ? shortcut_input.quick_items_native_buttons : 0u);
+#else
+        if (!g_shortcut_test_enabled)
+            bluewake_quick_items_input(false, true, 0u, 0u);
+#endif
+        if (g_shortcut_test_enabled)
+            bluewake_quick_items_input(g_host_retrace_count >= g_shortcut_test_start &&
+                                      g_host_retrace_count - g_shortcut_test_start < g_shortcut_test_length,
+                                      autosaving, UINT64_MAX, 0u);
+        bluewake_autosave_retrace(cpu, g_host_retrace_count, g_autosave_host_safe,
+                                  autosave_input_blocked);
+        if (!autosaving) {
+            bluewake_mouse_camera_retrace();
+            bluewake_enhancement_hooks_retrace(cpu);
+            bluewake_jump_button_retrace();
+            bluewake_sprint_retrace();
+            bluewake_fast_load_retrace(bluewake_host_thread_cpu_us());
+            bluewake_quick_doors_retrace();
+            bluewake_haptics_retrace();
+            bluewake_fps_watch_retrace();
+        }
         if (g_wall_pace_enabled && !bluewake_fast_load_fast_forward())
             host_wall_pace(g_host_retrace_count);
         if (g_perf_log_enabled)
@@ -6252,6 +6616,8 @@ static bool host_state_save(const char* path, CPUState* cpu,
         free(gx);
         return false;
     }
+    // Host Sprint latches are not serialized: capture the native HIO baseline.
+    bluewake_sprint_cancel();
     HostStateHeader header;
     host_state_header(&header, cpu, mod);
     bool ok = bw_state_write_chunk(writer, "HEADER", &header, sizeof header);
@@ -6458,6 +6824,11 @@ static bool host_state_load(const char* path, CPUState* cpu,
     // lists, vertex arrays, textures) as it translates.
     if (g_state_aurora)
         dol_aurora_gx_drain();
+    host_audio_diagnostics_report("state-replace");
+    host_audio_owner_attach(NULL);
+    bluewake_sprint_cancel();
+    bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+    host_song_owner_revoke();
     memcpy(cpu, chunk->data, saved.cpu_pod_size);
     memcpy(cpu->ram, mem1->data, cpu->ram_size);
     chunk = bw_state_find(&reader, "ARAM");
@@ -6563,6 +6934,20 @@ static bool host_state_load(const char* path, CPUState* cpu,
     // What the machine derives from the state rather than holds.
     if (mod->on_state_loaded != NULL)
         mod->on_state_loaded(cpu);
+    bluewake_game_events_reset(cpu, BW_GAME_RESET_STATE_LOAD);
+    // Explicit ownership: a restored machine may have a different native HIO.
+    bluewake_sprint_reset(cpu);
+    // FORCE may load a different game translation; that must not authorize
+    // this exact module257 observer. Missing/old loader fields also fail closed.
+    if (saved.chunk_digest == here.chunk_digest && saved.chunk_count == here.chunk_count &&
+        memcmp(saved.game_id, here.game_id, sizeof saved.game_id) == 0 &&
+        bw_song_host_state_fields(vars->data, vars->size))
+        host_song_owner_bind(cpu, mod, true);
+    if(saved.chunk_digest==here.chunk_digest&&saved.chunk_count==here.chunk_count&&
+       !memcmp(saved.game_id,here.game_id,sizeof saved.game_id)&&saved.mod_mask==here.mod_mask) {
+        (void)bw_hud_host_resume(cpu,mod);
+        (void)bw_health_host_attach(cpu,mod);
+    }
     g_overlap_cached_alias_state = 0xFFFFFFFFu;
     g_overlap_cached_object = 0u;
     g_overlap_slot_ptr = NULL;
@@ -6701,6 +7086,8 @@ void bluewake_save_state_hotkey(bool load) {
 // What must not be in flight when the machine is written or replaced.
 static const char* host_state_unsafe_reason(const CPUState* cpu,
                                             const HostStateLoop* loop) {
+    if (bluewake_autosave_active())
+        return "native autosave in progress";
     if (cpu->exception != 0u)
         return "exception pending";
     if (*loop->rel_prolog_sda_pending)
@@ -6709,6 +7096,8 @@ static const char* host_state_unsafe_reason(const CPUState* cpu,
         return "memory card callback in flight";
     if (bluewake_quick_doors_busy())
         return "quick door in progress";
+    if (bluewake_quick_items_busy())
+        return "ship equipment shortcut in progress";
     if (mem_read32((CPUState*)cpu, 0x803F6160u) >= 0x80000000u)
         return "scene change in progress";
     return NULL;
@@ -6774,6 +7163,9 @@ static void host_state_try_save(CPUState* cpu, const StaticRecompModuleDesc* mod
 // The per-turn hook, before the turn begins.
 static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* mod,
                                    const HostStateLoop* loop) {
+    // Keep requested state operations queued until the native store drains.
+    // Replacing RAM or dropping a load request here would break its owner.
+    if (bluewake_autosave_active()) return;
     bool retrace_boundary = false;
     if (__builtin_expect(g_host_retrace_count != g_state_poll_retrace, 0)) {
         g_state_poll_retrace = g_host_retrace_count;
@@ -6805,6 +7197,9 @@ static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* 
 }
 
 int main(int argc, char** argv) {
+    // A repeated in-process invocation cannot retain a borrowed previous CPU.
+    bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+    host_song_owner_revoke();
     // The options menu's saved choices, before anything reads the environment.
     bluewake_settings_load();
     host_apply_aspect();
@@ -7112,8 +7507,13 @@ int main(int argc, char** argv) {
             .graphics_logging = getenv("DOL_AURORA_RECOMP_GRAPHICS_LOG") != NULL,
             .force_untextured = false,
         };
+        /* A process-lifetime callback; install before worker initialization. */
+        (void)bw_hud_renderer_install();
         if (dol_aurora_initialize(argc, argv, &aurora_config)) {
             aurora_enabled = true;
+#if defined(BLUEWAKE_WINDOWS)
+            bw_settings_start_asset_packs();
+#endif
             // BLUEWAKE_LIVE_PAD=0 (test runs): the pad script alone, even with a
             // controller connected whose resting axes read as a person.
             const char* live_pad = getenv("BLUEWAKE_LIVE_PAD");
@@ -7138,8 +7538,12 @@ int main(int argc, char** argv) {
     }
     if (!dol_platform_pad_init()) {
         fprintf(stderr, "[pad] platform input initialization failed\n");
-        if (aurora_enabled)
-            dol_aurora_shutdown();
+        if (aurora_enabled) {
+#if defined(BLUEWAKE_WINDOWS)
+            bw_asset_pack_menu_shutdown();
+#endif
+            { bw_hud_host_detach(); bw_health_host_detach(); dol_aurora_shutdown(); }
+        }
         return 1;
     }
     fprintf(stderr, "[pad] platform input initialized; live input %s at SI\n",
@@ -7148,8 +7552,12 @@ int main(int argc, char** argv) {
 
     const char* card_path = getenv("BLUEWAKE_CARD_PATH");
     if (!bluewake_card_runtime_open(card_path)) {
-        if (aurora_enabled)
-            dol_aurora_shutdown();
+        if (aurora_enabled) {
+#if defined(BLUEWAKE_WINDOWS)
+            bw_asset_pack_menu_shutdown();
+#endif
+            { bw_hud_host_detach(); bw_health_host_detach(); dol_aurora_shutdown(); }
+        }
         return 1;
     }
     atexit(bluewake_card_runtime_close);
@@ -7299,6 +7707,8 @@ int main(int argc, char** argv) {
     g_resource_lookup_reports = 0;
     g_resource_info_reports = 0;
     g_rel_lwood_ctor_watch = 0u;
+    bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+    host_song_owner_revoke();
     memset(g_rel_slots, 0, sizeof(g_rel_slots));
     g_rel_alias_count = 0u;
     g_rel_alias_raw_min = ~0u;
@@ -7449,7 +7859,26 @@ int main(int argc, char** argv) {
     printf("[host] DOL loaded: entry=%#010x bss=[%#010x,%#010x)\n",
            layout.entry_point, layout.bss_address, layout.bss_address + layout.bss_size);
 #ifdef BLUEWAKE_HAS_DSP_ADAPTER
+    const char* audio_trace = getenv("BLUEWAKE_AUDIO_CATEGORY_TRACE");
+    g_audio_category_trace = audio_trace != NULL && strcmp(audio_trace, "1") == 0;
+    bluewake_audio_diagnostics_enable(g_audio_category_trace);
+    host_audio_owner_attach(&cpu);
+    const char* audio_test_gains = getenv("BLUEWAKE_AUDIO_TEST_GAINS");
+    if (audio_test_gains != NULL) {
+        unsigned master, music, sfx, muted;
+        char trailing;
+        const char* renderer = getenv("BLUEWAKE_RENDERER");
+        const char* live_pad = getenv("BLUEWAKE_LIVE_PAD");
+        const bool isolated = renderer != NULL && strcmp(renderer, "headless") == 0 &&
+                              live_pad != NULL && strcmp(live_pad, "0") == 0;
+        if (isolated && sscanf(audio_test_gains, "%u:%u:%u:%u%c", &master, &music, &sfx, &muted, &trailing) == 4 &&
+            muted <= 1u && bluewake_audio_configure(master, music, sfx, muted != 0u))
+            fprintf(stderr, "[audio] isolated gains master=%u music=%u sfx=%u muted=%u\n", master, music, sfx, muted);
+        else
+            fprintf(stderr, "[audio] ignored test gains: requires isolated headless input-disabled valid tuple\n");
+    }
     if (!host_dsp_adapter_init(&cpu)) {
+        host_audio_owner_attach(NULL);
         bw_module_cpu_free(&module_storage);
         return 1;
     }
@@ -7470,6 +7899,8 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[rel] composite is missing guest-data alias ABI\n");
             return 1;
         }
+        bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+        host_song_owner_revoke();
         module_alias_clear();
         pthread_mutex_lock(&g_guest_alias_lock);
         ppc_guest_alias_clear();
@@ -7741,6 +8172,43 @@ int main(int argc, char** argv) {
             gather_mode == BLUEWAKE_GATHER_DIRECT ? "direct" : "off");
     host_mods_enable(lib, &cpu);
     bluewake_game_options_enable(lib, &cpu, g_options_mod);
+    const char* shortcut_test = getenv("BLUEWAKE_SHORTCUT_TEST");
+    if (shortcut_test != NULL && shortcut_test[0] != '\0') {
+        unsigned long long start, length;
+        char trailing;
+        const char* live_pad = getenv("BLUEWAKE_LIVE_PAD");
+        const bool isolated = !aurora_enabled && renderer != NULL &&
+                              strcmp(renderer, "headless") == 0 && live_pad != NULL &&
+                              strcmp(live_pad, "0") == 0;
+        if (isolated && sscanf(shortcut_test, "%llu:%llu%c", &start, &length, &trailing) == 2 &&
+            length != 0u) {
+            g_shortcut_test_enabled = true;
+            g_shortcut_test_start = start;
+            g_shortcut_test_length = length;
+            bluewake_quick_items_configure(true);
+            fprintf(stderr, "[shortcuts] isolated modifier test start=%llu length=%llu\n", start, length);
+        } else {
+            fprintf(stderr, "[shortcuts] ignored modifier test: requires headless, live pad 0, start:length\n");
+        }
+    }
+    bluewake_quick_items_attach(&cpu);
+    bluewake_dialogue_speed_attach(&cpu);
+    bluewake_enhancement_hooks_attach(&cpu);
+    bluewake_autosave_attach(&cpu);
+    g_autosave_trace = getenv("BLUEWAKE_AUTOSAVE_TRACE") != NULL;
+    g_enhancement_reset_subscription = bluewake_game_events_subscribe(
+        BW_GAME_EVENT_MASK(BW_GAME_EVENT_RESET) | BW_GAME_EVENT_MASK(BW_GAME_EVENT_SAVE_COMPLETED) |
+        BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_LEAVING) | BW_GAME_EVENT_MASK(BW_GAME_EVENT_TRANSITION_STARTED) |
+        BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_ENTERED),
+        host_enhancement_reset, &cpu);
+    bluewake_game_events_attach(&cpu);
+    host_song_owner_bind(&cpu, mod, false);
+    (void)bw_health_host_attach(&cpu,mod);
+    (void)bw_hud_host_attach(&cpu,mod,host_hud_alias_generation,NULL,host_hud_emit,NULL,
+        aurora_enabled&&dol_aurora_gxcore_plan_filter_available(),g_hud_four_thirds);
+#if defined(BLUEWAKE_WINDOWS)
+    bw_network_game_attach(&cpu);
+#endif
     bluewake_mouse_camera_attach(&cpu);
     bluewake_climb_attach(&cpu);
     bluewake_jump_button_attach(&cpu);
@@ -8112,20 +8580,43 @@ int main(int argc, char** argv) {
         if (load_state != NULL && load_state[0] != '\0') {
             if (!host_state_load(load_state, &cpu, mod, &state_loop)) {
                 fprintf(stderr, "[state] BLUEWAKE_LOAD_STATE=%s failed\n", load_state);
+                bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+                host_song_owner_revoke();
+                bluewake_game_events_reset(NULL, BW_GAME_RESET_MODULE_RELOAD);
+                // Reset notification carries the prior subscriber user pointer.
+                // Keep a failed load detached after those callbacks finish.
+                bluewake_sprint_reset(NULL);
                 bluewake_haptics_shutdown();
-                if (aurora_enabled)
-                    dol_aurora_shutdown();
+                if (aurora_enabled) {
+#if defined(BLUEWAKE_WINDOWS)
+                    bw_asset_pack_menu_shutdown();
+#endif
+                    { bw_hud_host_detach(); bw_health_host_detach(); dol_aurora_shutdown(); }
+                }
                 return 1;
             }
         }
     }
-    while ((max_blocks == 0ull || blocks < max_blocks) && !stop_reason &&
-           (max_retraces == 0ull ||
-            g_host_retrace_count < max_retraces)) {
+    while (!stop_reason && (bluewake_autosave_active() ||
+           ((max_blocks == 0ull || blocks < max_blocks) &&
+            (max_retraces == 0ull || g_host_retrace_count < max_retraces)))) {
         host_state_turn(&cpu, mod, &state_loop);
+        g_autosave_host_safe = !rel_prolog_sda_pending && !g_state_hotkey_load &&
+                              !g_state_hotkey_save && !g_state_save_armed &&
+                              !bluewake_jump_button_armed &&
+                              !bluewake_quick_doors_busy() && !bluewake_quick_items_busy() &&
+                              dol_hle_callback_idle() && !dol_platform_should_quit();
         g_current_host_block = blocks;
         bluewake_cycle_domain_begin_turn(&g_cycle_domain, &cpu);
-        if (dol_platform_should_quit()) { stop_reason = "quit"; break; }
+        if (dol_platform_should_quit() && !bluewake_autosave_active()) { stop_reason = "quit"; break; }
+        if (bluewake_autosave_active()) {
+            BluewakeAutosaveStatus autosave;
+            bluewake_autosave_status(&autosave);
+            if (autosave.phase == BW_AUTOSAVE_QUARANTINED) {
+                fprintf(stderr, "[autosave] quarantined: %s\n", bluewake_autosave_reason_text(autosave.reason));
+                stop_reason = "autosave owner"; break;
+            }
+        }
         bluewake_card_runtime_service_callback(&cpu);
         bluewake_card_runtime_dispatch(&cpu);
         if (g_host_retrace_count != scene_milestone_last_retrace) {
@@ -13514,6 +14005,28 @@ int main(int argc, char** argv) {
             g_turn_edge_hit = false;
             g_turn_downcount_before_last_block = cpu.downcount;
         }
+        // The chassis observes successors inside its loop, but its first PC
+        // may be a watched return deferred by the previous turn's budget.
+        // Climb handles replay of an already serviced return without changing
+        // native ivy. A geometry redirect supplies the PC dispatched below.
+        const bool autosave_redirected = host_autosave_dispatch(&cpu, cpu.pc);
+        // A consumed first-PC return can redirect straight into the next
+        // native save call. Its entry needs observation before dispatch too.
+        if (autosave_redirected) (void)host_autosave_dispatch(&cpu, cpu.pc);
+        if (!autosave_redirected) {
+            if (cpu.pc != BLUEWAKE_AUTOSAVE_RETURN)
+                bluewake_game_events_dispatch(&cpu, cpu.pc);
+            bw_hud_host_dispatch(&cpu,cpu.pc);
+            bw_health_host_dispatch(&cpu,cpu.pc,bluewake_autosave_active());
+            if (!bluewake_autosave_active()) {
+                bluewake_dialogue_speed_dispatch(&cpu, cpu.pc);
+                bluewake_enhancement_hooks_dispatch(&cpu, cpu.pc);
+                const u32 first_shortcut_pc = cpu.pc;
+                bluewake_quick_items_dispatch(&cpu, cpu.pc);
+                if (cpu.pc == first_shortcut_pc)
+                    bluewake_climb_dispatch(&cpu, cpu.pc);
+            }
+        }
         int dispatched = mod->dispatch(&cpu, cpu.pc);
         if (turn_census)
             host_turn_exit_classify(&cpu, dispatched);
@@ -15759,13 +16272,66 @@ int main(int argc, char** argv) {
                 g_heap_write_watch_reports + g_heap_write_watch_control_reports);
     (void)bluewake_gather_pipe_configure(
         set_gather_word, set_gather_bytes, NULL, NULL, NULL, NULL, false);
+    bw_hud_host_detach(); bw_health_host_detach();
     bluewake_haptics_shutdown();
+#if defined(BLUEWAKE_WINDOWS)
+    bw_network_game_detach();
+    bw_asset_pack_menu_shutdown();
+#endif
     if (aurora_enabled)
         dol_aurora_shutdown();
 #ifdef BLUEWAKE_HAS_DSP_ADAPTER
+    host_audio_diagnostics_report("shutdown");
     host_dsp_adapter_shutdown();
 #endif
+    host_audio_owner_attach(NULL);
+    bluewake_sprint_reset(NULL);
     bluewake_card_runtime_close();
+    if (getenv("BLUEWAKE_AUTOSAVE_TRACE") != NULL || bluewake_autosave_desired()) {
+        BluewakeAutosaveStatus autosave;
+        bluewake_autosave_status(&autosave);
+        fprintf(stderr, "[autosave-summary] completed=%llu failed=%llu deferred=%llu last_success=%llu phase=%u reason=%u\n",
+                (unsigned long long)autosave.completed, (unsigned long long)autosave.failed,
+                (unsigned long long)autosave.deferred, (unsigned long long)autosave.last_success_tick,
+                (unsigned)autosave.phase, (unsigned)autosave.reason);
+    }
+    if (g_shortcut_test_enabled || getenv("BLUEWAKE_SHORTCUT_TRACE") != NULL) {
+        BluewakeQuickItemsStats stats;
+        bluewake_quick_items_stats(&stats);
+        fprintf(stderr, "[shortcuts-summary] accepted=%llu handoffs=%llu cannon=%llu crane=%llu restored=%llu cancelled=%llu\n",
+                (unsigned long long)stats.accepted, (unsigned long long)stats.native_handoffs,
+                (unsigned long long)stats.cannon_operations, (unsigned long long)stats.crane_operations,
+                (unsigned long long)stats.overlay_restores, (unsigned long long)stats.cancelled);
+    }
+    if (getenv("BLUEWAKE_DIALOGUE_TRACE") != NULL) {
+        BwDialogueSpeedStats stats;
+        bluewake_dialogue_speed_stats(&stats);
+        fprintf(stderr, "[dialogue-summary] entries=%llu completed=%llu scaled=%llu cancelled=%llu overflow=%llu legacy_entries=%llu legacy_completed=%llu legacy_budget_scaled=%llu legacy_spacing_scaled=%llu legacy_cancelled=%llu\n",
+                (unsigned long long)stats.entries, (unsigned long long)stats.completed,
+                (unsigned long long)stats.scaled, (unsigned long long)stats.cancelled,
+                (unsigned long long)stats.pending_overflow,
+                (unsigned long long)stats.legacy_entries, (unsigned long long)stats.legacy_completed,
+                (unsigned long long)stats.legacy_budget_scaled, (unsigned long long)stats.legacy_spacing_scaled,
+                (unsigned long long)stats.legacy_cancelled);
+    }
+    if (getenv("BLUEWAKE_ENHANCEMENT_TRACE") != NULL) {
+        BwEnhancementHooksStats stats;
+        bluewake_enhancement_hooks_stats(&stats);
+        fprintf(stderr, "[equipment-summary] wind_entries=%llu wind_completed=%llu wind_shortened=%llu boots_entries=%llu boots_completed=%llu boots_scaled=%llu cancelled=%llu\n",
+                (unsigned long long)stats.wind_entries, (unsigned long long)stats.wind_completed,
+                (unsigned long long)stats.wind_shortened, (unsigned long long)stats.boots_entries,
+                (unsigned long long)stats.boots_completed, (unsigned long long)stats.boots_scaled,
+                (unsigned long long)stats.cancelled);
+    }
+    (void)bluewake_game_events_unsubscribe(g_enhancement_reset_subscription);
+    g_enhancement_reset_subscription = 0u;
+    bluewake_quick_items_reset(NULL);
+    bluewake_dialogue_speed_reset(NULL);
+    bluewake_enhancement_hooks_reset(NULL);
+    bluewake_autosave_detach();
+    bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
+    host_song_owner_revoke();
+    bluewake_game_events_reset(NULL, BW_GAME_RESET_MODULE_RELOAD);
     bw_module_cpu_free(&module_storage);
     if (g_gx_flush_census) {
         fprintf(stderr, "[gx-flush] retrace=%llu calls=%llu us=%llu\n",
