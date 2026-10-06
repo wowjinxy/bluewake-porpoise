@@ -1,0 +1,261 @@
+Subject: [PATCH] Recycle retired render-command storage with bounded capacity
+Based-on: elliotttate <elliotttate@gmail.com>, 11c1369c56a04de086a053de491f365b7d0274a8
+
+Candidate only, on the canonical eleven patches plus tested primitive fusion.
+Keep the existing packet retirement points and all reader ordering. Bound cached
+capacity and discard it only after the render worker has synchronized and joined.
+No native gameplay or GPU performance claim.
+
+---
+diff --git a/tests/render_command_storage_test.cpp b/tests/render_command_storage_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/render_command_storage_test.cpp
+@@ -0,0 +1,226 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Actual pool/Command layout/worker; authored encoding/replay with no GPU calls.
++#include "GXRuntime/graphics/aurora/lib/gfx/common.hpp"
++#include "GXRuntime/graphics/aurora/lib/gfx/clear.hpp"
++#include "GXRuntime/graphics/aurora/lib/gx/pipeline.hpp"
++#include "GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp"
++#include "GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp"
++#include "GXRuntime/graphics/aurora/lib/gfx/thread_cpu.hpp"
++#include "GXRuntime/graphics/aurora/lib/gfx/command_list_pool.hpp"
++#include "command_storage_actual_command.inc"
++#include <array>
++#include <atomic>
++#include <cassert>
++#include <condition_variable>
++#include <cstdio>
++#include <cstring>
++#include <memory>
++#include <mutex>
++#include <stdexcept>
++#include <thread>
++#include <type_traits>
++
++namespace worker = aurora::gfx::render_worker;
++using aurora::gfx::Command;
++using aurora::gfx::CommandType;
++// Debug commands own vectors; compare active fields and owned strings, never raw object bytes.
++static std::atomic<std::size_t> checks{}, allocations{}, frees{}, live_bytes{}, peak_bytes{}, registrations{};
++static std::atomic_bool fail_allocate{};
++#define TEST_CHECK(value) do { ++checks; if (!(value)) { std::fprintf(stderr,"check failed: %s:%d: %s\n",__FILE__,__LINE__,#value); std::abort(); } } while (0)
++
++// No profiling/device/native stand-in is invoked; worker registration is counted.
++namespace aurora::gfx::thread_cpu {
++void register_current(Role role) { TEST_CHECK(role == Role::RenderWorker); ++registrations; }
++}
++template<class T> struct Allocator {
++  using value_type = T;
++  using is_always_equal = std::true_type;
++  Allocator() = default;
++  template<class U> Allocator(const Allocator<U>&) {}
++  T* allocate(std::size_t n) {
++    if (fail_allocate.exchange(false)) throw std::bad_alloc{};
++    auto* p = std::allocator<T>{}.allocate(n);
++    ++allocations;
++    auto current = live_bytes.fetch_add(n * sizeof(T)) + n * sizeof(T);
++    auto peak = peak_bytes.load();
++    while (current > peak && !peak_bytes.compare_exchange_weak(peak, current)) {}
++    return p;
++  }
++  void deallocate(T* p, std::size_t n) {
++    ++frees; live_bytes -= n * sizeof(T); std::allocator<T>{}.deallocate(p, n);
++  }
++  template<class U> bool operator==(const Allocator<U>&) const { return true; }
++};
++using List = std::vector<Command, Allocator<Command>>;
++using Pool = aurora::gfx::CommandListPool<List>;
++
++static Command command(std::size_t frame, std::size_t pass, std::size_t n) {
++  Command c{.type=CommandType::SetScissor,
++#ifdef AURORA_GFX_DEBUG_GROUPS
++            .debugGroupStack={std::to_string(frame),std::to_string(pass)},
++#endif
++            .data={.setScissor={0,0,0,0}}};
++  if (n % 5 == 0) {
++    c.type = CommandType::Draw;
++    c.data = Command::Data{.draw={.type=aurora::gfx::ShaderType::Clear,
++        .clear={.pipeline=frame*101+pass,.color={1.0,0.5,0.25,1.0},.depth=0.5f}}};
++  } else if ((frame + pass + n) % 2) {
++    c.type = CommandType::SetScissor;
++    c.data.setScissor = {static_cast<int>(n % 640), static_cast<int>(frame % 480),
++                         static_cast<int>(1 + pass % 640), static_cast<int>(1 + n % 480)};
++  } else {
++    c.type = CommandType::SetViewport;
++    c.data.setViewport = {.left=static_cast<float>(n), .top=static_cast<float>(frame),
++                         .width=static_cast<float>(1 + pass), .height=480.f, .znear=0.f, .zfar=1.f};
++  }
++  return c;
++}
++static bool equal(const Command& a,const Command& b) {
++  if (a.type!=b.type) return false;
++#ifdef AURORA_GFX_DEBUG_GROUPS
++  if (a.debugGroupStack!=b.debugGroupStack) return false;
++#endif
++  if (a.type==CommandType::SetScissor) return a.data.setScissor==b.data.setScissor;
++  if (a.type==CommandType::Draw) {
++    const auto& x=a.data.draw.clear; const auto& y=b.data.draw.clear;
++    return a.data.draw.type==b.data.draw.type && x.pipeline==y.pipeline && x.depth==y.depth &&
++      x.color.r==y.color.r && x.color.g==y.color.g && x.color.b==y.color.b && x.color.a==y.color.a;
++  }
++  const auto& x=a.data.setViewport;const auto& y=b.data.setViewport;
++  return x.left==y.left && x.top==y.top && x.width==y.width && x.height==y.height && x.znear==y.znear && x.zfar==y.zfar;
++}
++struct Packet {
++  std::vector<List> passes;
++  std::vector<std::vector<Command>> expected;
++  std::size_t id = 0;
++};
++static void read(const Packet& packet, std::size_t p) {
++  TEST_CHECK(packet.passes[p].size() == packet.expected[p].size());
++  for (std::size_t i=0; i<packet.passes[p].size(); ++i)
++    TEST_CHECK(equal(packet.passes[p][i],packet.expected[p][i]));
++}
++struct Engine {
++  Pool pool;
++  worker::FrameSlotPool slots{2};
++  std::array<Packet,2> packets;
++  bool cached;
++  std::mutex gate_mutex;
++  std::condition_variable gate_cv;
++  bool gate_entered=false, gate_release=false;
++  explicit Engine(bool use_cache): cached(use_cache) { worker::initialize(); }
++  ~Engine() { worker::synchronize(); worker::shutdown(); pool.clear(); }
++  void frame(std::size_t id, bool variable, bool gate=false) {
++    const auto slot=slots.acquire();
++    auto& packet=packets[slot];
++    TEST_CHECK(packet.passes.empty());
++    packet.id=id;
++    const auto count=variable ? 1 + id % 8 : 3;
++    for (std::size_t p=0; p<count; ++p) {
++      const auto reserve=p==1 ? 128u : 2048u;
++      List list;
++      if (cached) list=pool.take(reserve);
++      else if (p != 0) list.reserve(reserve); // exact initial-EFB control: no reserve
++      const auto n=variable ? (id * 31 + p * 197) % 2400 : (p==0 ? 200u : p==1 ? 100u : 512u);
++      std::vector<Command> expected;
++      for (std::size_t i=0; i<n; ++i) { auto c=command(id,p,i); list.push_back(c); expected.push_back(c); }
++      packet.passes.push_back(std::move(list));
++      packet.expected.push_back(std::move(expected));
++    }
++    worker::enqueue_begin_frame(id,[this,slot,id]{ TEST_CHECK(packets[slot].id==id); });
++    for (std::size_t p=0; p<count; ++p)
++      worker::enqueue_encode_pass(id,static_cast<std::uint32_t>(p),[this,slot,p]{ read(packets[slot],p); });
++    worker::enqueue_end_frame(id,[this,slot,id,gate,variable]{
++      if (gate) {
++        std::unique_lock lock{gate_mutex}; gate_entered=true; gate_cv.notify_one();
++        gate_cv.wait(lock,[this]{return gate_release;});
++      }
++      auto& packet=packets[slot];
++      // Authored synchronous interpolation readers, matching the source's end
++      // callback ordering. Deferred presents own copied textures, not lists.
++      const auto replays=variable ? id % 8 : 1;
++      for (std::size_t replay=0; replay<replays; ++replay)
++        for (std::size_t p=0; p<packet.passes.size(); ++p) read(packet,p);
++      if (cached) for (auto& pass:packet.passes) pool.recycle(pass);
++      packet.passes.clear(); packet.expected.clear();
++      slots.release(slot);
++    });
++  }
++  void wait_gate() { std::unique_lock lock{gate_mutex}; gate_cv.wait(lock,[this]{return gate_entered;}); }
++  void release_gate() { std::lock_guard lock{gate_mutex}; gate_release=true; gate_cv.notify_one(); }
++};
++static std::size_t fixed(bool cached) {
++  const auto before=allocations.load();
++  { Engine engine{cached}; for (std::size_t f=0; f<1000; ++f) engine.frame(f,false);
++    worker::synchronize(); TEST_CHECK(engine.slots.free_count()==2);
++    TEST_CHECK(engine.pool.retained_bytes()<=Pool::MaxBytes); }
++  TEST_CHECK(live_bytes==0);
++  return allocations.load()-before;
++}
++static void queue_lifetime() {
++  Engine engine{true};
++  engine.frame(0,false,true); engine.wait_gate();
++  TEST_CHECK(engine.pool.retained_lists()==0);
++  auto* old=engine.packets[0].passes[0].data();
++  engine.frame(1,false);
++  TEST_CHECK(engine.packets[1].passes[0].data()!=old);
++  read(engine.packets[0],0); // the parked last reader still owns unchanged storage
++  TEST_CHECK(engine.pool.retained_lists()==0);
++  engine.release_gate(); worker::synchronize();
++  TEST_CHECK(engine.slots.free_count()==2);
++  for (std::size_t f=2; f<258; ++f) engine.frame(f,true);
++  worker::synchronize(); TEST_CHECK(engine.pool.retained_bytes()<=Pool::MaxBytes);
++  // Real shutdown drains every queued reader before the source clears its pool.
++  for (std::size_t f=258; f<264; ++f) engine.frame(f,true);
++  worker::shutdown(); TEST_CHECK(engine.slots.free_count()==2);
++  engine.pool.clear(); TEST_CHECK(engine.pool.retained_bytes()==0);
++}
++static void capacity_and_failure() {
++  Pool pool;
++  // Cache count is bounded even for many one-command scene passes.
++  for (std::size_t i=0; i<100; ++i) { List list; list.reserve(1); list.push_back(command(i,0,0)); pool.recycle(list); }
++  TEST_CHECK(pool.retained_lists()==Pool::MaxLists); TEST_CHECK(pool.retained_bytes()<=Pool::MaxBytes);
++  pool.clear(); TEST_CHECK(pool.retained_bytes()==0);
++  for (std::size_t i=0; i<40; ++i) {
++    List list; list.reserve((2*1024*1024)/sizeof(Command)); pool.recycle(list);
++    TEST_CHECK(pool.retained_bytes()<=Pool::MaxBytes);
++  }
++  TEST_CHECK(pool.retained_lists()<=16); pool.clear();
++  List oversized; oversized.reserve(Pool::MaxListBytes/sizeof(Command)+1);
++  oversized.push_back(command(1,2,3)); pool.recycle(oversized);
++  TEST_CHECK(oversized.empty()); TEST_CHECK(pool.retained_lists()==0);
++  List seeded; seeded.reserve(128); pool.recycle(seeded);
++  fail_allocate=true;
++  bool failed=false;
++  try { auto list=pool.take(4096); } catch (const std::bad_alloc&) { failed=true; }
++  TEST_CHECK(failed); TEST_CHECK(pool.retained_bytes()==0);
++  auto fresh=pool.take(128); TEST_CHECK(fresh.empty()); fresh.push_back(command(2,3,4)); pool.recycle(fresh);
++  pool.clear();
++}
++static void references_and_cancellation() {
++  using References=std::vector<std::shared_ptr<int>>;
++  aurora::gfx::CommandListPool<References> pool;
++  auto owned=std::make_shared<int>(7); std::weak_ptr<int> weak=owned;
++  References list; list.push_back(owned); owned.reset(); TEST_CHECK(!weak.expired());
++  pool.recycle(list); TEST_CHECK(weak.expired());
++  auto reused=pool.take(1); TEST_CHECK(reused.empty());
++  // Queue reset destroys only unexecuted owning closures. The source calls its
++  // global reset after worker join, never while a callback is still executing.
++  worker::BoundedQueue queue{4};
++  auto payload=std::make_shared<int>(9); weak=payload;
++  TEST_CHECK(queue.push({.work=[payload]{ TEST_CHECK(*payload==9); },.sync={}})); payload.reset();
++  TEST_CHECK(!weak.expired()); queue.close(); queue.reset(); TEST_CHECK(weak.expired()); TEST_CHECK(queue.size()==0);
++  // A failed staging acquisition occurs before list ownership changes.
++  worker::FrameSlotPool slots{2}; auto slot=slots.acquire();
++  const auto bytes=pool.retained_bytes(); slots.release(slot);
++  TEST_CHECK(slots.free_count()==2); TEST_CHECK(pool.retained_bytes()==bytes);
++}
++int main() {
++  const auto control=fixed(false), candidate=fixed(true);
++  TEST_CHECK(candidate<control); TEST_CHECK(candidate<=12); // two live 3-pass packets, at most one 128-to-2048 growth per list
++  queue_lifetime(); TEST_CHECK(live_bytes==0);
++  capacity_and_failure(); TEST_CHECK(live_bytes==0);
++  references_and_cancellation();
++  TEST_CHECK(allocations==frees); TEST_CHECK(registrations==3);
++  std::printf("Command storage: %zu checks; control=%zu candidate=%zu command-buffer allocations; command=%zu bytes\n",
++              checks.load(),control,candidate,sizeof(Command));
++}
+diff --git a/tests/prepare_render_command_storage.py b/tests/prepare_render_command_storage.py
+new file mode 100644
+--- /dev/null
++++ b/tests/prepare_render_command_storage.py
+@@ -0,0 +1,16 @@
++#!/usr/bin/env python3
++"""Generate the actual Command declarations for the source-only pool fixture."""
++import argparse
++from pathlib import Path
++parser=argparse.ArgumentParser(description=__doc__)
++parser.add_argument('--source-root',type=Path,required=True)
++parser.add_argument('--output-dir',type=Path,required=True)
++args=parser.parse_args()
++source=(args.source_root/'GXRuntime/graphics/aurora/lib/gfx/common.cpp').read_text()
++assert source.count('struct ShaderDrawCommand {')==1
++start=source.index('struct ShaderDrawCommand {')
++end=source.index('} // namespace aurora::gfx',start)
++declarations=source[start:end]
++assert declarations.count('struct Command {')==1 and declarations.count('enum class CommandType')==1
++args.output_dir.mkdir(parents=True,exist_ok=True)
++(args.output_dir/'command_storage_actual_command.inc').write_text('namespace aurora::gfx {\n'+declarations+'\n}\n',encoding='utf8',newline='\n')

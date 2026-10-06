@@ -14,7 +14,9 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |
 | 01 | Isolated fusion candidate adds immutable array ownership, complete primitive groups and HUD/state boundaries. Actual O3 and ASan each passed 948 fusion checks; retained shader/plan tests also passed. | Combined renderer GPU/game images, array-copy cost and serialized timing. |
+| 04 | Completed-image upload-shadow candidate passed O3/ASan: 69,063 checks and 35,760 complete-buffer comparisons each. Serial identical frames reduced uploads by 99.17%, but continuous two-frame overlap saved no bytes because reservations declined. | Retain inactive. Find a useful real nonoverlap workload before paying for GPU/native integration. |
 | 07 | Two-identity texture cache: O3 and ASan each passed 420,637 checks; authored palette alternation used 2 uploads instead of 1,000 with identical decoded pixels. Full production renderer compiled/linked; native 3,300-retrace Outset capture is byte-identical to the control. | Other native routes, combined renderer changes and serialized timing. Candidate remains unpromoted; no gameplay FPS claim. |
+| 08 | Bounded command-vector reuse passed O3/ASan: 11,239,116 checks each, including queued/replayed last-reader ownership, reset/cancel and retained limits. Authored 1,000-frame workloads used 8 vector-storage allocations versus 16,000; full production common.cpp compiled/linked with 07. | Combined native/GPU comparison, real allocation counts and timing. No total-heap/FPS claim. |
 | 10–11 | Isolated opt-in transforms passed 5,460,525 full CPU/budget/deadline comparisons in each of O3 and ASan. Existing computed-goto entry dispatch is preserved. On the actual 487-case irregular map, compiled prefix comparisons fell from 11 to 2 with slots, or 3 combined. Regular-stride maps already optimized equally; ranges alone added a comparison. | Builder integration and matching-profile native gameplay A/B. Preserve the assembly negatives; no blanket speedup claim. |
 | 12 | `--f32-hw-widen` is available, off by default, with required gather/inline-FP checks and preparation/training/provenance identities. All 2³² float patterns passed in each of four rounding modes; special-value, FP-environment and ASan checks passed. Public-header machine code matches the exhaustive test. | Complete translated-module/native gameplay comparison and load-heavy timing before enabling by default. |
 | 35 | Implemented full SHA-256 profile snapshots with compiler/tool-specific readability. 13 cache tests and 12 training tests passed. Real Clang/Ninja rebuilt affected C/C++ objects for same-name/size/mtime changed profiles, reused unrelated objects, and handled invalid-profile fallback. | Complete for build correctness; no gameplay FPS claim. |
@@ -41,6 +43,15 @@ SHA-256 `cb5e0cb604657a9af9dcb5fc55cfa7c315baa9ac66de07c28b8116c5313c6364`.
 The complete captured PPM is identical to the control; RGB SHA-256 is
 `00e19929883fc4f2e07dc93305ea1c2bc8f3608bf5f99f31da82943653798353`.
 This run occurred alongside CPU compilation and is not a timing experiment.
+
+Item 07 Dragon Roost native control/candidate captures are also identical.
+The route reduced CI uploads from **3,276 to 68** and total texture uploads
+from **3,483 to 275**. Its paired receipts are under
+`build/performance-07-routes-20261006/dragon-{control,texture2}-attempt1/`.
+Captured PPM SHA-256: `12b8c56ef94b9039093417efb859a40436b7a665ab0eba49dea4359e752b4720`.
+Forest Haven's arrival-dialogue captures match too, but both original runs
+failed the expected ready-player check. Preserve those failures; they establish
+cutscene image parity only, not a controllable gameplay or timing route.
 
 The game host's explicit `BLUEWAKE_RENDERER=aurora-noninteractive` route passed
 unattended native GPU correctness tests. It requires explicit disposable

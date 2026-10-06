@@ -1,0 +1,418 @@
+From: elliotttate <elliotttate@gmail.com>
+Subject: [PATCH] Qualify vertex-copy skips against completed buffer contents
+Upstream-Commit: 39dcacb2e72546bb41b6eaf25b73aa0382742381
+
+Inactive candidate on canonical 0152-0162. O3/ASan correctness passed.
+Serial workload reduces uploads, but continuous two-frame overlap saves
+no bytes because outstanding reservations decline. Do not promote this
+candidate on the strength of its serial-only result.
+
+---
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.cpp b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+@@ -21,6 +21,7 @@
+ #include "tex_palette_conv.hpp"
+ #include "texture_replacement.hpp"
+ #include "texture.hpp"
++#include "vertex_upload_shadow.hpp"
+ #include "../window.hpp"
+ 
+ #include <algorithm>
+@@ -142,6 +143,16 @@
+ static std::mutex g_samplerCacheMutex;
+ 
+ wgpu::Buffer g_vertexBuffer;
++static vertex_upload::Shadow g_vertexUploadShadow;
++static uint64_t g_vertexAllocation = 0;
++// Render-worker-only submission correlation: deferred presents and repeated
++// held frames use different encoders and cannot certify this frame's copies.
++static uintptr_t g_vertexSubmitEncoder = 0;
++static bool g_vertexSubmitObserved = false;
++static vertex_upload::Resource vertex_resource() {
++  return {reinterpret_cast<uintptr_t>(g_vertexBuffer.Get()), g_vertexAllocation,
++          static_cast<uint32_t>(VertexBufferSize)};
++}
+ wgpu::Buffer g_uniformBuffer;
+ wgpu::Buffer g_indexBuffer;
+ wgpu::Buffer g_storageBuffer;
+@@ -220,6 +231,7 @@
+   TextureCopy* textureCopy = nullptr;
+   StagingHighWater highWater;
+   std::vector<const TextureUpload*> textureUploads;
++  std::vector<vertex_upload::Range> vertexCopies;
+ };
+ 
+ using RenderPassList = std::deque<RenderPass>;
+@@ -229,6 +241,7 @@
+   std::deque<FrameOp> ops;
+   std::deque<TextureUpload> textureUploads;
+   ByteBuffer verts;
++  std::shared_ptr<vertex_upload::Token> vertexToken;
+   ByteBuffer uniforms;
+   ByteBuffer indices;
+   ByteBuffer storage;
+@@ -603,6 +616,7 @@
+                          : nullptr,
+       .highWater = current_high_water(frame),
+   };
++  op.vertexCopies = frame.vertexToken->plan(frame.verts.data(), op.highWater.verts);
+   op.textureUploads.reserve(op.highWater.textureUploadCount);
+   for (size_t i = 0; i < op.highWater.textureUploadCount; ++i) {
+     op.textureUploads.push_back(&frame.textureUploads[i]);
+@@ -1167,6 +1181,8 @@
+                "Shared Uniform Buffer");
+   createBuffer(g_vertexBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+                VertexBufferSize, "Shared Vertex Buffer");
++  ++g_vertexAllocation;
++  g_vertexUploadShadow.reset(vertex_resource());
+   createBuffer(g_indexBuffer, wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst, IndexBufferSize,
+                "Shared Index Buffer");
+   createBuffer(g_storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst, StorageBufferSize,
+@@ -1326,6 +1342,7 @@
+     std::lock_guard lock{g_samplerCacheMutex};
+     g_cachedSamplers.clear();
+   }
++  g_vertexUploadShadow.reset();
+   g_vertexBuffer = {};
+   g_uniformBuffer = {};
+   g_indexBuffer = {};
+@@ -1510,6 +1527,7 @@
+ 
+   auto& frame = g_framePackets[frameSlot];
+   frame = {};
++  frame.vertexToken = g_vertexUploadShadow.reserve();
+   frame.frameId = g_nextFrameId++;
+   frame.frameIndex = g_frameIndex;
+   frame.stagingBuffer = *stagingSlot;
+@@ -1587,7 +1605,7 @@
+     const auto buffer = encoder.Finish(&descriptor);
+     g_queue.Submit(1, &buffer);
+     webgpu::gpu_prof::after_submit();
+-    after_submit();
++    after_submit(encoder);
+   });
+   g_segmentEnding = false;
+   return begin_frame(true);
+@@ -1753,12 +1771,18 @@
+   }
+ #endif
+ 
++  // The original mapped staging bytes remain untouched. Capture copy payloads
++  // only after all appends, before unmapping/reusing the slot; alignment neighbors
++  // can have changed since the corresponding operation was captured.
++  frame.vertexToken->seal(frame.verts.data(), static_cast<uint32_t>(VertexBufferSize));
+   const size_t stagingSlot = frame.stagingBuffer;
+   render_worker::enqueue_end_frame(frameId, [frameSlot, stagingSlot, callback = std::move(callback)]() mutable {
+     auto& packet = g_framePackets[frameSlot];
+     g_stagingBuffers[stagingSlot].Unmap();
+     s_mappingStates[stagingSlot].store(BufferMapState::Unmapped, std::memory_order_release);
+     auto encoder = std::move(packet.encoder);
++    auto vertexToken = std::move(packet.vertexToken);
++    auto vertexBuffer = g_vertexBuffer;
+     const auto stats = packet.stats;
+     const bool presents = packet.presents;
+     const int steps = packet.interpSteps;
+@@ -1792,6 +1816,8 @@
+     const bool clocked = interpolate && (steps > 1 || steadyClock);
+     if (!clocked)
+       run_deferred_present();
++    g_vertexSubmitEncoder = reinterpret_cast<uintptr_t>(encoder.Get());
++    g_vertexSubmitObserved = false;
+     if (clocked) {
+       present_steps(packet, frameSlot, encoder, callback, steps);
+       packet = {};
+@@ -1805,6 +1831,22 @@
+         g_heldShown = false;
+       callback(encoder);
+     }
++    const bool vertexSubmitted = g_vertexSubmitObserved;
++    g_vertexSubmitEncoder = 0;
++    g_vertexSubmitObserved = false;
++    if (vertexSubmitted && vertexToken->submitted()) {
++      // Register after every interpolated reader was submitted, not merely the
++      // real frame's first Submit. Retain the exact buffer and immutable image
++      // through that last reader, including failed/canceled completion callbacks.
++      g_queue.OnSubmittedWorkDone(wgpu::CallbackMode::AllowSpontaneous,
++          [token = std::move(vertexToken), buffer = std::move(vertexBuffer)]
++          (wgpu::QueueWorkDoneStatus status, wgpu::StringView) {
++            (void)buffer;
++            token->complete(status == wgpu::QueueWorkDoneStatus::Success);
++          });
++    } else {
++      vertexToken->cancel();
++    }
+     release_interp_staging(frameSlot);
+     g_frameSlots.release(frameSlot);
+     expire_cached_bind_groups();
+@@ -1869,7 +1911,18 @@
+   }
+   const webgpu::gpu_prof::Zone zone{cmd, "Staging copies"};
+   const auto& highWater = op.highWater;
+-  copy_staging_buffer_range(cmd, frame, frame.copied.verts, highWater.verts, VertexStagingOffset, g_vertexBuffer);
++  if (highWater.verts > frame.copied.verts) {
++    if (frame.vertexToken->matches(vertex_resource())) {
++      for (auto range : op.vertexCopies) {
++        cmd.CopyBufferToBuffer(g_stagingBuffers[frame.stagingBuffer], VertexStagingOffset + range.begin,
++                               g_vertexBuffer, range.begin, range.end - range.begin);
++      }
++      frame.copied.verts = highWater.verts;
++    } else {
++      copy_staging_buffer_range(cmd, frame, frame.copied.verts, highWater.verts,
++                                VertexStagingOffset, g_vertexBuffer);
++    }
++  }
+   copy_staging_buffer_range(cmd, frame, frame.copied.uniforms, highWater.uniforms, UniformStagingOffset,
+                             g_uniformBuffer);
+   copy_staging_buffer_range(cmd, frame, frame.copied.indices, highWater.indices, IndexStagingOffset, g_indexBuffer);
+@@ -2240,7 +2293,7 @@
+     g_queue.Submit(1, &buffer);
+   }
+   webgpu::gpu_prof::after_submit();
+-  after_submit();
++  after_submit(encoder);
+   const bool dump = frame_interp::dump_frame(frame.gameFrame);
+   if (dump) {
+     dump_texture(g_heldFrame, "real", frame.gameFrame);
+@@ -2318,7 +2371,7 @@
+     g_queue.Submit(1, &buffer);
+   }
+   webgpu::gpu_prof::after_submit();
+-  after_submit();
++  after_submit(encoder);
+   const bool dump = frame_interp::dump_frame(frame.gameFrame);
+   if (dump) {
+     dump_texture(held[kHeldReal], "real", frame.gameFrame);
+@@ -2399,7 +2452,7 @@
+     g_queue.Submit(1, &buffer);
+   }
+   webgpu::gpu_prof::after_submit();
+-  after_submit();
++  after_submit(encoder);
+   steps = std::clamp(steps, 1, frame_interp::kMaxSteps);
+   defer_present(PresentClock::now() + step_offset(steps, steps), &g_heldFrame, callback);
+   g_lastDue = {};
+@@ -2452,6 +2505,13 @@
+     g_deferredPresents.pop_front();
+     present_deferred(present, "flushed");
+   }
++}
++
++void after_submit(const wgpu::CommandEncoder& encoder) noexcept {
++  if (g_vertexSubmitEncoder != 0 &&
++      reinterpret_cast<uintptr_t>(encoder.Get()) == g_vertexSubmitEncoder)
++    g_vertexSubmitObserved = true;
++  after_submit();
+ }
+ 
+ void after_submit() noexcept {
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.hpp b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+@@ -253,6 +253,7 @@
+ uint32_t current_frame() noexcept;
+ void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
+ void after_submit() noexcept;
++void after_submit(const wgpu::CommandEncoder& encoder) noexcept;
+ void gpu_synchronize();
+ // On the render worker: every deferred present still waiting, now, in order
+ // (before the swapchain they were made for is reconfigured).
+diff --git a/GXRuntime/graphics/aurora/lib/aurora.cpp b/GXRuntime/graphics/aurora/lib/aurora.cpp
+--- a/GXRuntime/graphics/aurora/lib/aurora.cpp
++++ b/GXRuntime/graphics/aurora/lib/aurora.cpp
+@@ -492,7 +492,7 @@
+         break;
+       }
+     }
+-    gfx::after_submit();
++    gfx::after_submit(encoder);
+ 
+     TracyPlotConfig("aurora: lastVertSize", tracy::PlotFormatType::Memory, false, true, 0);
+     TracyPlotConfig("aurora: lastUniformSize", tracy::PlotFormatType::Memory, false, true, 0);
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/vertex_upload_shadow.hpp b/GXRuntime/graphics/aurora/lib/gfx/vertex_upload_shadow.hpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/gfx/vertex_upload_shadow.hpp
+@@ -0,0 +1,182 @@
++#pragma once
++// Adapted from Elliott Tate's unchanged-upload work (39dcacb2e72546bb41b6eaf25b73aa0382742381).
++// The shadow describes completed copies, never speculative recording or submission.
++#include <algorithm>
++#include <cstdint>
++#include <cstring>
++#include <deque>
++#include <memory>
++#include <mutex>
++#include <stdexcept>
++#include <vector>
++
++namespace aurora::gfx::vertex_upload {
++struct Resource {
++  uintptr_t object = 0;
++  uint64_t generation = 0;
++  uint32_t capacity = 0;
++  bool operator==(const Resource&) const = default;
++};
++struct Range {
++  uint32_t begin, end;
++  bool operator==(const Range&) const = default;
++};
++struct Counters {
++  uint64_t baseline = 0, planned = 0, submitted = 0, completed = 0;
++  uint64_t reservations = 0, declined = 0, canceled = 0, failed = 0;
++};
++struct Image { Range range; std::vector<uint8_t> bytes; };
++struct Submission {
++  std::vector<Image> images;
++  uint64_t bytes = 0;
++  uint64_t revision = 0;
++  bool done = false, success = false;
++};
++struct State {
++  explicit State(Resource value) : resource(value), bytes(value.capacity), known(value.capacity / 4) {}
++  Resource resource;
++  std::mutex mutex;
++  std::vector<uint8_t> bytes, known;
++  std::deque<std::shared_ptr<Submission>> pending;
++  Counters counters;
++  uint64_t revision = 0;
++};
++inline void require(bool ok) { if (!ok) throw std::logic_error("vertex upload lifetime/range contract"); }
++inline uint64_t size(const std::vector<Range>& ranges) {
++  uint64_t n = 0; for (auto r : ranges) n += r.end - r.begin; return n;
++}
++
++class Token {
++  std::shared_ptr<State> state;
++  std::shared_ptr<Submission> submission;
++  std::vector<Range> copies;
++  uint32_t captured = 0;
++  bool eligible = false, sealed = false, usable = true, terminal = false;
++  void drain_locked() {
++    while (!state->pending.empty() && state->pending.front()->done) {
++      auto front = state->pending.front(); state->pending.pop_front();
++      if (!front->success || front->revision != state->revision) {
++        std::fill(state->known.begin(), state->known.end(), 0);
++        ++state->counters.failed;
++      } else {
++        for (const auto& image : front->images) {
++          std::memcpy(state->bytes.data() + image.range.begin, image.bytes.data(), image.bytes.size());
++          std::fill(state->known.begin() + image.range.begin / 4, state->known.begin() + image.range.end / 4, 1);
++        }
++        state->counters.completed += front->bytes;
++      }
++    }
++  }
++public:
++  explicit Token(std::shared_ptr<State> value) : state(std::move(value)) {
++    std::lock_guard lock(state->mutex);
++    eligible = state->counters.reservations++ == 0;
++    if (!eligible) ++state->counters.declined;
++  }
++  ~Token() { cancel(); }
++  Token(const Token&) = delete;
++  Token& operator=(const Token&) = delete;
++  bool can_compare() const { return eligible; }
++  Resource resource() const { return state->resource; }
++
++  // Called on the recording thread. Only complete words inside the immutable
++  // recorded prefix may be compared; its trailing partial word is always copied.
++  std::vector<Range> plan(const uint8_t* staging, uint32_t highWater) {
++    std::lock_guard lock(state->mutex);
++    require(!sealed && !terminal && highWater >= captured && highWater <= state->resource.capacity);
++    if (highWater == captured) return {};
++    require(staging != nullptr);
++    const uint32_t begin = captured & ~3u, end = (highWater + 3u) & ~3u;
++    require(end <= state->resource.capacity);
++    std::vector<Range> ranges;
++    for (uint32_t at = begin; at < end; at += 4) {
++      const bool same = eligible && usable && at + 4 <= highWater && state->known[at / 4] &&
++                        std::memcmp(staging + at, state->bytes.data() + at, 4) == 0;
++      if (!same) {
++        // Small gaps preserve the donor's batching rule. Bytes in merged gaps
++        // still come from the original staging buffer, including alignment bytes.
++        if (!ranges.empty() && at - ranges.back().end <= 1024) ranges.back().end = at + 4;
++        else ranges.push_back({at, at + 4});
++      }
++    }
++    state->counters.baseline += end - begin;
++    state->counters.planned += size(ranges);
++    copies.insert(copies.end(), ranges.begin(), ranges.end());
++    captured = highWater;
++    return ranges;
++  }
++
++  // Any allocation mismatch declines the optimization and forbids committing
++  // this token's planned image. The caller performs its original full copy.
++  bool matches(Resource actual) {
++    std::lock_guard lock(state->mutex);
++    if (actual == state->resource && usable && !terminal) return true;
++    usable = false;
++    ++state->revision;
++    std::fill(state->known.begin(), state->known.end(), 0);
++    return false;
++  }
++  void seal(const uint8_t* staging, uint32_t capacity) {
++    std::lock_guard lock(state->mutex);
++    require(!sealed && !terminal && capacity == state->resource.capacity && staging != nullptr);
++    submission = std::make_shared<Submission>();
++    for (auto r : copies) {
++      require(r.begin < r.end && r.end <= capacity && !(r.begin & 3) && !(r.end & 3));
++      submission->images.push_back({r, std::vector<uint8_t>(staging + r.begin, staging + r.end)});
++      submission->bytes += r.end - r.begin;
++    }
++    sealed = true;
++  }
++  bool submitted() {
++    std::lock_guard lock(state->mutex);
++    require(sealed && !terminal);
++    if (!usable) return false;
++    require(std::find(state->pending.begin(), state->pending.end(), submission) == state->pending.end());
++    submission->revision = state->revision;
++    state->pending.push_back(submission);
++    state->counters.submitted += submission->bytes;
++    return true;
++  }
++  void complete(bool success) {
++    std::lock_guard lock(state->mutex);
++    if (terminal) return;
++    require(!terminal && submission &&
++            std::find(state->pending.begin(), state->pending.end(), submission) != state->pending.end());
++    submission->done = true; submission->success = success && usable;
++    terminal = true;
++    --state->counters.reservations;
++    // Callback delivery can be out of order. Apply images only in actual queue
++    // submission order; callbacks hold tokens and resource pins through readers.
++    drain_locked();
++  }
++  void cancel() noexcept {
++    if (!state) return;
++    std::lock_guard lock(state->mutex);
++    if (terminal) return;
++    // Also covers an unknown external callback that submitted without the
++    // correlated hook: never infer that an unreported encoder was canceled.
++    std::fill(state->known.begin(), state->known.end(), 0);
++    ++state->revision;
++    if (submission) {
++      auto found = std::find(state->pending.begin(), state->pending.end(), submission);
++      if (found != state->pending.end()) {
++        submission->done = true; submission->success = false;
++      }
++    }
++    terminal = true; --state->counters.reservations; ++state->counters.canceled;
++    drain_locked();
++  }
++};
++
++class Shadow {
++  std::shared_ptr<State> state;
++public:
++  void reset(Resource resource = {}) {
++    require(resource.object == 0 ? resource.generation == 0 && resource.capacity == 0 :
++            resource.generation != 0 && resource.capacity != 0 && !(resource.capacity & 3));
++    state = resource.object ? std::make_shared<State>(resource) : nullptr;
++  }
++  std::shared_ptr<Token> reserve() { require(bool(state)); return std::make_shared<Token>(state); }
++  Counters counters() const { require(bool(state)); std::lock_guard lock(state->mutex); return state->counters; }
++};
++} // namespace aurora::gfx::vertex_upload

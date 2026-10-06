@@ -1,0 +1,181 @@
+Subject: [PATCH] Add opt-in exact dispatch preparations with strict source guards
+Based-on: AceSpectre <69684743+AceSpectre@users.noreply.github.com>, b6d5e7cb7c16103f4c3ef68b4d721f4a82977380
+Based-on: elliotttate <elliotttate@gmail.com>, 7aca42ade32d41b38a3810d5ba6f28bd37127e4b
+
+Candidate only. No normal builder integration or generated production changes.
+Unknown switch shapes and CPU/slot interposition are retained unchanged.
+Native gameplay A/B remains pending.
+
+---
+diff --git a/tests/prepare_dispatch_cases.py b/tests/prepare_dispatch_cases.py
+new file mode 100644
+--- /dev/null
++++ b/tests/prepare_dispatch_cases.py
+@@ -0,0 +1,95 @@
++import hashlib,json
++from pathlib import Path
++import sys, tempfile
++sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts/windows'))
++import dispatch_prepare as helper
++WORK=tempfile.TemporaryDirectory(prefix='dispatch-preparation-')
++HERE=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path(WORK.name)
++HERE.mkdir(parents=True,exist_ok=True)
++
++def source(base,cold=False,returning=False,sparse=False,count=64):
++    name=f'func_{base:08X}'+('_cold'if cold else '')
++    prefix='cold'if cold else 'label'
++    addresses=[base+i*(16 if sparse else 4)for i in range(count)]
++    start=f'void {name}(CPUState* ctx) {{\n'
++    cases=''.join(f'    case 0x{a:08X}u: goto {prefix}_{a:08X};\n'for a in addresses)
++    switch='    switch (ctx->pc) {\n'+cases+'    default: return;\n    }\n'
++    labels=''
++    for i,a in enumerate(addresses):
++        cycles=1+i%5
++        labels+=f'''{prefix}_{a:08X}:
++    ctx->pc = 0x{a:08X}u;
++    if (!dolrecomp_charge_precise(ctx, {cycles}u, 0x{a:08X}u)) return;
++    if (!dolrecomp_block_can_precharge(ctx, {cycles}u)) ctx->cycle_observation_suffix ^= 0x15u;
++    ctx->gpr[{i%31}] ^= 0x{(i*2654435761)&0xffffffff:08X}u;
++    ctx->cr += {i+1}u;
++    ctx->pc = 0x{a+4:08X}u;
++    return;
++'''
++    if returning:
++        body=start+f'    goto return_dispatch_{base:08X};\n'+labels+f'return_dispatch_{base:08X}:\n'+helper.BUDGET+'\n'+switch+'}\n'
++    else:body=start+switch+labels+'}\n'
++    return helper.INCLUDE+body,name,addresses
++
++def rename(s,name,new):return s.replace(helper.INCLUDE,'').replace(name,new)
++
++def main():
++    checks=0
++    def check(v):
++        nonlocal checks;checks+=1;assert v
++    out='';records=[]
++    for kind,base,cold,ret,sparse in [('entry',0x80004000,False,False,False),('cold',0xc04200d4,True,False,False),('return',0x80008000,False,True,True)]:
++        original,name,addresses=source(base,cold,ret,sparse)
++        variants=[]
++        for label,dense,ranges in [('original',False,False),('dense',True,False),('ranges',False,True),('both',True,True)]:
++            converted,counts=helper.transform(original,dense=dense,return_ranges=ranges)
++            check(counts['dense']==int(dense));check(counts['ranges']==int(ranges and ret))
++            if counts['dense']or counts['ranges']:check(helper.transform(converted,dense=dense,return_ranges=ranges)[0]==converted)
++            new='test_'+kind+'_'+label;variants.append(new)
++            out+=rename(converted,name,new)+'\n'
++        records.append(dict(kind=kind,base=base,addresses=addresses,functions=variants))
++    # Actual fresh helper insertion appears in multiple independently generated
++    # fixture variants; keep one definition without changing transformed bodies.
++    first=True
++    def remove(match):
++        nonlocal first
++        if first:first=False;return match[0]
++        return ''
++    import re
++    out=re.sub(re.escape(helper.SLOT),remove,out)
++    (HERE/'cases.inc').write_text(out,encoding='utf8',newline='\n')
++    original,_,_=source(0x80004000,returning=True,sparse=True)
++    malformed=[original.replace('    }\n','    // missing close\n',1),
++      original.replace('    default: return;','    default: observe(ctx); return;'),
++      original.replace('goto label_80004000;','goto label_80004004;',1),
++      original.replace('    case 0x80004010u:','    case 0x80004000u:',1),
++      original.replace('void func_','void unknown_',1),
++      original.replace(helper.BUDGET,'    if (ctx->downcount < 0) return;'),
++      original.replace('switch (ctx->pc)','switch (ctx->lr)'),
++      original.replace('0x80004000u: goto label_80004000','0x80004001u: goto label_80004001'),
++      original.replace('label_80004000:\n','',1),original+helper.INCLUDE,
++      original.replace('\n','\r\n'),original.replace('CPUState* ctx','CPUState* unknown')]
++    malformed += ['#define ctx changing_cpu()\n'+original,
++                  '#define bw_dispatch_pc_slot custom_observer\n'+original,
++                  helper.SLOT+original]
++    for s in malformed:
++        converted,counts=helper.transform(s,dense=True,return_ranges=True)
++        check(converted==s);check(counts=={'dense':0,'ranges':0})
++    # Existing computed-goto entries and native guarded returns are declined.
++    entry,_,_=source(0x80004000)
++    unknown=entry.replace('    switch (ctx->pc) {','    static void* table[64];\n    switch (ctx->pc) {')
++    check(helper.transform(unknown,dense=True)[0]==unknown)
++    guarded=original.replace('    case 0x80004000u: goto label_80004000;', '    case 0x80004000u:\n        if (!bw_healing_return_continue(ctx, 0x80004000u)) return;\n        goto label_80004000;')
++    check(helper.transform(guarded,dense=True,return_ranges=True)[0]==guarded)
++    check(helper.transform(original)[0]==original)
++    # Standalone assembly probes use enough sparse cases to expose real codegen.
++    asm=''
++    original,name,_=source(0x80008000,returning=True,sparse=True,count=256)
++    for label,dense,ranges in [('original',False,False),('dense',True,False),('ranges',False,True),('both',True,True)]:
++        converted,_=helper.transform(original,dense=dense,return_ranges=ranges)
++        asm+=rename(converted,name,'probe_'+label)+'\n'
++    first=True;asm=re.sub(re.escape(helper.SLOT),remove,asm)
++    (HERE/'assembly-cases.inc').write_text(asm,encoding='utf8',newline='\n')
++    (HERE/'cases.json').write_text(json.dumps(dict(parser_checks=checks,cases=records,helper_sha256=hashlib.sha256(Path(helper.__file__).read_bytes()).hexdigest()),indent=2)+'\n')
++    print(f'Exact parser: {checks} checks passed')
++if __name__=='__main__':main()
+diff --git a/tests/dispatch_preparations_fixture.c b/tests/dispatch_preparations_fixture.c
+new file mode 100644
+--- /dev/null
++++ b/tests/dispatch_preparations_fixture.c
+@@ -0,0 +1,44 @@
++// SPDX-License-Identifier: MIT
++// Authored dispatch bodies with actual CPU layout and maintained charge helpers.
++#include <assert.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include "dispatch_preparations_generated.h"
++#include "cases.inc"
++typedef void(*Run)(CPUState*);
++static unsigned long long checks;
++static void compare(Run* functions,uint32_t pc,int64_t count,int64_t budget,int64_t deadline,unsigned alias) {
++    CPUState initial,wanted,actual;
++    memset(&initial,0xa5,sizeof(initial));
++    initial.pc=alias?(pc&~0x40000000u):pc;
++    initial.downcount=count;initial.cycle_budget=budget;initial.cycle_deadline_budget=deadline;
++    for(unsigned r=0;r<32;++r)initial.gpr[r]=r*747796405u+2891336453u;
++    memcpy(&wanted,&initial,sizeof wanted);functions[0](&wanted);
++    for(unsigned i=1;i<4;++i){memcpy(&actual,&initial,sizeof actual);functions[i](&actual);assert(memcmp(&actual,&wanted,sizeof actual)==0);++checks;}
++}
++int main(void) {
++    _Static_assert(sizeof(CPUState)==3552,"Actual core CPU layout");
++    Run functions[][4]={
++      {test_entry_original,test_entry_dense,test_entry_ranges,test_entry_both},
++      {test_cold_original,test_cold_dense,test_cold_ranges,test_cold_both},
++      {test_return_original,test_return_dense,test_return_ranges,test_return_both}};
++    const uint32_t bases[]={0x80004000u,0xc04200d4u,0x80008000u};
++    const int64_t counts[]={-17,-8,-2,-1,0,3,9};
++    const int64_t budgets[]={0,1,2,8,16};
++    const int64_t deadlines[]={-1,0,1,4,19};
++    for(unsigned f=0;f<3;++f)
++      for(uint32_t offset=0;offset<1152;++offset)
++        for(unsigned c=0;c<7;++c)for(unsigned b=0;b<5;++b)for(unsigned d=0;d<5;++d) {
++          uint32_t pc=bases[f]+offset-64;
++          compare(functions[f],pc,counts[c],budgets[b],deadlines[d],0);
++          compare(functions[f],pc^0x40000000u,counts[c],budgets[b],deadlines[d],0);
++          compare(functions[f],pc|0x40000000u,counts[c],budgets[b],deadlines[d],1);
++        }
++    const uint32_t outside[]={0,1,3,4,0x7fffffffu,0x80000000u,0xbfffffffu,0xc0000000u,0xfffffffdu,0xfffffffeu,0xffffffffu};
++    for(unsigned f=0;f<3;++f)for(unsigned p=0;p<sizeof outside/sizeof outside[0];++p)
++      for(unsigned c=0;c<7;++c)for(unsigned b=0;b<5;++b)for(unsigned d=0;d<5;++d)
++        compare(functions[f],outside[p],counts[c],budgets[b],deadlines[d],0);
++    printf("Dispatch preparations: %llu exact CPU/budget/deadline comparisons\n",checks);
++    return 0;
++}
+diff --git a/tests/dispatch_preparations_generated.h b/tests/dispatch_preparations_generated.h
+new file mode 100644
+--- /dev/null
++++ b/tests/dispatch_preparations_generated.h
+@@ -0,0 +1,18 @@
++#include "core/cpu.h"
++static inline s64 dolrecomp_loop_cycle_budget(const CPUState* ctx) {
++    return ctx->cycle_budget;
++}
++#define DOLRECOMP_C_LOOP_CYCLE_BUDGET dolrecomp_loop_cycle_budget(ctx)
++static inline bool dolrecomp_block_can_precharge(const CPUState* ctx,u32 block_cycles) {
++    if (ctx->cycle_deadline_budget <= 0) return true;
++    const s64 remaining = ctx->cycle_deadline_budget + ctx->downcount;
++    return remaining >= 0 && (u64)remaining >= (u64)block_cycles;
++}
++static inline bool dolrecomp_charge_precise(CPUState* ctx,u32 cycles,u32 resume) {
++    if (ctx->downcount <= -(s64)DOLRECOMP_C_LOOP_CYCLE_BUDGET) {
++        ctx->pc = resume;
++        return false;
++    }
++    ctx->downcount -= (s64)cycles;
++    return true;
++}

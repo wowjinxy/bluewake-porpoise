@@ -1,0 +1,11 @@
+Item 01: isolated early primitive fusion candidate
+
+The patch is based on exact SDK tree `6297ec48f4da8bda4d25d767e49a1d10b079f1c5` and donor `d687c6983a404156c540aca9f535c775217852e0`, authored by elliotttate <elliotttate@gmail.com>. Preserve that human donor attribution when integrating.
+
+GxCore requests fusion for indexed-position triangle primitives outside tagged, emitter-scope and dedicated HUD metadata. The consumer requires complete quad/triangle groups, sufficient strip/fan vertices, identical layout/transform identity and no intervening state, stream, texture, palette or copy operation. Packed segments retain independent primitive starts, so strip/fan topology never connects separate primitives. The 1024-vertex GxCore cap bounds fused plans.
+
+Each fusion-enabled array span owns an immutable copy. A later primitive can extend the span only when the binding/layout and overlapping bytes match; a source-byte change or unavailable resolver keeps draws separate. Copied consumed draws retain the arrays across streaming-slot reuse and reset. Span copies are limited to 16 MiB each; larger spans retain the previous borrowed path and cannot fuse. Snapshotting/validation costs are unmeasured and could offset the benefit; no FPS gain is claimed.
+
+Actual O3 and ASan fusion fixtures each passed 948 authored checks. The actual retained shader/plan suite passed O3 and ASan with the established sanitizer /OPT:NOICF policy. The earlier ICF-linked ASan failure is preserved, not attributed to an unchanged baseline without a baseline comparison. Compiles use actual core/front-end/guest-memory sources and real copied CRT/tool headers; direct callback fixtures supply synthetic bounded bytes only. Nine translation units per mode and eight ordered objects per fixture are recorded with actual MD, COFF and LLD reproductions. Five prior failed recipe/verification attempts and their outputs remain intact; passed objects/outcomes were reused after focused corrections.
+
+The live SDK and public manifests are untouched. Review the eight changed files, then refresh every consumer of ConsumedDraw/ConsumedArrayInput/GxCoreSink before integration. GPU image parity and serialized gameplay timing remain pending. The new CMake test is CPU-only and links the actual gxcore target. No Tingle prerequisite applies.

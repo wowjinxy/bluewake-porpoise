@@ -1,0 +1,121 @@
+Subject: [PATCH] Add opt-in exact dispatch preparations with strict source guards
+Based-on: AceSpectre <69684743+AceSpectre@users.noreply.github.com>, b6d5e7cb7c16103f4c3ef68b4d721f4a82977380
+Based-on: elliotttate <elliotttate@gmail.com>, 7aca42ade32d41b38a3810d5ba6f28bd37127e4b
+
+Candidate only. No normal builder integration or generated production changes.
+Unknown switch shapes and CPU/slot interposition are retained unchanged.
+Native gameplay A/B remains pending.
+
+---
+diff --git a/scripts/windows/dispatch_prepare.py b/scripts/windows/dispatch_prepare.py
+new file mode 100644
+--- /dev/null
++++ b/scripts/windows/dispatch_prepare.py
+@@ -0,0 +1,107 @@
++#!/usr/bin/env python3
++"""Opt-in exact dispatch preparations; no builder or default-runtime integration.
++
++Instruction-slot switches adapt AceSpectre's b6d5e7cb7c16103f4c3ef68b4d721f4a82977380.
++Budget-first return ranges adapt elliotttate's 7aca42ade32d41b38a3810d5ba6f28bd37127e4b.
++Unknown functions/cases/defaults are retained byte-for-byte. Run after all native
++body preparation/certification and before the final prepared-source digest.
++"""
++import argparse
++from pathlib import Path
++import re
++
++INCLUDE='#include "../generated.h"\n'
++MARK='/* bluewake: opt-in exact dispatch slots/ranges */\n'
++SLOT='''static inline u32 bw_dispatch_pc_slot(u32 pc, u32 base) {
++    u32 off = pc - base;
++    return (off >> 2) | (off << 30);
++}
++'''
++BUDGET='    if (ctx->downcount <= -(s64)DOLRECOMP_C_LOOP_CYCLE_BUDGET) return;'
++FUNCTION=re.compile(r'^(?:static )?void func_([0-9A-F]{8})(_cold)?\(CPUState\* ctx(?:_param)?\) \{$')
++CASE=re.compile(r'^    case 0x([0-9A-F]{8})u: goto (label|cold)_\1;$')
++SWITCH='    switch (ctx->pc) {'
++
++def transform(text, *, dense=False, return_ranges=False):
++    """Return exact source plus accepted switch counts; declined input is unchanged."""
++    if not dense and not return_ranges:return text,{'dense':0,'ranges':0}
++    if MARK in text or text.count(INCLUDE)!=1 or '\r' in text:return text,{'dense':0,'ranges':0}
++    # Return ranges read PC twice; only the ordinary pointer parameter or the
++    # maintained fixed-address CPU macro may supply it. Never add another
++    # evaluation of an unknown function-like/mutable ctx expression.
++    ctx_definitions=re.findall(r'^\s*#\s*define\s+ctx\b[^\n]*',text,re.M)
++    if any(line.strip()!='#define ctx (&bw_guest_cpu)' for line in ctx_definitions):
++        return text,{'dense':0,'ranges':0}
++    if re.search(r'^\s*#\s*(?:define|undef)\s+bw_dispatch_pc_slot\b',text,re.M):
++        return text,{'dense':0,'ranges':0}
++    if 'static inline u32 bw_dispatch_pc_slot' in text:
++        return text,{'dense':0,'ranges':0}
++    lines=text.split('\n');edits=[];counts={'dense':0,'ranges':0};base=None;function_start=None;cold=False
++    for i,line in enumerate(lines):
++        f=FUNCTION.fullmatch(line)
++        if f:
++            base=int(f[1],16);cold=bool(f[2]);function_start=i;continue
++        if line=='}':base=None;function_start=None;continue
++        if line!=SWITCH or base is None or base&3:continue
++        returning=(i>=2 and lines[i-1]==BUDGET and lines[i-2]==f'return_dispatch_{base:08X}:')
++        prefix=lines[function_start+1:i]
++        entry=prefix in ([],['    bool cycle_block_prepaid = false;'])
++        if not returning and not entry:continue
++        j=i+1;cases=[]
++        while j<len(lines):
++            c=CASE.fullmatch(lines[j])
++            if not c:break
++            address=int(c[1],16)
++            if address&3 or (c[2]=='cold')!=cold:cases=[];break
++            cases.append((address,c[2]));j+=1
++            if len(cases)>65536:cases=[];break
++        if not cases or len({a for a,_ in cases})!=len(cases):continue
++        direct_default=(lines[j:j+2]==['    default: return;','    }'])
++        cold_default=(not cold and not returning and lines[j:j+5]==[
++            '    default:', '        DOLRECOMP_COUNT(dolrecomp_cold_entries);',
++            f'        func_{base:08X}_cold(ctx);','        return;','    }'])
++        if not direct_default and not cold_default:continue
++        # Prove every goto names one unique column-zero label in this function.
++        closing=next((k for k in range(j+1,len(lines))if lines[k]=='}'),None)
++        if closing is None:continue
++        body=lines[function_start+1:closing]
++        if any(body.count(f'{p}_{a:08X}:')!=1 for a,p in cases):continue
++        dense_here=dense and max((a-base)&0xffffffff for a,_ in cases)<=0x00ffffff
++        range_here=return_ranges and returning
++        if not dense_here and not range_here:continue
++        opening=[]
++        if range_here:
++            low=min(a for a,_ in cases);high=max(a for a,_ in cases)
++            opening.append(f'    if ((u32)(ctx->pc - 0x{low:08X}u) > 0x{high-low:08X}u) return;')
++            counts['ranges']+=1
++        opening.append(f'    switch (bw_dispatch_pc_slot(ctx->pc, 0x{base:08X}u)) {{'if dense_here else SWITCH)
++        if dense_here:
++            opening += [f'    case 0x{((a-base)&0xffffffff)>>2:X}u: goto {p}_{a:08X};'for a,p in cases]
++            counts['dense']+=1
++        else:opening+=lines[i+1:j]
++        edits.append((i,j,opening))
++    if not edits:return text,counts
++    for i,j,replacement in reversed(edits):lines[i:j]=replacement
++    converted='\n'.join(lines)
++    converted=converted.replace(INCLUDE,INCLUDE+MARK+(SLOT if counts['dense']else ''),1)
++    return converted,counts
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('root',type=Path);parser.add_argument('--dense',action='store_true')
++    parser.add_argument('--return-ranges',action='store_true');parser.add_argument('--apply',action='store_true')
++    args=parser.parse_args()
++    if not args.dense and not args.return_ranges:parser.error('Choose an explicit opt-in transformation')
++    paths=sorted(args.root.glob('chunks_*/*.c'))
++    if not paths:parser.error('No copied chunks')
++    totals={'dense':0,'ranges':0}
++    for path in paths:
++        with path.open(encoding='utf8',newline='')as f:text=f.read()
++        result,counts=transform(text,dense=args.dense,return_ranges=args.return_ranges)
++        for key,value in counts.items():totals[key]+=value
++        if result!=text and args.apply:
++            temp=path.with_suffix('.c.dispatch.tmp')
++            with temp.open('x',encoding='utf8',newline='\n')as f:f.write(result)
++            temp.replace(path)
++    print(('Applied 'if args.apply else 'Dry run ')+str(totals))
++if __name__=='__main__':main()
