@@ -588,6 +588,10 @@ target_include_directories(bluewake_efb_peek_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME bluewake_efb_peek_test COMMAND bluewake_efb_peek_test)
 
+add_executable(bluewake_noninteractive_test ../../tests/noninteractive_test.c)
+target_include_directories(bluewake_noninteractive_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME bluewake_noninteractive_test COMMAND bluewake_noninteractive_test)
+
 # Manual, noninteractive GPU oracle: authored FIFO draws reach the host color
 # MMIO bridge before present. It requires a real GPU and keeps devices/window
 # interaction disabled, so it is separate from ordinary CTest unit coverage.

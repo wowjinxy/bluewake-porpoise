@@ -74,6 +74,7 @@ static bool g_inventory_collector_headless;
 #include "haptics.h"
 #include "draw_tags.h"
 #include "mouse_camera.h"
+#include "noninteractive.h"
 #include "callback_delivery.h"
 #include "cycle_domain.h"
 #include "interrupt_sources.h"
@@ -93,6 +94,8 @@ static bool g_inventory_collector_headless;
 #include "network_game.h"
 #include "../../../windows/src/win_settings.h"
 #include "../../../windows/src/asset_pack_menu.h"
+#include <SDL3/SDL.h>
+#include <aurora/aurora.h>
 #endif
 #include "gxruntime/hle.h"
 #include <aurora/gfx.h>
@@ -465,6 +468,26 @@ static DolInterrupts g_interrupts;
 static DolSiDevice g_si;
 static DolPadState g_virtual_pad[4];
 static bool g_live_pad_enabled;
+static bool g_noninteractive;
+static bool g_noninteractive_contract_failed;
+#if defined(BLUEWAKE_WINDOWS)
+static bool host_noninteractive_contract(const char* phase) {
+    const u32 devices = SDL_WasInit(SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD);
+    int count = 0;
+    SDL_Window** windows = SDL_GetWindows(&count);
+    bool hidden = windows != NULL && count == 1;
+    for (int i = 0; windows != NULL && i < count; ++i) {
+        const SDL_WindowFlags flags = SDL_GetWindowFlags(windows[i]);
+        hidden = hidden && (flags & SDL_WINDOW_HIDDEN) != 0 &&
+                 (flags & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_FULLSCREEN)) == 0;
+    }
+    SDL_free(windows);
+    const unsigned long long shown = aurora_get_shown_frames();
+    fprintf(stderr, "[noninteractive] %s windows=%d hidden=%u devices=%u shown=%llu\n",
+            phase, count, hidden ? 1u : 0u, devices, shown);
+    return hidden && devices == 0u && shown == 0u;
+}
+#endif
 // Internal guest-controller qualification; never reads or drives desktop input.
 static bool g_shortcut_test_enabled;
 static u64 g_shortcut_test_start, g_shortcut_test_length;
@@ -2299,7 +2322,7 @@ static bool host_healing_return_can_continue(void* user, const CPUState* cpu, u3
 
 static bool host_autosave_dispatch(CPUState* cpu, u32 address) {
     if (address == BLUEWAKE_AUTOSAVE_RETURN && bluewake_autosave_active()) {
-        bluewake_mouse_camera_discard_input();
+        if (!g_noninteractive) bluewake_mouse_camera_discard_input();
         bluewake_jump_button_discard_input();
     }
     // Native save observations must see the real return value before the
@@ -4711,10 +4734,10 @@ static void host_si_complete_pad_transfer(u32 control) {
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
         if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]);
-    } else if (bluewake_mouse_camera_scripted()) {
+    } else if (!g_noninteractive && bluewake_mouse_camera_scripted()) {
         if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
-    if (host_guest_mutators_held()) bluewake_mouse_camera_discard_input();
+    if (!g_noninteractive && host_guest_mutators_held()) bluewake_mouse_camera_discard_input();
     host_note_live_input(&live_pad[0]);
     bluewake_pad_merge(g_live_takeover ? &live_pad[channel] : &g_virtual_pad[channel],
                        &live_pad[channel], &merged_pad);
@@ -4815,10 +4838,10 @@ static void host_si_latch_pad_poll(void) {
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
         if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]);
-    } else if (bluewake_mouse_camera_scripted()) {
+    } else if (!g_noninteractive && bluewake_mouse_camera_scripted()) {
         if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
-    if (host_guest_mutators_held()) bluewake_mouse_camera_discard_input();
+    if (!g_noninteractive && host_guest_mutators_held()) bluewake_mouse_camera_discard_input();
     host_note_live_input(&live_pad[0]);
     for (u32 channel = 0; channel < 4u; channel++) {
         if ((channel_mask & (1u << channel)) == 0u)
@@ -4944,7 +4967,7 @@ static void host_mmio_write(CPUState* ctx, u32 address, u64 value, u8 size) {
             // PADControlMotor encodes the command in bits 16-23.
             if ((((u32)value >> 16) & 0xFFu) == 0x40u && motor != s_motor[channel]) {
                 s_motor[channel] = motor;
-                if (bluewake_haptics_forward_motor())
+                if (!g_noninteractive && bluewake_haptics_forward_motor())
                     dol_platform_pad_control_motor(channel, motor);
                 if (g_input_log_enabled)
                     fprintf(stderr, "[rumble] channel=%u motor=%u retrace=%llu\n", channel,
@@ -5536,7 +5559,7 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         bw_hud_host_retrace(cpu,g_host_retrace_count,mutators_held);
         bw_health_host_retrace(cpu,mutators_held);
         if (mutators_held) {
-            bluewake_mouse_camera_discard_input();
+            if (!g_noninteractive) bluewake_mouse_camera_discard_input();
             bluewake_jump_button_discard_input();
             /* Manual save proof cannot contain a host HIO restoration. */
             if (autosaving) bluewake_sprint_cancel();
@@ -5551,9 +5574,9 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         }
         bool autosave_input_blocked = false;
 #if defined(BLUEWAKE_WINDOWS)
-        bluewake_controls_retrace();
-        BluewakeControlsActions shortcut_input;
-        const bool shortcut_managed = bluewake_controls_read_actions(&shortcut_input);
+        if (!g_noninteractive) bluewake_controls_retrace();
+        BluewakeControlsActions shortcut_input = {0};
+        const bool shortcut_managed = !g_noninteractive && bluewake_controls_read_actions(&shortcut_input);
         autosave_input_blocked = shortcut_input.blocked;
         if (!g_shortcut_test_enabled)
             bluewake_quick_items_input(shortcut_managed && shortcut_input.quick_items_down,
@@ -5572,13 +5595,13 @@ static void host_sync_vi_cycles(CPUState* cpu) {
                                   g_autosave_host_safe && !host_reward_mutators_held(),
                                   autosave_input_blocked);
         if (!mutators_held) {
-            bluewake_mouse_camera_retrace();
+            if (!g_noninteractive) bluewake_mouse_camera_retrace();
             bluewake_enhancement_hooks_retrace(cpu);
             bluewake_jump_button_retrace();
             bluewake_sprint_retrace();
             bluewake_fast_load_retrace(bluewake_host_thread_cpu_us());
             bluewake_quick_doors_retrace();
-            bluewake_haptics_retrace();
+            if (!g_noninteractive) bluewake_haptics_retrace();
             bluewake_fps_watch_retrace();
         }
         if (g_wall_pace_enabled && !bluewake_fast_load_fast_forward())
@@ -7578,6 +7601,16 @@ static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* 
 }
 
 int main(int argc, char** argv) {
+    g_noninteractive = bluewake_noninteractive_requested();
+    g_noninteractive_contract_failed = false;
+    g_live_pad_enabled = false;
+    if (g_noninteractive) {
+        const char* error = bluewake_noninteractive_error();
+        if (error != NULL) {
+            fprintf(stderr, "[host] noninteractive GPU diagnostics require %s\n", error);
+            return 1;
+        }
+    }
 #ifndef BW_NATIVE_REWARD_SESSION
     const char* unsupported_reward_mode = getenv("BLUEWAKE_NATIVE_REWARD_SESSION");
     if (unsupported_reward_mode && strcmp(unsupported_reward_mode, "1") == 0) {
@@ -7623,7 +7656,7 @@ int main(int argc, char** argv) {
     bw_hud_host_suspend(); bw_health_host_detach(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     // The options menu's saved choices, before anything reads the environment.
-    bluewake_settings_load();
+    if (!g_noninteractive) bluewake_settings_load();
     host_apply_aspect();
     const char* host_root = host_resolve_root();
     char dylib_scratch[4096 + 128];
@@ -7961,7 +7994,7 @@ int main(int argc, char** argv) {
     // the window, the audio device and live input, with a headless fallback
     // when no window server is reachable.
     const bool renderer_requested = renderer != NULL && renderer[0] != '\0';
-    if (!renderer_requested || strcmp(renderer, "aurora") == 0) {
+    if (!renderer_requested || strcmp(renderer, "aurora") == 0 || g_noninteractive) {
         const AuroraBackendConfig aurora_config = {
             .app_name = "BlueWake",
             .window_width = 960u,
@@ -7971,21 +8004,30 @@ int main(int argc, char** argv) {
             .info_logging = true,
             .graphics_logging = getenv("DOL_AURORA_RECOMP_GRAPHICS_LOG") != NULL,
             .force_untextured = false,
+            .noninteractive = g_noninteractive,
         };
         /* A process-lifetime callback; install before worker initialization. */
         (void)bw_hud_renderer_install();
         if (dol_aurora_initialize(argc, argv, &aurora_config)) {
             aurora_enabled = true;
 #if defined(BLUEWAKE_WINDOWS)
+            if (g_noninteractive && !host_noninteractive_contract("startup")) {
+                bw_hud_host_detach(); bw_health_host_detach(); dol_aurora_shutdown();
+                fprintf(stderr, "[host] noninteractive renderer contract failed\n");
+                return 1;
+            }
             bw_settings_start_asset_packs();
 #endif
             // BLUEWAKE_LIVE_PAD=0 (test runs): the pad script alone, even with a
             // controller connected whose resting axes read as a person.
             const char* live_pad = getenv("BLUEWAKE_LIVE_PAD");
-            g_live_pad_enabled = live_pad == NULL || live_pad[0] != '0';
-            bluewake_mouse_camera_install();
-            bluewake_settings_menu_install();
-            fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
+            g_live_pad_enabled = !g_noninteractive && (live_pad == NULL || live_pad[0] != '0');
+            if (!g_noninteractive) {
+                bluewake_mouse_camera_install();
+                bluewake_settings_menu_install();
+            }
+            fprintf(stderr, "[host] renderer=%s window=%ux%u\n",
+                    g_noninteractive ? "aurora-noninteractive" : "aurora",
                     aurora_config.window_width, aurora_config.window_height);
         } else if (renderer_requested) {
             fprintf(stderr, "[host] Aurora renderer initialization failed\n");
@@ -8001,7 +8043,7 @@ int main(int argc, char** argv) {
         dol_headless_backend_install(&backend);
         fprintf(stderr, "[host] renderer=headless\n");
     }
-    if (!dol_platform_pad_init()) {
+    if (!g_noninteractive && !dol_platform_pad_init()) {
         fprintf(stderr, "[pad] platform input initialization failed\n");
         if (aurora_enabled) {
 #if defined(BLUEWAKE_WINDOWS)
@@ -8011,8 +8053,11 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
-    fprintf(stderr, "[pad] platform input initialized; live input %s at SI\n",
-            g_live_pad_enabled ? "merged" : "disabled for headless backend");
+    if (g_noninteractive)
+        fprintf(stderr, "[pad] noninteractive GPU diagnostics use guest-script input only\n");
+    else
+        fprintf(stderr, "[pad] platform input initialized; live input %s at SI\n",
+                g_live_pad_enabled ? "merged" : "disabled for headless backend");
     g_state_aurora = aurora_enabled;
 
     const char* card_path = getenv("BLUEWAKE_CARD_PATH");
@@ -8722,7 +8767,7 @@ int main(int argc, char** argv) {
 #if defined(BLUEWAKE_WINDOWS)
     bw_network_game_attach(&cpu);
 #endif
-    bluewake_mouse_camera_attach(&cpu);
+    if (!g_noninteractive) bluewake_mouse_camera_attach(&cpu);
     bluewake_climb_attach(&cpu);
     bluewake_jump_button_attach(&cpu);
     bluewake_sprint_attach(&cpu);
@@ -8730,7 +8775,7 @@ int main(int argc, char** argv) {
     bluewake_fast_load_attach(&cpu);
     bluewake_quick_doors_attach(&cpu);
     bluewake_draw_tags_attach(&cpu);
-    bluewake_haptics_attach(&cpu);
+    if (!g_noninteractive) bluewake_haptics_attach(&cpu);
 
     unsigned long long blocks = 0;
     const char* stop_reason = NULL;
@@ -9105,7 +9150,7 @@ int main(int argc, char** argv) {
                 // Reset notification carries the prior subscriber user pointer.
                 // Keep a failed load detached after those callbacks finish.
                 bluewake_sprint_reset(NULL);
-                bluewake_haptics_shutdown();
+                if (!g_noninteractive) bluewake_haptics_shutdown();
                 if (aurora_enabled) {
 #if defined(BLUEWAKE_WINDOWS)
                     bw_asset_pack_menu_shutdown();
@@ -16884,13 +16929,20 @@ int main(int argc, char** argv) {
     g_inventory_collector_headless = false;
 #endif
     bw_hud_host_detach(); bw_health_host_detach();
-    bluewake_haptics_shutdown();
+    if (!g_noninteractive) bluewake_haptics_shutdown();
 #if defined(BLUEWAKE_WINDOWS)
     bw_network_game_detach();
     bw_asset_pack_menu_shutdown();
 #endif
-    if (aurora_enabled)
+    if (aurora_enabled) {
+#if defined(BLUEWAKE_WINDOWS)
+        if (g_noninteractive && !host_noninteractive_contract("shutdown")) {
+            g_noninteractive_contract_failed = true;
+            fprintf(stderr, "[host] noninteractive renderer contract failed at shutdown\n");
+        }
+#endif
         dol_aurora_shutdown();
+    }
 #ifdef BLUEWAKE_HAS_DSP_ADAPTER
     host_audio_diagnostics_report("shutdown");
     host_dsp_adapter_shutdown();
@@ -16992,7 +17044,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[direct-calls] summary queries=%llu allowed=%llu\n",
                 (unsigned long long)g_direct_call_queries,
                 (unsigned long long)g_direct_call_allowed);
-    return g_guest_checkpoint_failed ? 1 : bw_host_stop_status(stop_reason);
+    return g_guest_checkpoint_failed || g_noninteractive_contract_failed ? 1 : bw_host_stop_status(stop_reason);
 }
 
 #undef cpu

@@ -14,6 +14,7 @@
 // open the game's pad is neutral and the mouse camera stands aside. Closing
 // waits for held inputs to be released before they can control Link again.
 #include "win_settings.h"
+#include "../../runtime/host/src/noninteractive.h"
 #include "settings_state.h"
 #include "smooth_rate.h"
 #include "controls_bindings.h"
@@ -1635,6 +1636,9 @@ extern "C" void bw_settings_install(void) {
     apply_health();
     apply_audio();
     apply_hud();
+    // The diagnostic host keeps game settings but never installs callbacks
+    // that initialize controls or resize/show/fullscreen the hidden window.
+    if (bluewake_noninteractive_requested()) return;
     dol_aurora_set_overlay(frame, nullptr);
     // BLUEWAKE_SHADERS_FIRST=0/1 overrides the setting (testing).
     const char* first = std::getenv("BLUEWAKE_SHADERS_FIRST");

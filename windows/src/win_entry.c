@@ -47,6 +47,7 @@
 #include "network_menu.h"
 #include "win_crash.h"
 #include "launch_marker.h"
+#include "../../runtime/host/src/noninteractive.h"
 
 int bluewake_host_main(int argc, char** argv);
 
@@ -470,6 +471,14 @@ static void fatal_box(const char* message) {
 }
 
 int main(int argc, char** argv) {
+    const bool noninteractive = bluewake_noninteractive_requested();
+    if (noninteractive) {
+        const char* error = bluewake_noninteractive_error();
+        if (error != NULL) {
+            fprintf(stderr, "[windows] noninteractive GPU diagnostics require %s\n", error);
+            return 1;
+        }
+    }
     bw_settings_capture_environment();
     resolve_dirs();
     if (getenv("BLUEWAKE_SESSION_LOG") == NULL || strcmp(getenv("BLUEWAKE_SESSION_LOG"), "0") != 0)
@@ -651,8 +660,10 @@ int main(int argc, char** argv) {
     }
     // The name the volume mixer shows for the game's audio.
     SDL_SetAppMetadata("BlueWake", "0.1", "dev.bluewake.BlueWake");
-    g_hotkey_hook = SetWindowsHookExW(WH_KEYBOARD, hotkey_hook, NULL, GetCurrentThreadId());
-    if (!g_hotkey_hook) fprintf(stderr, "[windows] hotkey hook failed: %lu\n", GetLastError());
+    if (!noninteractive) {
+        g_hotkey_hook = SetWindowsHookExW(WH_KEYBOARD, hotkey_hook, NULL, GetCurrentThreadId());
+        if (!g_hotkey_hook) fprintf(stderr, "[windows] hotkey hook failed: %lu\n", GetLastError());
+    }
     bw_settings_install();
     start_profile();
     char* host_argv[3] = {argv[0], module, NULL};
@@ -668,8 +679,8 @@ int main(int argc, char** argv) {
     bw_crash_test();
     // All startup failure paths above have completed. Preview is optional
     // and starts OFF; binding remains stable for the whole host/UI lifetime.
-    BwAudioPreview* preview = bluewake_audio_preview_create();
-    if (preview == NULL)
+    BwAudioPreview* preview = noninteractive ? NULL : bluewake_audio_preview_create();
+    if (!noninteractive && preview == NULL)
         fprintf(stderr, "[audio-preview] worker unavailable; native audio remains active\n");
     bluewake_host_audio_preview_bind(preview);
     const int status = bluewake_host_main(2, host_argv);
@@ -689,7 +700,7 @@ int main(int argc, char** argv) {
     }
     if (g_hotkey_hook) { UnhookWindowsHookEx(g_hotkey_hook); g_hotkey_hook = NULL; }
     timeEndPeriod(1);
-    if (status == 0 && bw_settings_relaunch() != 0)
+    if (status == 0 && !noninteractive && bw_settings_relaunch() != 0)
         return 1;
     return status;
 }

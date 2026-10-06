@@ -13,7 +13,7 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |
-| 01 | Isolated fusion candidate adds immutable array ownership, complete primitive groups and HUD/state boundaries. | Production semantic tests, GPU/game images and serialized timing. |
+| 01 | Isolated fusion candidate adds immutable array ownership, complete primitive groups and HUD/state boundaries. Actual O3 and ASan each passed 948 fusion checks; retained shader/plan tests also passed. | Combined renderer GPU/game images, array-copy cost and serialized timing. |
 | 07 | Isolated two-identity texture cache: O3 and ASan each passed 420,637 checks. Authored two-palette alternation used 2 uploads instead of 1,000 with identical decoded pixels. | Full renderer integration, real GPU/game images and serialized timing. No gameplay FPS claim. |
 | 10–11 | Opt-in dispatch/return transformations in implementation; existing computed-goto entry dispatch is preserved. | Exact state/budget tests and optimized assembly, then matching-profile gameplay A/B. |
 | 35 | Implemented full SHA-256 profile snapshots with compiler/tool-specific readability. 13 cache tests and 12 training tests passed. Real Clang/Ninja rebuilt affected C/C++ objects for same-name/size/mtime changed profiles, reused unrelated objects, and handled invalid-profile fallback. | Complete for build correctness; no gameplay FPS claim. |
@@ -25,11 +25,25 @@ SHA-256 `a187d274734cf3e4c8905e87c11592006e4e555fbb4e9369fe9fcdf55935a133`.
 Initial missing-CRT and test-recorder failures are preserved beside the passing
 results. Other optimizer changes in the shared builder/workflow are retained.
 
-The game host's explicit `BLUEWAKE_RENDERER=aurora-noninteractive` route is being
-qualified for unattended GPU correctness tests. It requires explicit disposable
+The game host's explicit `BLUEWAKE_RENDERER=aurora-noninteractive` route passed
+unattended native GPU correctness tests. It requires explicit disposable
 data/CARD/SRAM/state/cache paths and no live input/dialogs/settings file. Its
 ordinary launch still selects the player window. Offscreen render tests cannot
 establish displayed FPS or qualify display-presentation optimizations.
+
+The rebuilt host refreshed all seven app configuration/header consumers against
+the verified eleven-patch SDK archives. The launch-policy fixture passed 28
+checks. Native startup and the full 3,300-retrace copied-CARD route both exited
+zero and drained; startup/shutdown asserted one hidden, unfocused window, no
+audio/controller subsystems and zero displayed frames. The longer run loaded the
+native save, reached a ready Outset player and captured a visually checked
+640×480 RGB frame. Source/card/settings/assets/runtime inputs stayed unchanged.
+This qualifies the test route, not a performance gain or a visible launch.
+
+Private native receipt: `build/noninteractive-host-20261006/native-3300-attempt1/result.json`,
+SHA-256 `278ec6dbb2a77b73526684859362a80974ec55fc2045d1d8ee42fe9357143f65`.
+RGB pixel SHA-256: `00e19929883fc4f2e07dc93305ea1c2bc8f3608bf5f99f31da82943653798353`.
+The initial invalid test-clock run and compiler/recipe negatives are preserved.
 
 This list preserves all performance leads from the
 [fork audit](FORK_OPTIMIZATION_AUDIT_2026-10-06.md), including weaker ideas,
