@@ -1309,6 +1309,25 @@ void draw_hint(SDL_Window* w) {
     ImGui::End();
 }
 
+void draw_controls_save_notice(SDL_Window* w) {
+    if (bluewake_controls_menu_save_error()[0] == '\0')
+        return;
+    const float scale = ui_scale(w);
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(12 * scale, 12 * scale), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(std::max(1.f, std::min(440 * scale, io.DisplaySize.x - 24 * scale)), 0), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                                  ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    if (ImGui::Begin("##bluewake-controls-save", nullptr, flags)) {
+        ImGui::SetWindowFontScale(scale / g_font_scale);
+        ImGui::TextWrapped("Your controls are active, but could not be saved.");
+        ImGui::TextWrapped("BlueWake will retry when settings are closed. F1 > Controls > Save bindings retries immediately.");
+    }
+    ImGui::End();
+}
+
 // Every presented frame, on the main thread, inside Aurora's frame.
 void frame(void*) {
     SDL_Window* w = game_window();
@@ -1345,6 +1364,7 @@ void frame(void*) {
     static Uint64 fps_logged;
     static DolAuroraFrameTiming timing_before;
     const Uint64 now = SDL_GetTicks();
+    bluewake_controls_menu_tick(now);
     if (now - fps_logged >= 1000) {
         apply_smooth_rate(w);
         DolAuroraFrameTiming timing{};
@@ -1377,6 +1397,7 @@ void frame(void*) {
     if (g_menu_open)
         draw_menu(w);
     draw_hint(w);
+    draw_controls_save_notice(w);
     if (g_dirty && SDL_GetTicks() - g_dirty_at > 1000 && !g_menu_open)
         save_file();
 }
@@ -1407,7 +1428,11 @@ void bw_settings_ui_test_reset(const char* data_dir, const Settings& saved) {
     g_preview_message.clear();
     set_menu_open(true);
 }
-void bw_settings_ui_test_draw() { draw_menu(nullptr); }
+void bw_settings_ui_test_draw() {
+    bluewake_controls_menu_tick(SDL_GetTicks());
+    if (g_menu_open) draw_menu(nullptr);
+    draw_controls_save_notice(nullptr);
+}
 const Settings& bw_settings_ui_test_session() { return g_session; }
 const Settings& bw_settings_ui_test_saved() { return g_saved; }
 bool bw_settings_ui_test_menu_open() { return g_menu_open; }

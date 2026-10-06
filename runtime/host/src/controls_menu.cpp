@@ -22,6 +22,32 @@ BluewakeControlsCapture capture_kind;
 unsigned capture_slot;
 uint32_t capture_device;
 std::string message;
+std::string save_error;
+bool retry_save;
+bool retry_clock_armed;
+uint64_t retry_at;
+
+void saved_bindings() {
+    retry_save = false;
+    retry_clock_armed = false;
+    save_error.clear();
+}
+
+bool save_bindings() {
+    // Serialize the current profiles on every attempt. A queued retry never
+    // retains old bytes that could overwrite a newer edit or explicit reload.
+    const bool saved = bluewake_controls_save();
+    if (saved) {
+        saved_bindings();
+        message = "Bindings saved.";
+    } else {
+        save_error = bluewake_controls_error();
+        if (save_error.empty()) save_error = "Bindings could not be saved.";
+        retry_save = bluewake_controls_dirty();
+        retry_clock_armed = false;
+    }
+    return saved;
+}
 
 bool keyboard_capture() {
     return capture_kind == BLUEWAKE_CAPTURE_KEY_BUTTON || capture_kind == BLUEWAKE_CAPTURE_KEY_AXIS ||
@@ -275,11 +301,42 @@ extern "C" void bluewake_controls_menu_set_open(bool open) {
     if (menu_open == open) return;
     menu_open = open;
     bluewake_controls_set_input_blocked(open);
+    retry_clock_armed = false;
     if (!open) {
         bluewake_controls_menu_cancel_capture();
-        if (bluewake_controls_dirty() && !bluewake_controls_save()) message = bluewake_controls_error();
+        if (bluewake_controls_dirty()) save_bindings();
+        else saved_bindings();
     }
     PADBlockInput(open);
+}
+
+extern "C" void bluewake_controls_menu_tick(uint64_t now_ms) {
+    if (!retry_save) return;
+    if (!bluewake_controls_dirty()) {
+        saved_bindings(); // A separate successful save/reload resolved the failure.
+        return;
+    }
+    if (menu_open || capturing) {
+        retry_clock_armed = false;
+        return;
+    }
+    if (!retry_clock_armed || now_ms < retry_at) {
+        retry_at = now_ms;
+        retry_clock_armed = true;
+        return;
+    }
+    if (now_ms - retry_at < 1000) return;
+    save_bindings();
+    // Each failed attempt starts a fresh throttle interval, including when the
+    // caller's clock rolls back. No retry loop or extra sleep is introduced here.
+    if (retry_save) {
+        retry_at = now_ms;
+        retry_clock_armed = true;
+    }
+}
+
+extern "C" const char* bluewake_controls_menu_save_error(void) {
+    return save_error.c_str();
 }
 
 extern "C" bool bluewake_controls_menu_is_open(void) { return menu_open; }
@@ -386,8 +443,10 @@ extern "C" void bluewake_controls_menu_draw(void) {
         if (ImGui::Button("Cancel binding (Esc)")) bluewake_controls_menu_cancel_capture();
     }
     if (!message.empty()) ImGui::TextWrapped("%s", message.c_str());
-    const char* error = bluewake_controls_error();
+    const char* error = save_error.empty() ? bluewake_controls_error() : save_error.c_str();
     if (error && *error) ImGui::TextWrapped("%s", error);
+    if (!save_error.empty())
+        ImGui::TextWrapped("Bindings are still unsaved. Close settings for automatic retry, or choose Save bindings to retry now.");
     ImGui::BeginDisabled(capturing);
     ImGui::SeparatorText("Your controller");
     draw_devices();
@@ -440,11 +499,14 @@ extern "C" void bluewake_controls_menu_draw(void) {
     }
     ImGui::Separator();
     if (ImGui::Button("Save bindings")) {
-        message = bluewake_controls_save() ? "Bindings saved." : bluewake_controls_error();
+        save_bindings();
     }
     if (!compact_rows) ImGui::SameLine();
     if (ImGui::Button(compact_rows ? "Reload saved" : "Reload saved bindings")) {
-        message = bluewake_controls_load() ? "Saved bindings loaded." : bluewake_controls_error();
+        if (bluewake_controls_load()) {
+            saved_bindings();
+            message = "Saved bindings loaded.";
+        } else message = bluewake_controls_error();
     }
     ImGui::SameLine();
     ImGui::TextDisabled(bluewake_controls_dirty() ? "Unsaved changes" : "Saved");

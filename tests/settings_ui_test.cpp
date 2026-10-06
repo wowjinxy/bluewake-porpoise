@@ -10,6 +10,7 @@
 #include "win_settings.h"
 #include "settings_catalog.h"
 #include "controls_bindings.h"
+#include "controls_menu.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -30,6 +31,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 extern "C" bool bluewake_settings_menu_event(const void* event);
 
 namespace {
@@ -64,8 +70,10 @@ void frame() {
     rendered_text.assign(GImGui->LogBuffer.begin(), GImGui->LogBuffer.end());
     ImGui::LogFinish();
     ImGui::Render();
-    require(ImGui::GetDrawData() && ImGui::GetDrawData()->TotalVtxCount > 0,
-            "Actual settings menu emitted no ImGui draw geometry");
+    require(ImGui::GetDrawData() &&
+            ((!bw_settings_ui_test_menu_open() && !*bluewake_controls_menu_save_error()) ||
+             ImGui::GetDrawData()->TotalVtxCount > 0),
+            "Actual settings menu or save notice emitted no ImGui draw geometry");
     if (trace) trace << "\nFRAME " << ++frames << '\n' << rendered_text;
 }
 const Item& item(const char* label, ImGuiItemStatusFlags required = 0,
@@ -114,6 +122,47 @@ void search(const char* query) {
     frame();
 }
 void clear_search() { click("Clear"); }
+#ifdef _WIN32
+void controls_save_retry_ui_checks(const std::filesystem::path& file) {
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false);
+    frame();
+    SDL_Event reopen{};reopen.type=SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    reopen.gbutton.button=SDL_GAMEPAD_BUTTON_BACK;
+    require(bluewake_settings_menu_event(&reopen), "Menu handler did not reopen for save failure");
+    frame();frame();
+    const auto prior=read_file(file);
+    require(bluewake_controls_set_key(false,7,SDL_SCANCODE_P), "Cannot edit fixture binding");
+    const HANDLE locked=CreateFileW(file.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,
+                                   OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    require(locked!=INVALID_HANDLE_VALUE, "Cannot hold fixture file against replacement");
+    struct CloseLock { HANDLE handle;~CloseLock(){if(handle!=INVALID_HANDLE_VALUE)CloseHandle(handle);} } lock{locked};
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape,true);
+    frame();frame();
+    require(!bw_settings_ui_test_menu_open() && !bw_settings_ui_mock_effects().blocked &&
+            bluewake_controls_dirty() && read_file(file)==prior,
+            "Failed menu-close save lost live binding or changed the protected old file");
+    require(rendered_text.find("Your controls are active, but could not be saved.")!=std::string::npos,
+            "Closed-menu save failure notice was not drawn");
+    auto* notice=ImGui::FindWindowByName("##bluewake-controls-save");
+    const auto flags=ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing|ImGuiWindowFlags_NoNav;
+    require(notice && (notice->Flags&flags)==flags, "Save notice can take input or focus");
+    const auto writes_before=bw_settings_ui_mock_effects().controller_writes;
+    require(CloseHandle(locked)!=FALSE, "Cannot release fixture lock");lock.handle=INVALID_HANDLE_VALUE;
+    for(unsigned i=0;i<50;++i)frame();
+    require(bluewake_controls_dirty() && read_file(file)==prior,
+            "Save retry did not respect its frame throttle");
+    for(unsigned i=0;i<20 && bluewake_controls_dirty();++i)frame();
+    frame();
+    require(!bluewake_controls_dirty() && !*bluewake_controls_menu_save_error() && read_file(file)!=prior &&
+            rendered_text.find("Your controls are active, but could not be saved.")==std::string::npos,
+            "Later frames did not save bindings and retire the failure notice");
+    require(bw_settings_ui_mock_effects().controller_writes==writes_before,
+            "UI retry reapplied input bindings");
+    require(bluewake_controls_load(), bluewake_controls_error());
+    BluewakeControlsSnapshot snapshot{};bluewake_controls_snapshot(&snapshot);
+    require(snapshot.key_buttons[7]==SDL_SCANCODE_P, "UI retry did not persist the edited binding");
+}
+#endif
 BwAudioPreviewStatus preview_status(BwAudioPreview* handle) {
     BwAudioPreviewStatus status{};
     require(bluewake_audio_preview_status(handle, &status), "Actual preview status unavailable");
@@ -711,6 +760,9 @@ int main(int argc, char** argv) {
         unchanged_profile(controls_file, profile_file_before);
         require(preview_status(preview.get()).state==BW_PREVIEW_CANCELLED,
                 "Final ordinary menu close failed to leave preview cancelled");
+#ifdef _WIN32
+        controls_save_retry_ui_checks(controls_file);
+#endif
         bw_settings_ui_mock_preview_bind(nullptr);
         preview.reset();
         const auto effects = bw_settings_ui_mock_effects();
