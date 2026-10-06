@@ -72,6 +72,8 @@ enum {
     kPlayerShapeY = 0x20Eu, // fopAc_ac_c::shape_angle.y
     kPlayerBodyX = 0x2B4u,  // daPy_py_c::mBodyAngle.x (the aim's pitch)
     kPlayerDemoMode = 0x314u,
+    kPlayerCurrentProc = 0x31D8u, // daPy_lk_c::mCurProc
+    kProcTactWait = 0x9Au, kProcTactOriginal = 0x9Du,
     // daPy_lk_c::execute (USA) starts by putting back the shape_angle and
     // current.angle it kept at the end of the last update (l_debug_shape_angle,
     // l_debug_current_angle), so a turn made between updates has to go into
@@ -190,6 +192,7 @@ static const double kStickInUse = 0.05;
 // a steady tilt turns the same amount every frame and the in-between frames
 // show an even turn.
 static const double kGameFrameSeconds = 1.0 / 29.97;
+static bool g_stick_conducting; // the native Wind Waker procedure consumes the C-stick as notes
 static bool g_stick_owns;       // the last camera_draw was the follow camera, the player in control
 static bool g_stick_aims;       // ... or an aiming view: the stick aims, as the mouse does (aim_frame)
 static bool g_stick_zooms;      // ... one that zooms (telescope, Picto Box): the left stick zooms
@@ -397,6 +400,7 @@ void bluewake_mouse_camera_reload(void) {
 
 void bluewake_mouse_camera_attach(CPUState* cpu) {
     (void)cpu;
+    g_stick_conducting = false;
     const char* sensitivity = getenv("BLUEWAKE_MOUSE_SENSITIVITY");
     if (sensitivity != NULL && atof(sensitivity) > 0.0)
         g_sensitivity = atof(sensitivity);
@@ -573,11 +577,13 @@ void bluewake_mouse_camera_pad(DolPadState* pad) {
         // C-stick still goes through while the stick rests.
         if (sqrt(x * x + y * y) > in_use)
             pad->substick_x = pad->substick_y = 0;
-    } else if (sqrt(x * x + y * y) > in_use && !bluewake_game_options_invert_camera_x()) {
+    } else if (!g_stick_conducting && sqrt(x * x + y * y) > in_use &&
+               !bluewake_game_options_invert_camera_x()) {
         // The game's own camera has the view (swimming, the boat, a target):
         // its C-stick turns the camera the other way from this stick's, so left
         // and right flipped as Link went into the water (Wind-Waker-Recomp
-        // #24). Turn it this stick's way. The keyboard's C-stick is unchanged.
+        // #24). Turn it this stick's way. Conducting uses directions as notes,
+        // so its C-stick bypasses this camera correction. The keyboard is unchanged.
         pad->substick_x = pad->substick_x == -128 ? 127 : (s8)-pad->substick_x;
     }
     if (g_stick_owns && click) {
@@ -618,6 +624,25 @@ static void write_f32(CPUState* cpu, u32 address, float value) {
 
 static bool guest_pointer(u32 address) {
     return address >= 0x80000000u && address < 0x81800000u;
+}
+
+// Conducting, including song playback and its exit, uses native C-stick notes.
+// Sample the actual Link procedure with the rest of the camera context; do not
+// treat every special camera as another horizontal camera-control mode.
+static bool player_conducting(CPUState* cpu) {
+    const u32 pointer_offset = kPlayerPointer - 0x80000000u;
+    if (cpu == NULL || cpu->ram == NULL || cpu->ram_size < pointer_offset + 4u)
+        return false;
+    const u32 player = mem_read32(cpu, kPlayerPointer);
+    if (!guest_pointer(player) || (player & 3u) != 0u)
+        return false;
+    const u32 offset = player - 0x80000000u;
+    if (cpu->ram_size < kPlayerCurrentProc + 4u ||
+        offset > cpu->ram_size - kPlayerCurrentProc - 4u ||
+        player > 0x81800000u - kPlayerCurrentProc - 4u)
+        return false;
+    const u32 proc = mem_read32(cpu, player + kPlayerCurrentProc);
+    return proc >= kProcTactWait && proc <= kProcTactOriginal;
 }
 
 // The camera's current style (a dCamera__Style), or 0.
@@ -951,6 +976,7 @@ static void view_frame(CPUState* cpu, u32 camera) {
 // At camera_draw's entry: this frame's camera is final and about to be drawn.
 static void camera_frame(CPUState* cpu, u32 process) {
     const u32 camera = process + kCameraBody;
+    g_stick_conducting = player_conducting(cpu);
     const bool aiming = aiming_view(cpu, camera);
     const u32 style = camera_style(cpu, camera);
     g_first_person = aiming && style != 0u && mem_read32(cpu, style) == 0x53533031u; // 'SS01'

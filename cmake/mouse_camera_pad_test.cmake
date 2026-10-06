@@ -24,6 +24,11 @@ _bluewake_extract_mouse_camera(mouse_camera_event_under_test.inc
 _bluewake_extract_mouse_camera(mouse_camera_pad_under_test.inc
     "void bluewake_mouse_camera_pad(" "static float read_f32(")
 
+_bluewake_extract_mouse_camera(mouse_camera_context_under_test.inc
+    "static bool guest_pointer(" "// The camera's current style")
+_bluewake_extract_mouse_camera(mouse_camera_frame_under_test.inc
+    "static void camera_frame(" "// Testing only: gives the player an item")
+
 add_executable(bluewake_mouse_camera_pad_test
     "${BLUEWAKE_REPO_ROOT}/tests/mouse_camera_pad_test.c")
 target_compile_features(bluewake_mouse_camera_pad_test PRIVATE c_std_11)
