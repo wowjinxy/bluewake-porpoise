@@ -33,6 +33,20 @@
 #include "song_host_adapter.h"
 #include "hud_host.h"
 #include "health_host.h"
+#ifdef BW_NATIVE_REWARD_SESSION
+#ifndef BW_NATIVE_INVENTORY_COLLECTOR
+#error "Native seed sessions require the existing admitted-code owner"
+#endif
+#include "randomizer_reward_host.h"
+static BwRandomizerRewardHost* g_reward_host;
+static CPUState* g_reward_cpu;
+static bool g_reward_cpu_ready;
+static bool g_reward_stop_requested;
+static bool g_reward_feature_reset_pending;
+static BwRewardHostBacking g_reward_backings[2];
+static bool host_reward_dispatch(CPUState* cpu, u32 address);
+static bool host_reward_draining(void);
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
 #include "inventory_collector_host.h"
 #include "loaded_code_admission.h"
@@ -186,6 +200,11 @@ static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
     u8* storage = NULL;
     if (g_module_alias_add_shared == NULL)
         return false;
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host && g_reward_cpu_ready &&
+        !bw_randomizer_reward_host_before_owner_change(g_reward_host, BW_REWARD_HOST_SHARED_ALIAS_CHANGE))
+        return false;
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     bw_inventory_collector_host_alias_before();
 #endif
@@ -207,6 +226,18 @@ static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
         if (g_state_alias_count < HOST_STATE_MAX_ALIASES)
             g_state_aliases[g_state_alias_count++] =
                 (HostStateAlias){linked_start, size};
+#ifdef BW_NATIVE_REWARD_SESSION
+        if (g_reward_host) {
+            if (linked_start == 0xC1DF3CF0u && size == 0x364u)
+                g_reward_backings[0] = (BwRewardHostBacking){linked_start, size, storage};
+            if (linked_start == 0xC07710B8u && size == 0x28Cu)
+                g_reward_backings[1] = (BwRewardHostBacking){linked_start, size, storage};
+            if (g_reward_cpu_ready &&
+                !bw_randomizer_reward_host_shared_backing_committed(g_reward_host,
+                    g_reward_cpu, g_reward_backings, 2u))
+                g_reward_stop_requested = true;
+        }
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
         bw_inventory_collector_host_alias_after(g_ppc_guest_alias_generation);
 #endif
@@ -260,6 +291,89 @@ static void host_song_owner_bind(CPUState* cpu,const StaticRecompModuleDesc* mod
     if(restored){BwSongHostSlot slots[BLUEWAKE_MAX_REL_SLOTS];host_song_project_slots(slots);
         if(!bw_song_host_restore_slots(&g_song_host,cpu,slots,BLUEWAKE_MAX_REL_SLOTS)){bw_song_host_revoke(&g_song_host);return;}}
     bluewake_game_events_set_song_owner_query(host_song_owner_query,&g_song_host);
+}
+
+#ifdef BW_NATIVE_REWARD_SESSION
+/* Runtime-only owner state: absent from HOSTVARS and all machine snapshots. */
+static bool host_reward_draining(void) {
+    if (!g_reward_host) return false;
+    BwRewardHostStatus status = {0};
+    bw_randomizer_reward_host_status(g_reward_host, &status);
+    return status.drain_native_save || bluewake_autosave_active();
+}
+static bool host_reward_holds_mutators(void) {
+    if (!g_reward_host) return false;
+    BwRewardHostStatus status = {0};
+    bw_randomizer_reward_host_status(g_reward_host, &status);
+    return status.hold_guest_mutators || status.stop_required || g_reward_stop_requested;
+}
+static bool host_reward_dispatch(CPUState* cpu, u32 address) {
+    if (!g_reward_host || !g_reward_cpu_ready) return true;
+    BwRewardHostStatus status = {0};
+    bw_randomizer_reward_host_status(g_reward_host, &status);
+    if (status.stop_required) g_reward_stop_requested = true;
+    if (g_reward_stop_requested && !host_reward_draining()) return false;
+    if (!bw_randomizer_reward_host_observes(g_reward_host, cpu, address)) return true;
+    if (g_rel_alias_count > BLUEWAKE_MAX_REL_ALIASES) {
+        g_reward_stop_requested = true;
+        return host_reward_draining();
+    }
+    BwRandomizerRelAlias aliases[BLUEWAKE_MAX_REL_ALIASES];
+    BwRewardHostRelSlot slots[BLUEWAKE_MAX_REL_SLOTS];
+    for (u32 i = 0; i < g_rel_alias_count; ++i)
+        aliases[i] = (BwRandomizerRelAlias){g_rel_aliases[i].raw_start,
+            g_rel_aliases[i].raw_end, g_rel_aliases[i].linked_start, g_rel_aliases[i].text_size};
+    for (u32 i = 0; i < BLUEWAKE_MAX_REL_SLOTS; ++i)
+        slots[i] = (BwRewardHostRelSlot){g_rel_slots[i].owner,
+            g_rel_slots[i].address, g_rel_slots[i].capacity};
+    if (!bw_randomizer_reward_host_rel_tables(g_reward_host, aliases,
+            g_rel_alias_count, slots, BLUEWAKE_MAX_REL_SLOTS) ||
+        !bw_randomizer_reward_host_dispatch(g_reward_host, cpu, address)) {
+        g_reward_stop_requested = true;
+        return host_reward_draining();
+    }
+    return true;
+}
+#endif
+
+static bool host_native_save_draining(void) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (host_reward_draining()) return true;
+#endif
+    return bluewake_autosave_active();
+}
+
+static bool host_reward_mutators_held(void) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (host_reward_holds_mutators()) return true;
+#endif
+    return false;
+}
+
+static bool host_guest_mutators_held(void) {
+    if (host_reward_mutators_held()) return true;
+    return bluewake_autosave_active();
+}
+
+static bool host_reward_boundary_pending(void) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host) {
+        BwRewardHostStatus status = {0};
+        bw_randomizer_reward_host_status(g_reward_host, &status);
+        return status.hold_guest_mutators && !status.drain_native_save && !status.stop_required;
+    }
+#endif
+    return false;
+}
+
+static CPUState* host_enhancement_reset_cpu(CPUState* cpu) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (host_reward_holds_mutators()) {
+        g_reward_feature_reset_pending = true;
+        return NULL;
+    }
+#endif
+    return cpu;
 }
 
 // The composite keeps REL code/data at deterministic linked addresses;
@@ -2106,7 +2220,7 @@ static void host_enhancement_reset(const BwGameEvent* event, void* user) {
         event->kind == BW_GAME_EVENT_SCENE_ENTERED) {
         // A scene boundary cancels only Sprint's latch and borrowed HIO baseline.
         // The controls generation suppresses still-held sources until release.
-        bluewake_sprint_reset((CPUState*)user);
+        bluewake_sprint_reset(host_enhancement_reset_cpu((CPUState*)user));
         return;
     }
     if (event->kind == BW_GAME_EVENT_SAVE_COMPLETED) {
@@ -2120,8 +2234,9 @@ static void host_enhancement_reset(const BwGameEvent* event, void* user) {
     // Do not change the observer callback from within its notification.
     if (event->reset_reason != BW_GAME_RESET_GAME_LOAD)
         bw_song_host_revoke(&g_song_host);
-    bluewake_quick_items_reset((CPUState*)user);
-    bluewake_sprint_reset((CPUState*)user);
+    CPUState* reset_cpu = host_enhancement_reset_cpu((CPUState*)user);
+    bluewake_quick_items_reset(reset_cpu);
+    bluewake_sprint_reset(reset_cpu);
     bluewake_dialogue_speed_reset((CPUState*)user);
     bluewake_enhancement_hooks_reset((CPUState*)user);
     bw_health_host_reset();
@@ -2150,6 +2265,9 @@ static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 addre
            !bluewake_game_events_observes(address) &&
            !bw_hud_host_observes(cpu,address) &&
            !bw_health_host_observes(cpu,address) &&
+#ifdef BW_NATIVE_REWARD_SESSION
+           !(g_reward_host && bw_randomizer_reward_host_observes(g_reward_host, cpu, address)) &&
+#endif
            !bluewake_quick_items_observes(address) &&
            !bluewake_dialogue_speed_observes(address) &&
            !bluewake_enhancement_hooks_observes_context(cpu, address) &&
@@ -2218,6 +2336,9 @@ static bool host_autosave_dispatch(CPUState* cpu, u32 address) {
 }
 
 static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (!host_reward_dispatch(cpu, address)) return true;
+#endif
     if (host_autosave_dispatch(cpu, address)) return true;
 #if BLUEWAKE_ENABLE_DEVELOPER_TRACING
     host_trace_bgm_stream(cpu, address);
@@ -2229,9 +2350,13 @@ static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
 #endif
     if (address != BLUEWAKE_AUTOSAVE_RETURN)
         bluewake_game_events_dispatch(cpu, address);
-    bw_hud_host_dispatch(cpu,address);
-    bw_health_host_dispatch(cpu,address,bluewake_autosave_active());
-    if (bluewake_autosave_active()) {
+    /* Consume the authentic return/reset event, then yield at this same PC.
+     * Confirm its copied CARD proof before any guest continuation resumes. */
+    if (host_reward_boundary_pending()) return true;
+    const bool mutators_held = host_guest_mutators_held();
+    if (!host_reward_mutators_held()) bw_hud_host_dispatch(cpu,address);
+    bw_health_host_dispatch(cpu,address,mutators_held);
+    if (mutators_held) {
         // Native scheduler, card callbacks, FPU ownership and device edges
         // still run; gameplay hooks cannot mutate the suspended actor/save.
         return host_chassis_requires_full(cpu, address) ?
@@ -2806,16 +2931,28 @@ static bool host_materialize_rel(CPUState* cpu, const char* name, u32 owner,
         if ((int)i != slot_index && !host_rel_slot_is_live(cpu, slot) &&
             slot.owner != 0u && (u64)address < slot_end &&
             allocation_end > slot.address) {
+#ifdef BW_NATIVE_REWARD_SESSION
+            if (g_reward_host) bw_randomizer_reward_host_rel_will_change(g_reward_host, i);
+#endif
             bw_song_host_clear_slot(&g_song_host, i);
             g_rel_slots[i] = (BlueWakeRelSlot){0};
         }
     }
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host)
+        bw_randomizer_reward_host_rel_will_change(g_reward_host, (u32)slot_index);
+#endif
     host_remove_rel_aliases(address, address + capacity);
     g_rel_slots[slot_index] = (BlueWakeRelSlot){owner, address, capacity};
     for (u32 offset = 0; offset < (u32)size; offset++)
         mem_write8(cpu, address + offset, bytes[offset]);
     // Only a real byte-copy commit gives this slot a fresh materialization.
     bw_song_host_materialized(&g_song_host, cpu, (u32)slot_index);
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host &&
+        !bw_randomizer_reward_host_rel_materialized(g_reward_host, (u32)slot_index, address, capacity))
+        g_reward_stop_requested = true;
+#endif
     free(bytes);
     *guest_ptr = address;
     *byte_count = (u32)size;
@@ -4548,11 +4685,11 @@ static void host_si_complete_pad_transfer(u32 control) {
     DolPadState merged_pad;
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
-        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]);
+        if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]);
     } else if (bluewake_mouse_camera_scripted()) {
-        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
+        if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
-    if (bluewake_autosave_active()) bluewake_mouse_camera_discard_input();
+    if (host_guest_mutators_held()) bluewake_mouse_camera_discard_input();
     host_note_live_input(&live_pad[0]);
     bluewake_pad_merge(g_live_takeover ? &live_pad[channel] : &g_virtual_pad[channel],
                        &live_pad[channel], &merged_pad);
@@ -4652,11 +4789,11 @@ static void host_si_latch_pad_poll(void) {
     DolPadState live_pad[4] = {{0}};
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
-        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]);
+        if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]);
     } else if (bluewake_mouse_camera_scripted()) {
-        if (!bluewake_autosave_active()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
+        if (!host_guest_mutators_held()) bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
-    if (bluewake_autosave_active()) bluewake_mouse_camera_discard_input();
+    if (host_guest_mutators_held()) bluewake_mouse_camera_discard_input();
     host_note_live_input(&live_pad[0]);
     for (u32 channel = 0; channel < 4u; channel++) {
         if ((channel_mask & (1u << channel)) == 0u)
@@ -5366,14 +5503,16 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         bluewake_game_events_retrace(cpu);
         host_audio_diagnostics_retrace();
         const bool autosaving = bluewake_autosave_active();
-        bw_hud_host_retrace(cpu,g_host_retrace_count,autosaving);
-        bw_health_host_retrace(cpu,autosaving);
-        if (autosaving) {
+        const bool mutators_held = host_guest_mutators_held();
+        bw_hud_host_retrace(cpu,g_host_retrace_count,mutators_held);
+        bw_health_host_retrace(cpu,mutators_held);
+        if (mutators_held) {
             bluewake_mouse_camera_discard_input();
             bluewake_jump_button_discard_input();
-            bluewake_sprint_cancel();
+            /* Manual save proof cannot contain a host HIO restoration. */
+            if (autosaving) bluewake_sprint_cancel();
         }
-        if (!autosaving) {
+        if (!mutators_held) {
 #if defined(BLUEWAKE_WINDOWS)
         bw_network_game_retrace(cpu);
 #endif
@@ -5389,7 +5528,7 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         autosave_input_blocked = shortcut_input.blocked;
         if (!g_shortcut_test_enabled)
             bluewake_quick_items_input(shortcut_managed && shortcut_input.quick_items_down,
-                                      autosaving || !shortcut_managed || shortcut_input.blocked,
+                                      mutators_held || !shortcut_managed || shortcut_input.blocked,
                                       shortcut_managed ? shortcut_input.generation : 0u,
                                       shortcut_managed ? shortcut_input.quick_items_native_buttons : 0u);
 #else
@@ -5399,10 +5538,11 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         if (g_shortcut_test_enabled)
             bluewake_quick_items_input(g_host_retrace_count >= g_shortcut_test_start &&
                                       g_host_retrace_count - g_shortcut_test_start < g_shortcut_test_length,
-                                      autosaving, UINT64_MAX, 0u);
-        bluewake_autosave_retrace(cpu, g_host_retrace_count, g_autosave_host_safe,
+                                      mutators_held, UINT64_MAX, 0u);
+        bluewake_autosave_retrace(cpu, g_host_retrace_count,
+                                  g_autosave_host_safe && !host_reward_mutators_held(),
                                   autosave_input_blocked);
-        if (!autosaving) {
+        if (!mutators_held) {
             bluewake_mouse_camera_retrace();
             bluewake_enhancement_hooks_retrace(cpu);
             bluewake_jump_button_retrace();
@@ -6530,6 +6670,94 @@ static void host_inventory_collector_poll(void) {
 }
 #endif
 static char g_state_last_path[1024];
+#ifdef BW_NATIVE_REWARD_SESSION
+typedef struct HostRewardScope {
+    BwRandomizerRewardHost* owner;
+    bool card_open;
+} HostRewardScope;
+
+static void host_reward_release(HostRewardScope* scope) {
+    if (!scope || !scope->owner) return;
+    /* The normal loop drains before unwinding. An unexpected early return
+     * cannot retain a borrowed stack CPU or claim a completed native drain. */
+    if (!bw_randomizer_reward_host_stop(scope->owner)) {
+        fprintf(stderr, "[seed] main unwound with unavailable native continuation; confirmed pair retained\n");
+        bw_randomizer_reward_host_abandon_unavailable(scope->owner);
+    }
+    g_reward_cpu_ready = false;
+    g_reward_cpu = NULL;
+    if (scope->card_open) bluewake_card_runtime_close();
+    scope->card_open = false;
+    if (!bw_randomizer_reward_host_destroy(scope->owner))
+        fprintf(stderr, "[seed] owner destruction refused\n");
+    scope->owner = NULL;
+    g_reward_host = NULL;
+    g_reward_feature_reset_pending = false;
+    memset(g_reward_backings, 0, sizeof g_reward_backings);
+}
+
+static bool host_reward_read_explicit(const char* path, size_t limit,
+                                      u8** bytes, size_t* length) {
+    *bytes = NULL; *length = 0;
+    if (!path || !path[0] || strlen(path) >= 4096u) return false;
+    FILE* file = fopen(path, "rb");
+    if (!file) return false;
+    bool ok = fseek(file, 0, SEEK_END) == 0;
+    const long size = ok ? ftell(file) : -1;
+    ok = ok && size > 0 && (unsigned long)size <= limit && fseek(file, 0, SEEK_SET) == 0;
+    u8* copy = ok ? (u8*)malloc((size_t)size) : NULL;
+    ok = ok && copy && fread(copy, 1, (size_t)size, file) == (size_t)size &&
+         fgetc(file) == EOF && !ferror(file);
+    fclose(file);
+    if (!ok) { free(copy); return false; }
+    *bytes = copy; *length = (size_t)size;
+    return true;
+}
+
+static bool host_reward_start(HostRewardScope* scope,
+                              const HostInventoryCodeScope* admitted,
+                              const StaticRecompModuleDesc* descriptor,
+                              char* card_path, size_t path_capacity) {
+    const char* quest = getenv("BLUEWAKE_NATIVE_SEED_QUEST");
+    const char* origin = getenv("BLUEWAKE_NATIVE_SEED_ORIGIN_SHA256");
+    const char* initial_path = getenv("BLUEWAKE_NATIVE_SEED_INITIAL_CARD");
+    if (!quest || quest[0] < '0' || quest[0] > '2' || quest[1] ||
+        !origin || strlen(origin) != 64u) return false;
+    BwRewardHostStartup startup = {0};
+    startup.dedicated_seed_directory_utf8 = getenv("BLUEWAKE_NATIVE_SEED_DIRECTORY");
+    startup.quest = (u8)(quest[0] - '0');
+    startup.admitted_code = admitted->lease;
+    startup.code_generation = admitted->generation;
+    startup.admitted_descriptor = descriptor;
+    for (size_t i = 0; i < 32u; ++i) {
+        unsigned value = 0;
+        for (size_t j = 0; j < 2u; ++j) {
+            const unsigned c = (unsigned char)origin[2u * i + j];
+            if (c >= '0' && c <= '9') value = (value << 4) | (c - '0');
+            else if (c >= 'a' && c <= 'f') value = (value << 4) | (c - 'a' + 10u);
+            else return false;
+        }
+        startup.origin_card_sha256[i] = (u8)value;
+    }
+    u8 *profile = NULL, *initial = NULL;
+    size_t profile_size = 0, initial_size = 0;
+    if (!host_reward_read_explicit(getenv("BLUEWAKE_NATIVE_SEED_PROFILE"),
+                                   1024u * 1024u, &profile, &profile_size)) return false;
+    if (initial_path && initial_path[0] &&
+        !host_reward_read_explicit(initial_path, 2u * 1024u * 1024u, &initial, &initial_size)) {
+        free(profile); return false;
+    }
+    startup.canonical_profile = profile;
+    startup.canonical_profile_size = profile_size;
+    startup.explicit_initial_card = initial;
+    startup.explicit_initial_card_size = initial_size;
+    scope->owner = bw_randomizer_reward_host_create(&startup);
+    free(initial); free(profile);
+    if (!scope->owner) return false;
+    g_reward_host = scope->owner;
+    return bw_randomizer_reward_host_card_path(scope->owner, card_path, path_capacity);
+}
+#endif
 static unsigned g_state_refusals;
 
 typedef struct HostStateHeader {
@@ -6677,6 +6905,12 @@ static u64 host_state_now_us(void) {
 static bool host_state_save(const char* path, CPUState* cpu,
                             const StaticRecompModuleDesc* mod,
                             const HostStateLoop* loop) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host) {
+        (void)bw_randomizer_reward_host_before_owner_change(g_reward_host, BW_REWARD_HOST_STATE_CAPTURE);
+        return false;
+    }
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     bw_inventory_collector_host_suspend(BW_IC_STATE_CAPTURE);
 #endif
@@ -6813,6 +7047,13 @@ static bool host_state_save(const char* path, CPUState* cpu,
 static bool host_state_load(const char* path, CPUState* cpu,
                             const StaticRecompModuleDesc* mod,
                             const HostStateLoop* loop) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host) {
+        (void)bw_randomizer_reward_host_before_owner_change(g_reward_host, BW_REWARD_HOST_STATE_LOAD);
+        g_reward_stop_requested = true;
+        return false;
+    }
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     bw_inventory_collector_host_suspend(BW_IC_STATE_LOAD);
 #endif
@@ -7258,6 +7499,11 @@ static void host_state_try_save(CPUState* cpu, const StaticRecompModuleDesc* mod
 // The per-turn hook, before the turn begins.
 static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* mod,
                                    const HostStateLoop* loop) {
+#ifdef BW_NATIVE_REWARD_SESSION
+    /* Seed identity is restored through genuine CARD loading only. Keep STATE
+     * requests queued without touching RAM, proof owners or request flags. */
+    if (g_reward_host) return;
+#endif
     // Keep requested state operations queued until the native store drains.
     // Replacing RAM or dropping a load request here would break its owner.
     if (bluewake_autosave_active()) return;
@@ -7292,8 +7538,38 @@ static inline void host_state_turn(CPUState* cpu, const StaticRecompModuleDesc* 
 }
 
 int main(int argc, char** argv) {
+#ifndef BW_NATIVE_REWARD_SESSION
+    const char* unsupported_reward_mode = getenv("BLUEWAKE_NATIVE_REWARD_SESSION");
+    if (unsupported_reward_mode && strcmp(unsupported_reward_mode, "1") == 0) {
+        fprintf(stderr, "[seed] this build has no native reward session support\n");
+        return 1;
+    }
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     HostInventoryCodeScope inventory_code __attribute__((cleanup(host_inventory_code_release))) = {NULL, 0};
+#endif
+#ifdef BW_NATIVE_REWARD_SESSION
+    HostRewardScope reward_scope __attribute__((cleanup(host_reward_release))) = {NULL, false};
+    const char* reward_mode = getenv("BLUEWAKE_NATIVE_REWARD_SESSION");
+    const bool reward_requested = reward_mode && strcmp(reward_mode, "1") == 0;
+    char reward_card_path[4096] = {0};
+    if (reward_requested) {
+        const char* requested_renderer = getenv("BLUEWAKE_RENDERER");
+        const char* requested_pad = getenv("BLUEWAKE_LIVE_PAD");
+        const char* no_dialog = getenv("BLUEWAKE_NO_DIALOG");
+        const char* capture = getenv("BLUEWAKE_NATIVE_INVENTORY_CAPTURE");
+        if (!requested_renderer || strcmp(requested_renderer, "headless") ||
+            !requested_pad || strcmp(requested_pad, "0") ||
+            !no_dialog || strcmp(no_dialog, "1") ||
+            (capture && strcmp(capture, "1") == 0) ||
+            getenv("BLUEWAKE_LOAD_STATE") || getenv("BLUEWAKE_SAVE_STATE")) {
+            fprintf(stderr, "[seed] requires explicit headless/no-live-pad/no-dialog mode, exclusive reward ownership and native CARD loading\n");
+            return 1;
+        }
+        g_reward_stop_requested = false;
+        g_reward_feature_reset_pending = false;
+        memset(g_reward_backings, 0, sizeof g_reward_backings);
+    }
 #endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     bw_inventory_collector_host_shutdown();
@@ -7366,7 +7642,11 @@ int main(int argc, char** argv) {
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     const char* module_load_path = dylib_path;
     const char* inventory_requested = getenv("BLUEWAKE_NATIVE_INVENTORY_CAPTURE");
-    if (inventory_requested != NULL && strcmp(inventory_requested, "1") == 0) {
+    if ((inventory_requested != NULL && strcmp(inventory_requested, "1") == 0)
+#ifdef BW_NATIVE_REWARD_SESSION
+        || reward_requested
+#endif
+        ) {
 #ifdef BW_IC_APPROVED_POLICY_SHA256
         inventory_code.lease = bw_ic_code_prepare(dylib_path,
             getenv("BLUEWAKE_NATIVE_INVENTORY_POLICY"), BW_IC_APPROVED_POLICY_SHA256, &inventory_code.generation);
@@ -7374,6 +7654,12 @@ int main(int argc, char** argv) {
         const char* admitted_path = bw_ic_code_load_path(inventory_code.lease, inventory_code.generation);
         if (admitted_path != NULL) module_load_path = admitted_path;
         else fprintf(stderr, "[inventory] capture unavailable: no approved loaded-code policy\n");
+#ifdef BW_NATIVE_REWARD_SESSION
+        if (reward_requested && admitted_path == NULL) {
+            fprintf(stderr, "[seed] approved module admission is required\n");
+            return 1;
+        }
+#endif
     }
     void* lib = dlopen(module_load_path, RTLD_NOW | RTLD_LOCAL);
 #else
@@ -7388,6 +7674,9 @@ int main(int argc, char** argv) {
     if (inventory_code.lease != NULL && !bw_ic_code_bind(inventory_code.lease, inventory_code.generation, lib, (const void*)get_module)) {
         host_inventory_code_release(&inventory_code);
         fprintf(stderr, "[inventory] capture unavailable: loaded code did not match approved artifact\n");
+#ifdef BW_NATIVE_REWARD_SESSION
+        if (reward_requested) return 1;
+#endif
     }
 #endif
     const StaticRecompModuleDesc* mod = get_module();
@@ -7395,6 +7684,9 @@ int main(int argc, char** argv) {
     if (inventory_code.lease != NULL && !bw_ic_code_bind_descriptor(inventory_code.lease, inventory_code.generation, mod)) {
         host_inventory_code_release(&inventory_code);
         fprintf(stderr, "[inventory] capture unavailable: descriptor owner did not match loaded code\n");
+#ifdef BW_NATIVE_REWARD_SESSION
+        if (reward_requested) return 1;
+#endif
     }
 #endif
     if (!bluewake_guest_checkpoint_interval(
@@ -7684,6 +7976,16 @@ int main(int argc, char** argv) {
     g_state_aurora = aurora_enabled;
 
     const char* card_path = getenv("BLUEWAKE_CARD_PATH");
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (reward_requested) {
+        if (!host_reward_start(&reward_scope, &inventory_code, mod,
+                               reward_card_path, sizeof reward_card_path)) {
+            fprintf(stderr, "[seed] compatible confirmed session startup failed\n");
+            return 1;
+        }
+        card_path = reward_card_path;
+    }
+#endif
     if (!bluewake_card_runtime_open(card_path)) {
         if (aurora_enabled) {
 #if defined(BLUEWAKE_WINDOWS)
@@ -7694,6 +7996,15 @@ int main(int argc, char** argv) {
         return 1;
     }
     atexit(bluewake_card_runtime_close);
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (reward_scope.owner) {
+        reward_scope.card_open = true;
+        if (!bw_randomizer_reward_host_backend_opened(reward_scope.owner)) {
+            fprintf(stderr, "[seed] mounted working CARD validation failed\n");
+            return 1;
+        }
+    }
+#endif
 
     /* All host callbacks and translated code use the same borrowed state. */
 #define cpu (*module_storage.cpu)
@@ -8341,6 +8652,16 @@ int main(int argc, char** argv) {
         BW_GAME_EVENT_MASK(BW_GAME_EVENT_SCENE_ENTERED),
         host_enhancement_reset, &cpu);
     bluewake_game_events_attach(&cpu);
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host) {
+        if (!bw_randomizer_reward_host_cpu_ready(g_reward_host, &cpu, g_reward_backings, 2u)) {
+            fprintf(stderr, "[seed] stable native CPU/shared backing attachment failed\n");
+            return 1;
+        }
+        g_reward_cpu = &cpu;
+        g_reward_cpu_ready = true;
+    }
+#endif
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     const char* inventory_capture = getenv("BLUEWAKE_NATIVE_INVENTORY_CAPTURE");
     const char* inventory_live_pad = getenv("BLUEWAKE_LIVE_PAD");
@@ -8759,18 +9080,39 @@ int main(int argc, char** argv) {
             }
         }
     }
-    while (!stop_reason && (bluewake_autosave_active() ||
+    while (!stop_reason && (host_native_save_draining() || host_reward_boundary_pending() ||
            ((max_blocks == 0ull || blocks < max_blocks) &&
             (max_retraces == 0ull || g_host_retrace_count < max_retraces)))) {
+#ifdef BW_NATIVE_REWARD_SESSION
+        if (g_reward_host) {
+            if (!bw_randomizer_reward_host_maintenance(g_reward_host))
+                g_reward_stop_requested = true;
+            BwRewardHostStatus reward_status = {0};
+            bw_randomizer_reward_host_status(g_reward_host, &reward_status);
+            if (reward_status.stop_required) g_reward_stop_requested = true;
+            if (g_reward_stop_requested && !host_native_save_draining()) {
+                stop_reason = "seed session";
+                break;
+            }
+            if (g_reward_feature_reset_pending && !host_guest_mutators_held()) {
+                /* Reattach after the held native boundary without restoring an
+                 * HIO/overlay baseline from the previous scene or CARD load. */
+                bluewake_quick_items_reset(&cpu);
+                bluewake_sprint_reset(&cpu);
+                g_reward_feature_reset_pending = false;
+            }
+        }
+#endif
         host_state_turn(&cpu, mod, &state_loop);
         g_autosave_host_safe = !rel_prolog_sda_pending && !g_state_hotkey_load &&
                               !g_state_hotkey_save && !g_state_save_armed &&
                               !bluewake_jump_button_armed &&
                               !bluewake_quick_doors_busy() && !bluewake_quick_items_busy() &&
-                              dol_hle_callback_idle() && !dol_platform_should_quit();
+                              dol_hle_callback_idle() && !dol_platform_should_quit() &&
+                              !host_reward_mutators_held();
         g_current_host_block = blocks;
         bluewake_cycle_domain_begin_turn(&g_cycle_domain, &cpu);
-        if (dol_platform_should_quit() && !bluewake_autosave_active()) { stop_reason = "quit"; break; }
+        if (dol_platform_should_quit() && !host_native_save_draining()) { stop_reason = "quit"; break; }
         if (bluewake_autosave_active()) {
             BluewakeAutosaveStatus autosave;
             bluewake_autosave_status(&autosave);
@@ -9865,6 +10207,22 @@ int main(int argc, char** argv) {
                 if (host_materialize_rel(&cpu, module_name, object, &module,
                                          &module_size)) {
                     mem_write32(&cpu, object + 0x10u, module);
+#ifdef BW_NATIVE_REWARD_SESSION
+                    if (g_reward_host) {
+                        u32 matching_slot = BLUEWAKE_MAX_REL_SLOTS;
+                        u32 matching_count = 0;
+                        for (u32 i = 0; i < BLUEWAKE_MAX_REL_SLOTS; ++i) {
+                            if (g_rel_slots[i].owner == object && g_rel_slots[i].address == module) {
+                                matching_slot = i;
+                                ++matching_count;
+                            }
+                        }
+                        if (matching_count != 1u ||
+                            !bw_randomizer_reward_host_rel_loader_associated(
+                                g_reward_host, matching_slot, object))
+                            g_reward_stop_requested = true;
+                    }
+#endif
                     host_register_rel_alias(&cpu, mod, module);
                     const u32 module_id = mem_read32(&cpu, module);
                     host_zero_rel_bss(&cpu, rel_data, rel_data_count, module_id);
@@ -14171,19 +14529,35 @@ int main(int argc, char** argv) {
         // may be a watched return deferred by the previous turn's budget.
         // Climb handles replay of an already serviced return without changing
         // native ivy. A geometry redirect supplies the PC dispatched below.
+#ifdef BW_NATIVE_REWARD_SESSION
+        if (!host_reward_dispatch(&cpu, cpu.pc)) {
+            stop_reason = "seed session";
+            break;
+        }
+#endif
         const bool autosave_redirected = host_autosave_dispatch(&cpu, cpu.pc);
         // A consumed first-PC return can redirect straight into the next
         // native save call. Its entry needs observation before dispatch too.
-        if (autosave_redirected) (void)host_autosave_dispatch(&cpu, cpu.pc);
+        if (autosave_redirected) {
+#ifdef BW_NATIVE_REWARD_SESSION
+            if (!host_reward_dispatch(&cpu, cpu.pc)) {
+                stop_reason = "seed session";
+                break;
+            }
+#endif
+            (void)host_autosave_dispatch(&cpu, cpu.pc);
+        }
         if (!autosave_redirected) {
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
             host_inventory_collector_poll();
 #endif
             if (cpu.pc != BLUEWAKE_AUTOSAVE_RETURN)
                 bluewake_game_events_dispatch(&cpu, cpu.pc);
-            bw_hud_host_dispatch(&cpu,cpu.pc);
-            bw_health_host_dispatch(&cpu,cpu.pc,bluewake_autosave_active());
-            if (!bluewake_autosave_active()) {
+            if (host_reward_boundary_pending()) continue;
+            const bool mutators_held = host_guest_mutators_held();
+            if (!host_reward_mutators_held()) bw_hud_host_dispatch(&cpu,cpu.pc);
+            bw_health_host_dispatch(&cpu,cpu.pc,mutators_held);
+            if (!mutators_held) {
                 bluewake_dialogue_speed_dispatch(&cpu, cpu.pc);
                 bluewake_enhancement_hooks_dispatch(&cpu, cpu.pc);
                 const u32 first_shortcut_pc = cpu.pc;
@@ -16098,6 +16472,32 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[trace] %lluM blocks pc=%#010x\n", blocks / 1000000ull, cpu.pc);
     }
 
+#ifdef BW_NATIVE_REWARD_SESSION
+    if (g_reward_host) {
+        BwRewardHostStatus reward_status = {0};
+        bw_randomizer_reward_host_status(g_reward_host, &reward_status);
+        /* Budgets and quit were held until the native save drained. A remaining
+         * active request here means a fatal machine boundary ended dispatch. */
+        const bool reward_stopped = bw_randomizer_reward_host_stop(g_reward_host);
+        if (!reward_stopped) {
+            fprintf(stderr, "[seed] native continuation unavailable after %s; confirmed pair retained\n",
+                    stop_reason ? stop_reason : "unexpected loop exit");
+            bw_randomizer_reward_host_abandon_unavailable(g_reward_host);
+            if (!stop_reason || strcmp(stop_reason, "quit") == 0)
+                stop_reason = "seed drain unavailable";
+        }
+        if (g_reward_stop_requested && !stop_reason) stop_reason = "seed session";
+        fprintf(stderr, "[seed-summary] phase_before_stop=%u native_load_confirmed=%u substitutions=%llu awards=%llu saves=%llu generation=%llu revision_before_stop=%llu stop_completed=%u reason=\"%s\"\n",
+                (unsigned)reward_status.phase,
+                reward_status.native_load_authorized ? 1u : 0u,
+                (unsigned long long)reward_status.substitutions,
+                (unsigned long long)reward_status.completed_awards,
+                (unsigned long long)reward_status.published_saves,
+                (unsigned long long)reward_status.confirmed_generation,
+                (unsigned long long)reward_status.ledger_revision,
+                reward_stopped ? 1u : 0u, reward_status.reason);
+    }
+#endif
     printf("[run] stopped: %s after %llu blocks at pc=%#010x\n",
            stop_reason ? stop_reason : "normal", blocks, cpu.pc);
     fprintf(stderr,
@@ -16456,6 +16856,9 @@ int main(int argc, char** argv) {
 #endif
     host_audio_owner_attach(NULL);
     bluewake_sprint_reset(NULL);
+#ifdef BW_NATIVE_REWARD_SESSION
+    host_reward_release(&reward_scope);
+#endif
     bluewake_card_runtime_close();
     if (getenv("BLUEWAKE_AUTOSAVE_TRACE") != NULL || bluewake_autosave_desired()) {
         BluewakeAutosaveStatus autosave;

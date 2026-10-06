@@ -77,6 +77,8 @@ add_executable(bluewake_host
 target_link_libraries(bluewake_host PRIVATE gxruntime GXRuntime::aurora z xxhash)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/BlueWakeInventoryCollector.cmake")
 bluewake_enable_inventory_collector(bluewake_host)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/BlueWakeNativeReward.cmake")
+bluewake_enable_native_reward(bluewake_host)
 # The options menu (settings_menu.cpp) draws with Aurora's Dear ImGui.
 if(TARGET imgui)
     target_link_libraries(bluewake_host PRIVATE imgui)
