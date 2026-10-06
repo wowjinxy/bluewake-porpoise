@@ -119,7 +119,22 @@ mistyped hash argument and the second reader's overly small object-section
 limit remain preserved. The corrected file-only readers inspect the original
 artifacts; no target was rerun.
 
-Next are the reference/OFF/ON diagnostic host builds and genuine rescue runs
+The reference, feature-OFF and feature-ON diagnostic hosts now compile and link.
+Four new C compiles and three complete links passed; their actual dependencies
+contain 799 mentions across 255 distinct inputs. Each link retains 72 accepted
+objects, replaces main and adds the shared recorder, producing 74 ordered
+objects and 180 closed inputs. Both independent file-only reviews verified
+the reproduction archives, original generated and embedded manifests, and
+actual executable metadata.
+
+Each host adds only the recorder's _open import. The actual main object,
+SDK import member, current API-set mapping and named UCRT export agree on its
+provider. No DLL family or other imported name was added. All four compiler
+diagnostic streams are empty; each link retains the same 101-byte -gcodeview
+warning. Neither a host executable nor a game module was run. Adjacent runtime
+deployment and native behavior still need qualification.
+
+Next are genuine baseline/reference/OFF/ON rescue runs
 covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
 graphical-session ownership remains unqualified. The menu and ownership
