@@ -1,0 +1,157 @@
+diff --git a/GXRuntime/graphics/aurora/tests/CMakeLists.txt b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
+--- a/GXRuntime/graphics/aurora/tests/CMakeLists.txt
++++ b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
+@@ -130,3 +130,12 @@
+     fmt::fmt xxhash absl::flat_hash_map dawn::dawncpp_headers TracyClient ${AURORA_SDL3_TARGET})
+   gtest_discover_tests(gxcore_viewport_tests)
+ endif()
++
++# CPU-only decision/copy contract: actual helper, authored texture callbacks.
++# No renderer, window or device is initialized by this executable.
++if (TARGET dawn::dawncpp_headers)
++  add_executable(direct_present_copy_test direct_present_copy_test.cpp)
++  target_compile_features(direct_present_copy_test PRIVATE cxx_std_20)
++  target_link_libraries(direct_present_copy_test PRIVATE dawn::dawncpp_headers)
++  add_test(NAME direct_present_copy_test COMMAND direct_present_copy_test)
++endif ()
+diff --git a/GXRuntime/graphics/aurora/tests/direct_present_copy_test.cpp b/GXRuntime/graphics/aurora/tests/direct_present_copy_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/tests/direct_present_copy_test.cpp
+@@ -0,0 +1,136 @@
++// CPU-only contract for the actual candidate presentation helper. WebGPU enums
++// are real; texture queries and byte-copy callbacks are authored stand-ins.
++// This does not initialize a device or qualify GPU pixels/validation/timing.
++#include "../lib/webgpu/presentation_copy.hpp"
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <limits>
++#include <memory>
++#include <vector>
++
++namespace p = aurora::webgpu::presentation;
++static unsigned checks = 0, failures = 0, copies = 0;
++#define CHECK(v) do { ++checks; if (!(v)) { ++failures; std::fprintf(stderr, "FAIL %d: %s\n", __LINE__, #v); } } while (0)
++static uint64_t digest = 1469598103934665603ull;
++static void hash(const std::vector<uint8_t>& b) { for (auto v : b) digest = (digest ^ v) * 1099511628211ull; }
++
++struct Image { p::TextureInfo info; std::vector<uint8_t> bytes; mutable unsigned queries = 0; };
++struct Texture {
++  std::shared_ptr<Image> image;
++  explicit operator bool() const { return bool(image); }
++  uint32_t GetWidth() const { ++image->queries; return image->info.width; }
++  uint32_t GetHeight() const { ++image->queries; return image->info.height; }
++  uint32_t GetDepthOrArrayLayers() const { ++image->queries; return image->info.depth; }
++  uint32_t GetSampleCount() const { ++image->queries; return image->info.samples; }
++  wgpu::TextureFormat GetFormat() const { ++image->queries; return image->info.format; }
++  wgpu::TextureUsage GetUsage() const { ++image->queries; return image->info.usage; }
++  wgpu::TextureDimension GetDimension() const { ++image->queries; return image->info.dimension; }
++};
++static p::TextureInfo info(uint32_t w=640, uint32_t h=480) {
++  return {w,h,1,1,wgpu::TextureFormat::RGBA8Unorm,
++          wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst, wgpu::TextureDimension::e2D};
++}
++static Texture texture(p::TextureInfo i) { return {std::make_shared<Image>(Image{i,std::vector<uint8_t>(size_t(i.width)*i.height*4)})}; }
++static void copy_bytes(const Texture& from, const Texture& to, uint32_t w, uint32_t h) {
++  ++copies; CHECK(w==from.image->info.width && h==from.image->info.height);
++  CHECK(w==to.image->info.width && h==to.image->info.height);
++  CHECK(from.image->bytes.size()==to.image->bytes.size());
++  std::copy(from.image->bytes.begin(),from.image->bytes.end(),to.image->bytes.begin());
++}
++static bool dispatch(bool on,const Texture& s,const Texture& t,p::ViewportInfo v,
++                     wgpu::CompositeAlphaMode a=wgpu::CompositeAlphaMode::Opaque) {
++  return p::copy_if_compatible(on,s,t,a,v,copy_bytes);
++}
++static void gate_and_capabilities() {
++  for (const char* v : std::array<const char*,10>{nullptr,"","0","1","11","01","true","1 "," 1","-1"})
++    CHECK(p::enabled_value(v)==(v && std::strcmp(v,"1")==0));
++  CHECK(p::enabled()==p::enabled_value(std::getenv("DOL_AURORA_DIRECT_PRESENT_COPY")));
++  const std::array modes{wgpu::CompositeAlphaMode::Auto,wgpu::CompositeAlphaMode::Opaque,
++                        wgpu::CompositeAlphaMode::Premultiplied,wgpu::CompositeAlphaMode::Unpremultiplied,
++                        wgpu::CompositeAlphaMode::Inherit};
++  for (unsigned subset=0;subset<32;++subset) {
++    std::vector<wgpu::CompositeAlphaMode> chosen;
++    for (unsigned i=0;i<modes.size();++i) if(subset&(1u<<i))chosen.push_back(modes[i]);
++    for (unsigned usage=0;usage<32;++usage) for (bool on : {false,true}) {
++      const auto actual=p::surface_options(on,chosen,static_cast<wgpu::TextureUsage>(usage));
++      const bool expected=on && (subset&2) && (usage&static_cast<unsigned>(wgpu::TextureUsage::CopyDst));
++      CHECK(actual.alpha==(expected?wgpu::CompositeAlphaMode::Opaque:wgpu::CompositeAlphaMode::Auto));
++      CHECK(actual.usage==(expected?(wgpu::TextureUsage::RenderAttachment|wgpu::TextureUsage::CopyDst):wgpu::TextureUsage::RenderAttachment));
++    }
++  }
++}
++static void eligibility() {
++  const auto good=info();const p::ViewportInfo full{0,0,640,480};
++  CHECK(p::compatible(true,good,good,wgpu::CompositeAlphaMode::Opaque,full));
++  CHECK(!p::compatible(false,good,good,wgpu::CompositeAlphaMode::Opaque,full));
++  for (bool source : {false,true}) for(unsigned field=0;field<8;++field) {
++    auto bad=good;
++    switch(field){case 0:bad.width=639;break;case 1:bad.height=479;break;case 2:bad.depth=2;break;
++      case 3:bad.samples=4;break;case 4:bad.format=wgpu::TextureFormat::BGRA8Unorm;break;
++      case 5:bad.usage=wgpu::TextureUsage::RenderAttachment;break;
++      case 6:bad.dimension=wgpu::TextureDimension::e3D;break;case 7:bad.width=0;break;}
++    CHECK(!p::compatible(true,source?bad:good,source?good:bad,wgpu::CompositeAlphaMode::Opaque,full));
++  }
++  const std::array formats{wgpu::TextureFormat::Undefined,wgpu::TextureFormat::RGBA8Unorm,
++    wgpu::TextureFormat::BGRA8Unorm,wgpu::TextureFormat::RGBA8UnormSrgb,wgpu::TextureFormat::BGRA8UnormSrgb,
++    wgpu::TextureFormat::RGBA16Float,wgpu::TextureFormat::Depth32Float,wgpu::TextureFormat::BC1RGBAUnorm};
++  for(auto f:formats)for(auto g:formats){auto s=good,t=good;s.format=f;t.format=g;
++    CHECK(p::compatible(true,s,t,wgpu::CompositeAlphaMode::Opaque,full)==(f==g&&(f==wgpu::TextureFormat::RGBA8Unorm||f==wgpu::TextureFormat::BGRA8Unorm)));}
++  for(auto a:{wgpu::CompositeAlphaMode::Auto,wgpu::CompositeAlphaMode::Premultiplied,
++              wgpu::CompositeAlphaMode::Unpremultiplied,wgpu::CompositeAlphaMode::Inherit})
++    CHECK(!p::compatible(true,good,good,a,full));
++  for(float bad:{-1.f,1.f,0.5f,std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}) {
++    auto v=full;v.left=bad;CHECK(!p::compatible(true,good,good,wgpu::CompositeAlphaMode::Opaque,v));
++    v=full;v.top=bad;CHECK(!p::compatible(true,good,good,wgpu::CompositeAlphaMode::Opaque,v));
++  }
++  for(float bad:{0.f,639.f,641.f,639.5f,std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}) {
++    auto v=full;v.width=bad;CHECK(!p::compatible(true,good,good,wgpu::CompositeAlphaMode::Opaque,v));
++    v=full;v.height=bad;CHECK(!p::compatible(true,good,good,wgpu::CompositeAlphaMode::Opaque,v));
++  }
++  // Decisions use the acquired target's size, so stale resize viewports refuse.
++  auto large=info(1280,960);CHECK(!p::compatible(true,large,large,wgpu::CompositeAlphaMode::Opaque,full));
++  Texture absent{},s=texture(good),t=texture(good);const auto before=copies;
++  CHECK(!dispatch(false,s,t,full));CHECK(s.image->queries==0&&t.image->queries==0);
++  CHECK(!dispatch(true,absent,t,full));CHECK(t.image->queries==0);
++  CHECK(!dispatch(true,s,absent,full));CHECK(s.image->queries==0);CHECK(copies==before);
++  auto resized=texture(large);CHECK(!dispatch(true,s,resized,full));CHECK(copies==before);
++}
++static void overlay(std::vector<uint8_t>& bytes,uint32_t w,uint32_t h) {
++  // Authored ImGui-like premultiplied overlay, applied after either base path.
++  for(uint32_t y=0;y<std::min(17u,h);++y)for(uint32_t x=0;x<std::min(31u,w);++x) {
++    size_t i=(size_t(y)*w+x)*4;for(unsigned c=0;c<3;++c)bytes[i+c]=uint8_t((unsigned(bytes[i+c])*127+64*255+127)/255);bytes[i+3]=255;
++  }
++}
++static void pixels_and_order() {
++  const std::array sizes{std::array{1u,1u},std::array{17u,19u},std::array{640u,480u},
++                        std::array{1280u,960u},std::array{1920u,1080u}};
++  for(auto size:sizes)for(auto format:{wgpu::TextureFormat::RGBA8Unorm,wgpu::TextureFormat::BGRA8Unorm}) {
++    auto i=info(size[0],size[1]);i.format=format;auto s=texture(i),t=texture(i);
++    for(size_t k=0;k<s.image->bytes.size();k+=4) {
++      s.image->bytes[k]=uint8_t(k/4);s.image->bytes[k+1]=uint8_t(k/4*73);s.image->bytes[k+2]=uint8_t(k/4*151);s.image->bytes[k+3]=255;
++    }
++    std::vector<uint8_t> reference(s.image->bytes.size());
++    // Independent nearest full-size opaque blit model (all UNORM8 values).
++    for(size_t k=0;k<reference.size();k+=4){for(unsigned c=0;c<3;++c)
++      reference[k+c]=uint8_t(std::lround(float(s.image->bytes[k+c])/255.f*255.f));reference[k+3]=255;}
++    const auto previous=copies;
++    CHECK(dispatch(true,s,t,{0,0,float(i.width),float(i.height)}));CHECK(copies==previous+1);
++    CHECK(t.image->bytes==reference);
++    overlay(t.image->bytes,i.width,i.height);overlay(reference,i.width,i.height);
++    CHECK(t.image->bytes==reference);hash(t.image->bytes);
++    // Captured texture owners survive caller replacement until immediate dispatch.
++    auto captured=s;auto old=s.image;s=texture(i);
++    CHECK(dispatch(true,captured,t,{0,0,float(i.width),float(i.height)}));CHECK(t.image->bytes==old->bytes);
++    // Full RML replacement/overlay is deliberately routed through the existing
++    // shader path by aurora.cpp; this helper is called only for no-RML frames.
++  }
++}
++int main() {
++  gate_and_capabilities();eligibility();pixels_and_order();
++  std::printf("direct present copy CPU: %u checks, %u failures, %u copies, digest %016llx\n",checks,failures,copies,(unsigned long long)digest);
++  return failures?1:0;
++}

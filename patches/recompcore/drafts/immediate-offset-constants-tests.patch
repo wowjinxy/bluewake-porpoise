@@ -1,0 +1,193 @@
+--- /dev/null
++++ b/tests/performance_immediate_constants/immediate_constants_test.cpp
+@@ -0,0 +1,155 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored CPU storage-row/WGSL checks; no GPU or native performance claim.
++#include "gxruntime/gxcore/shader.hpp"
++#include "immediate_constants.hpp"
++#include <array>
++#include <cstdio>
++#include <cstring>
++#include <regex>
++#include <string>
++#include <vector>
++namespace gx = gxruntime::gxcore;
++namespace ag = aurora::gfx;
++static uint64_t checks=0, failures=0;
++#define CHECK(v) do { ++checks; if (!(v)) { ++failures; if (failures<20) std::fprintf(stderr,"FAIL %d %s\n",__LINE__,#v); } } while(0)
++
++struct Field { const char* expression; const char* part; unsigned row, count; char type; };
++// Independent fixed layout of qualified05, including the current HUD field.
++const Field fields[] = {
++ {"vsc.posnormalmatrix","block",0,6,'f'}, {"vsc.projection","block",6,4,'f'},
++ {"vsc.texmatrices","block",10,24,'f'}, {"vsc.materials","block",34,4,'i'},
++ {"vsc.cached_normal","block",38,0,'f'}, {"vsc.cached_tangent","block",39,0,'f'},
++ {"vsc.cached_binormal","block",40,0,'f'}, {"vsm.transformmatrices","matrices",0,64,'f'},
++ {"vsm.normalmatrices","matrices",64,32,'f'}, {"psc.colors","pixel",0,4,'i'},
++ {"psc.kcolors","pixel",4,4,'i'}, {"psc.alpha_ref","pixel",8,0,'i'},
++ {"psc.fogcolor","pixel",9,0,'i'}, {"psc.fogi","pixel",10,0,'i'},
++ {"psc.fogf","pixel",11,0,'f'}, {"psc.fogrange","pixel",12,3,'f'},
++ {"psc.zbias","pixel",15,0,'i'}, {"psc.texdims","pixel",16,8,'i'},
++ {"psc.indtexmtx","pixel",24,6,'i'}, {"psc.hud_multiplier","pixel",30,0,'f'},
++ {"psc.key","pixel",31,30,'u'}, {"psc.extra","pixel",61,0,'u'}
++};
++std::string expression(const Field& f,unsigned index) {
++ return std::string(f.expression)+(f.count ? "["+std::to_string(index)+"u]" : "");
++}
++std::string load(const Field& f,unsigned index) {
++ return std::string("gx_ld")+f.type+"(gx_draw."+f.part+" + "+std::to_string(f.row)+"u"+
++     (f.count ? " + u32("+std::to_string(index)+"u)" : "")+")";
++}
++std::string converted(std::string_view expression) {
++ const auto out=gx::immediate_constants_wgsl(std::string("let authored = ")+std::string(expression)+";\n");
++ const auto at=out.find("let authored = ");
++ CHECK(at!=std::string::npos);
++ return at==std::string::npos?std::string{}:out.substr(at+15,out.size()-at-17);
++}
++void mappings() {
++ static_assert(gx::kVertexBlockBytes==656 && gx::kVertexMatrixBytes==1536 && gx::kVertexLightBytes==640);
++ static_assert(sizeof(gx::PixelShaderConstants)==496 && sizeof(gx::UberPixelConstants)==992);
++ for(const auto& f:fields) for(unsigned i=0;i<(f.count?f.count:1);++i) CHECK(converted(expression(f,i))==load(f,i));
++ const char* lightNames[]={"color","cosatt","distatt","pos","dir"};
++ for(unsigned light=0;light<8;++light) for(unsigned member=0;member<5;++member) {
++  const std::string e="vsl.lights["+std::to_string(light)+"u]."+lightNames[member];
++  const std::string expected=std::string("gx_ld")+(member==0?'i':'f')+"(gx_draw.lights + "+std::to_string(member)+"u + u32("+std::to_string(light)+"u) * 5u)";
++  CHECK(converted(e)==expected);
++ }
++ CHECK(converted("vsm.transformmatrices[u32(vsc.materials[1u].x)]")==
++   "gx_ldf(gx_draw.matrices + 0u + u32(u32(gx_ldi(gx_draw.block + 34u + u32(1u)).x)))");
++ CHECK(converted("vsl.lights[u32(psc.alpha_ref.x)].pos")==
++   "gx_ldf(gx_draw.lights + 3u + u32(u32(gx_ldi(gx_draw.pixel + 8u).x)) * 5u)");
++ for(const char* bad:{"psc.new_unmapped_field", "vsc.posnormalmatrix[", "vsl.lights[0].unknown"})
++  CHECK(gx::immediate_constants_wgsl(bad).empty());
++ const auto directive=gx::immediate_constants_wgsl("enable dual_source_blending;\n\nlet x = psc.hud_multiplier;\n");
++ CHECK(directive.starts_with("enable dual_source_blending;\n\nstruct GxDrawConstants"));
++ CHECK(directive.find("gx_ldf(gx_draw.pixel + 30u)")!=std::string::npos);
++}
++void storage() {
++ // Different frame/between backing and arbitrary float/int bit patterns.
++ std::array<std::array<uint8_t,65536>,2> bytes{};
++ for(unsigned b=0;b<2;++b)for(size_t i=0;i<bytes[b].size();++i)bytes[b][i]=uint8_t(i*37u+(i>>7)+b*83u);
++ const std::regex rowPattern(R"(gx_ld[ifu]\(gx_draw\.(block|matrices|lights|pixel) \+ ([0-9]+)u(?: \+ u32\(([0-9]+)u\))?\))");
++ for(unsigned salt=0;salt<128;++salt)for(unsigned betweenMask=0;betweenMask<16;++betweenMask) {
++  const unsigned offsets[]={salt*16u,(salt+191u)*16u,(salt+333u)*16u,(salt+517u)*16u};
++  gx::DrawConstants d{gx::constant_row(offsets[0],betweenMask&1),gx::constant_row(offsets[1],betweenMask&2),
++    gx::constant_row(offsets[2],betweenMask&4),gx::constant_row(offsets[3],betweenMask&8)};
++  CHECK(sizeof(d)==16);
++  const unsigned rows[]={d.block,d.matrices,d.lights,d.pixel};
++  for(unsigned p=0;p<4;++p) { CHECK((rows[p]&0x7fffffffu)*16u==offsets[p]); CHECK((rows[p]>>31)==((betweenMask>>p)&1u)); }
++  for(const auto& f:fields)for(unsigned i=0;i<(f.count?f.count:1);++i) {
++   const auto actual=converted(expression(f,i)); std::smatch m; CHECK(std::regex_match(actual,m,rowPattern));
++   if(m.empty())continue;
++   unsigned part=m[1]=="block"?0:m[1]=="matrices"?1:m[1]=="lights"?2:3;
++   unsigned row=rows[part]+unsigned(std::stoul(m[2])); if(m[3].matched)row+=unsigned(std::stoul(m[3]));
++   const auto* read=bytes[row>>31].data()+(row&0x7fffffffu)*16u;
++   const unsigned expectedPart=std::strcmp(f.part,"block")==0?0:std::strcmp(f.part,"matrices")==0?1:3;
++   const auto* expected=bytes[(betweenMask>>expectedPart)&1u].data()+offsets[expectedPart]+(f.row+i)*16u;
++   CHECK(std::memcmp(read,expected,16)==0);
++  }
++ }
++ for(uint32_t end:{24u*1024u*1024u,32u*1024u*1024u*7u})for(uint32_t d=16;d<=1024;d+=16)for(bool b:{false,true}) {
++  auto row=gx::constant_row(end-d,b); CHECK((row&0x7fffffffu)*16==end-d); CHECK((row>>31)==unsigned(b));
++ }
++ gx::DrawConstants last{UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};unsigned emits=0;
++ auto set=[&](gx::DrawConstants d){if(last!=d){++emits;last=d;}};
++ gx::DrawConstants a{0,16,32,48};set(a);set(a);CHECK(emits==1);a.pixel|=gx::kConstantsInBetween;set(a);CHECK(emits==2);
++ last={UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};set(a);CHECK(emits==3); // new pass/pipeline invalidates cache
++}
++void capabilities() {
++ for(const char* e:{static_cast<const char*>(nullptr),"","0","01","true","2","1 "})CHECK(!ag::immediate_constants_opt_in(e,true));
++ CHECK(ag::immediate_constants_opt_in("1",true));CHECK(!ag::immediate_constants_opt_in("1",false));
++ const auto n=ag::kImmediateStorageBytes;
++ for(uint32_t im:{0u,15u,16u,32u,UINT32_MAX})for(uint32_t buffers:{0u,3u,4u,8u,UINT32_MAX})
++  for(uint64_t size:{0ull,n-1,n,n+16,UINT64_MAX})for(bool wgsl:{false,true}) {
++   bool expected=wgsl&&(im==16||im==32)&&(buffers==4||buffers==8)&&(size==n||size==n+16);
++   CHECK(ag::immediate_constants_supported(im,buffers,size,wgsl)==expected);
++  }
++}
++void binding_references(const std::string& out,bool sparse) {
++ for(const char* bank:{"vsc","vsm","vsl","psc"})
++  if(out.find(std::string(bank)+".")!=std::string::npos)
++   CHECK(out.find(std::string("var<uniform> ")+bank+":")!=std::string::npos);
++ if(!sparse){CHECK(out.find("vsm.")==std::string::npos);CHECK(out.find("vsl.")==std::string::npos);}
++}
++void tev_lighting() {
++ for(unsigned light=0;light<8;++light)for(unsigned channel=0;channel<2;++channel)
++ for(unsigned attenuation=0;attenuation<4;++attenuation)for(unsigned diffuse=0;diffuse<3;++diffuse)
++ for(bool matrix_index:{false,true}) {
++  gx::ShaderKey k{};k.tev_valid=1;k.num_tev_stages=1;k.lit_valid=1;k.num_color_chans=2;k.chan_captured_mask=3;
++  k.has_vertex_normal=1;k.has_pos_mtx_idx=matrix_index;k.has_vertex_tangent=1;k.has_vertex_binormal=1;
++  k.num_tex_gens=2;k.tex_gens[1].texgentype=1;k.tex_gens[1].embosslightshift=uint8_t(light);
++  for(unsigned c:{channel,channel+2}){k.litchan[c].enablelighting=1;k.litchan[c].light_mask=uint8_t(1u<<light);
++   k.litchan[c].attnfunc=uint8_t(attenuation);k.litchan[c].diffusefunc=uint8_t(diffuse);}
++  for(bool sparse:{false,true}) {
++   const auto normal=gx::generate_wgsl(k,sparse);binding_references(normal,sparse);
++   CHECK(normal.find(sparse?"vsl.lights[":"vsc.lights[")!=std::string::npos);
++  }
++  const auto out=gx::immediate_constants_wgsl(gx::generate_wgsl(k,true));CHECK(!out.empty());
++  CHECK(out.find("gx_ldf(gx_draw.lights + 3u")!=std::string::npos);
++  for(const char* old:{"vsc.","vsm.","vsl.","psc."})CHECK(out.find(old)==std::string::npos);
++ }
++}
++void generated() {
++ for(unsigned shape=0;shape<4096;++shape) {
++  gx::ShaderKey k{};k.num_tex_gens=uint8_t(shape%9);k.has_pos_mtx_idx=(shape>>3)&1;
++  k.has_tex_mtx_idx=(shape>>4)&1;k.tex_mtx_idx_mask=uint8_t(shape>>6);k.lit_valid=(shape>>5)&1;
++  k.tev_valid=(shape>>6)&1;k.hud_tint=(shape>>7)&1;k.has_vertex_normal=(shape>>8)&1;
++  k.has_vertex_tangent=(shape>>9)&1;k.has_vertex_binormal=(shape>>10)&1;k.num_color_chans=uint8_t((shape>>10)%3);
++  for(unsigned c=0;c<4;++c){k.litchan[c].matsource=(shape>>(c+1))&1;k.litchan[c].ambsource=(shape>>(c+2))&1;
++   k.litchan[c].enablelighting=(shape>>(c+3))&1;k.litchan[c].light_mask=uint8_t(shape);k.litchan[c].attnfunc=shape%4;k.litchan[c].diffusefunc=shape%3;}
++  for(unsigned t=0;t<k.num_tex_gens;++t){k.tex_gens[t].texgentype=(shape+t)%4;k.tex_gens[t].sourcerow=(shape+t)%13;
++   k.tex_gens[t].embosslightshift=(shape+t)%8;k.tex_gens[t].embosssourceshift=t?t-1:0;}
++  const auto normal=gx::generate_wgsl(k,true), out=gx::immediate_constants_wgsl(normal);
++  binding_references(gx::generate_wgsl(k,false),false);binding_references(normal,true);
++  CHECK(!out.empty());CHECK(gx::generate_wgsl(k,true)==normal);
++  for(const char* old:{"var<uniform> vsc:","var<uniform> vsm:","var<uniform> vsl:","var<uniform> psc:"})CHECK(out.find(old)==std::string::npos);
++  CHECK(out.find("var<immediate> gx_draw")!=std::string::npos);
++  if(k.hud_tint)CHECK(out.find("gx_ldf(gx_draw.pixel + 30u)")!=std::string::npos);
++ }
++ tev_lighting();
++ for(bool dual:{false,true}) {
++  const auto out=gx::immediate_constants_wgsl(gx::generate_uber_wgsl(dual,true));CHECK(!out.empty());
++  binding_references(gx::generate_uber_wgsl(dual,false),false);binding_references(gx::generate_uber_wgsl(dual,true),true);
++  CHECK(out.find("gx_ldf(gx_draw.pixel + 30u)")!=std::string::npos);
++  CHECK(out.find("gx_ldu(gx_draw.pixel + 31u")!=std::string::npos);
++  CHECK(out.find("gx_ldu(gx_draw.pixel + 61u)")!=std::string::npos);
++ }
++}
++int main(){mappings();storage();capabilities();generated();std::printf("Immediate constants: %llu checks, %llu failures\n",static_cast<unsigned long long>(checks),static_cast<unsigned long long>(failures));return failures?1:0;}
+--- /dev/null
++++ b/tests/performance_immediate_constants/CMakeLists.txt
+@@ -0,0 +1,32 @@
++cmake_minimum_required(VERSION 3.20)
++project(immediate_constants_cpu_test CXX)
++if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
++  message(FATAL_ERROR "The qualification fixture requires Clang")
++endif()
++set(GX_RUNTIME "" CACHE PATH "Candidate GXRuntime directory")
++if(NOT EXISTS "${GX_RUNTIME}/graphics/aurora/lib/gfx/immediate_constants.hpp")
++  message(FATAL_ERROR "Set GX_RUNTIME to the candidate GXRuntime directory")
++endif()
++option(IMMEDIATE_ASAN "Instrument all fixture and shader translation units" OFF)
++add_executable(immediate_constants_test immediate_constants_test.cpp
++  "${GX_RUNTIME}/graphics/gxcore/src/gxcore_shader.cpp"
++  "${GX_RUNTIME}/graphics/gxcore/src/gxcore_uber.cpp")
++target_compile_features(immediate_constants_test PRIVATE cxx_std_20)
++target_include_directories(immediate_constants_test PRIVATE
++  "${GX_RUNTIME}/graphics/gxcore/include" "${GX_RUNTIME}/graphics/aurora/lib/gfx")
++target_compile_options(immediate_constants_test PRIVATE -O3 -UNDEBUG -Wall -Wextra -Wno-unused-function)
++if(WIN32)
++  target_compile_options(immediate_constants_test PRIVATE -fms-compatibility-version=19.44 -fms-runtime-lib=dll)
++  target_link_options(immediate_constants_test PRIVATE -fms-runtime-lib=dll)
++endif()
++if(IMMEDIATE_ASAN)
++  target_compile_options(immediate_constants_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
++  target_link_options(immediate_constants_test PRIVATE -fsanitize=address)
++  if(WIN32)
++    target_compile_options(immediate_constants_test PRIVATE -shared-libasan)
++    target_link_options(immediate_constants_test PRIVATE -shared-libasan)
++  endif()
++endif()
++enable_testing()
++add_test(NAME immediate_constants_cpu COMMAND immediate_constants_test)
++set_tests_properties(immediate_constants_cpu PROPERTIES TIMEOUT 300)

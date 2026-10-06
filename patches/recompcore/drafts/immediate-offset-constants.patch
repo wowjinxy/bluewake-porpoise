@@ -1,0 +1,687 @@
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.cpp b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+index 7579fc1c..9b6e76ca 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+@@ -171,6 +171,22 @@ bool sparse_vertex_uniforms_enabled() {
+ 
+ wgpu::BindGroupLayout g_vertexUniformBindGroupLayout;
+ wgpu::BindGroup g_vertexUniformBindGroup;
++static bool g_immediateConstants = false;
++wgpu::BindGroupLayout g_drawConstantsBindGroupLayout;
++static wgpu::BindGroup g_drawConstantsBindGroup;
++static WGPUBuffer g_drawConstantsBetween = nullptr; // the in-between buffer the group binds
++static wgpu::Buffer g_betweenPlaceholder;            // bound before there is one
++wgpu::BindGroupLayout g_emptyBindGroupLayout;
++wgpu::BindGroup g_emptyBindGroup;
++
++bool immediate_constants_requested() noexcept {
++  static const bool enabled = [] {
++    const char* env = std::getenv("DOL_AURORA_IMMEDIATE_CONSTANTS");
++    return immediate_constants_opt_in(env, true);
++  }();
++  return enabled && sparse_vertex_uniforms_enabled();
++}
++bool immediate_constants() noexcept { return g_immediateConstants; }
+ 
+ // The gxcore vertex block's three bindings over `buffer`, each its part's size.
+ static wgpu::BindGroup vertex_uniform_bind_group(const wgpu::Buffer& buffer, const char* label) {
+@@ -1180,7 +1196,12 @@ void initialize() {
+   texture_replacement::initialize();
+ 
+   // For uniform & storage buffer offset alignments
++  static_assert(InterpUniformBufferSize == kImmediateStorageBytes);
+   g_device.GetLimits(&g_cachedLimits);
++  g_immediateConstants = immediate_constants_requested() &&
++      immediate_constants_supported(g_cachedLimits.maxImmediateSize,
++      g_cachedLimits.maxStorageBuffersPerShaderStage, g_cachedLimits.maxStorageBufferBindingSize,
++      g_instance.HasWGSLLanguageFeature(wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace));
+ 
+   const auto createBuffer = [](wgpu::Buffer& out, wgpu::BufferUsage usage, uint64_t size, const char* label) {
+     if (size <= 0) {
+@@ -1193,8 +1214,9 @@ void initialize() {
+     };
+     out = g_device.CreateBuffer(&descriptor);
+   };
+-  createBuffer(g_uniformBuffer, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst, UniformBufferSize,
+-               "Shared Uniform Buffer");
++  createBuffer(g_uniformBuffer, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst |
++                   (g_immediateConstants ? wgpu::BufferUsage::Storage : wgpu::BufferUsage::None),
++               UniformBufferSize, "Shared Uniform Buffer");
+   createBuffer(g_vertexBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+                VertexBufferSize, "Shared Vertex Buffer");
+   createBuffer(g_indexBuffer, wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst, IndexBufferSize,
+@@ -1313,6 +1335,33 @@ void initialize() {
+     g_vertexUniformBindGroupLayout = g_device.CreateBindGroupLayout(&layoutDesc);
+     g_vertexUniformBindGroup = vertex_uniform_bind_group(g_uniformBuffer, "GXCore vertex uniform bind group");
+   }
++  if (g_immediateConstants) {
++    std::array<wgpu::BindGroupLayoutEntry, 2> layoutEntries{};
++    for (uint32_t i = 0; i < layoutEntries.size(); ++i)
++      layoutEntries[i] = wgpu::BindGroupLayoutEntry{
++          .binding = i,
++          .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
++          .buffer = wgpu::BufferBindingLayout{.type = wgpu::BufferBindingType::ReadOnlyStorage},
++      };
++    const wgpu::BindGroupLayoutDescriptor layoutDesc{
++        .label = "GXCore constants bind group layout",
++        .entryCount = layoutEntries.size(),
++        .entries = layoutEntries.data(),
++    };
++    g_drawConstantsBindGroupLayout = g_device.CreateBindGroupLayout(&layoutDesc);
++    const wgpu::BindGroupLayoutDescriptor emptyDesc{.label = "Empty bind group layout"};
++    g_emptyBindGroupLayout = g_device.CreateBindGroupLayout(&emptyDesc);
++    const wgpu::BindGroupDescriptor emptyGroup{.label = "Empty bind group", .layout = g_emptyBindGroupLayout};
++    g_emptyBindGroup = g_device.CreateBindGroup(&emptyGroup);
++    const wgpu::BufferDescriptor placeholder{
++        .label = "In-between constants placeholder",
++        .usage = wgpu::BufferUsage::Storage,
++        .size = 256,
++    };
++    g_betweenPlaceholder = g_device.CreateBuffer(&placeholder);
++    g_drawConstantsBindGroup = {};
++    g_drawConstantsBetween = nullptr;
++  }
+ 
+   gx::initialize();
+ #ifdef AURORA_ENABLE_RMLUI
+@@ -1335,6 +1384,9 @@ void shutdown() {
+   g_lastDue = {};
+   g_interpUniformBindGroup = {};
+   g_interpVertexUniformBindGroup = {};
++  g_drawConstantsBindGroup = {};
++  g_drawConstantsBetween = nullptr;
++  g_betweenPlaceholder = {};
+   g_interpUniformBuffer = {};
+   g_interpUniformBufferSize = 0;
+   g_interpVertexBuffer = {};
+@@ -1396,6 +1448,10 @@ void shutdown() {
+   g_uniformBindGroupLayout = {};
+   g_vertexUniformBindGroup = {};
+   g_vertexUniformBindGroupLayout = {};
++  g_drawConstantsBindGroupLayout = {};
++  g_immediateConstants = false;
++  g_emptyBindGroup = {};
++  g_emptyBindGroupLayout = {};
+   g_inOffscreen = false;
+   g_frameIndex = UINT32_MAX;
+   g_frameSlots.reset();
+@@ -2232,7 +2288,8 @@ static void upload_interp_data(size_t frameSlot) {
+         std::min(InterpUniformBufferSize, AURORA_ALIGN(std::max(needed, InterpUniformStepSize), InterpUniformStepSize));
+     const wgpu::BufferDescriptor descriptor{
+         .label = "In-between frame uniform buffer",
+-        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
++        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst |
++                   (g_immediateConstants ? wgpu::BufferUsage::Storage : wgpu::BufferUsage::None),
+         .size = g_interpUniformBufferSize,
+     };
+     g_interpUniformBuffer = g_device.CreateBuffer(&descriptor);
+@@ -2831,6 +2888,29 @@ BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
+   return id;
+ }
+ 
++// The frame's constant buffer and the in-between frames' (or a placeholder
++// until there is one) as group 1 of an immediate-constants pipeline; made again
++// when the in-between buffer grows (render worker).
++const wgpu::BindGroup& draw_constants_bind_group() {
++  const WGPUBuffer between = g_interpUniformBuffer ? g_interpUniformBuffer.Get() : g_betweenPlaceholder.Get();
++  if (!g_drawConstantsBindGroup || g_drawConstantsBetween != between) {
++    const std::array entries{
++        wgpu::BindGroupEntry{.binding = 0, .buffer = g_uniformBuffer},
++        wgpu::BindGroupEntry{.binding = 1,
++                             .buffer = g_interpUniformBuffer ? g_interpUniformBuffer : g_betweenPlaceholder},
++    };
++    const wgpu::BindGroupDescriptor descriptor{
++        .label = "GXCore constants bind group",
++        .layout = g_drawConstantsBindGroupLayout,
++        .entryCount = entries.size(),
++        .entries = entries.data(),
++    };
++    g_drawConstantsBindGroup = g_device.CreateBindGroup(&descriptor);
++    g_drawConstantsBetween = between;
++  }
++  return g_drawConstantsBindGroup;
++}
++
+ wgpu::BindGroup find_bind_group(BindGroupRef id) {
+   std::lock_guard lock{g_bindGroupCacheMutex};
+   const auto it = g_cachedBindGroups.find(id);
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.hpp b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+index 95ae75ba..56e6a445 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "vertex_uniform_types.hpp"
++#include "immediate_constants.hpp"
+ #include "../internal.hpp"
+ #include "../webgpu/gpu.hpp"
+ 
+@@ -209,6 +210,18 @@ bool sparse_vertex_uniforms_enabled(); // process-fixed, explicit opt-in only
+ extern wgpu::BindGroupLayout g_vertexUniformBindGroupLayout;
+ extern wgpu::BindGroup g_vertexUniformBindGroup;
+ extern wgpu::BindGroup g_interpVertexUniformBindGroup;
++// Or, where the device has immediate data (immediate_constants()), a gxcore
++// draw reads its constants from storage at the rows its immediate data names
++// (gxruntime/gxcore/shader.hpp DrawConstants): group 1 is the frame's and the
++// in-between frames' constant buffers, bound once a pass, and an empty group
++// stands where the pixel constants were.
++bool immediate_constants() noexcept;
++extern wgpu::BindGroupLayout g_drawConstantsBindGroupLayout;
++const wgpu::BindGroup& draw_constants_bind_group();
++extern wgpu::BindGroupLayout g_emptyBindGroupLayout;
++extern wgpu::BindGroup g_emptyBindGroup;
++bool immediate_constants_requested() noexcept;
++
+ 
+ using BindGroupRef = HashType;
+ using PipelineRef = HashType;
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+index 6a8bc3fd..e6301638 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+@@ -379,8 +379,14 @@ wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+         "GX destination alpha requires WebGPU dual-source blending");
+   CHECK(config.sparseUniforms <= 1u, "Invalid GX vertex-uniform layout");
+   const bool sparse = config.sparseUniforms != 0u;
++  const bool immediates = config.immediateConstants != 0u;
++  if (config.immediateConstants > 1u || (immediates && (!sparse || !immediate_constants()))) return {};
+   std::string wgsl = uber ? gxc::generate_uber_wgsl(key.shader.use_dst_alpha != 0, sparse)
+                           : gxc::generate_wgsl(key.shader, sparse);
++  if (immediates) {
++    wgsl = gxc::immediate_constants_wgsl(wgsl);
++    if (wgsl.empty()) { Log.error("Unsupported GX constant-load shader shape"); return {}; }
++  }
+   if (depthOnly) {
+     wgsl += "\n@fragment\nfn fs_depth_only() -> @location(0) vec4f {\n"
+             "    return vec4f(0.0);\n}\n";
+@@ -406,8 +412,8 @@ wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+   const uint32_t tex_mask = uber ? 0xFFu : textured ? gxc::used_texmap_mask(key.shader) : 1u;
+   std::array<wgpu::BindGroupLayout, 4> bindGroupLayouts{
+       g_staticBindGroupLayout,
+-      sparse ? g_vertexUniformBindGroupLayout : g_uniformBindGroupLayout,
+-      tev || uber ? g_uniformBindGroupLayout : texture_bind_group_layout(tex_mask),
++      immediates ? g_drawConstantsBindGroupLayout : sparse ? g_vertexUniformBindGroupLayout : g_uniformBindGroupLayout,
++      tev || uber ? (immediates ? g_emptyBindGroupLayout : g_uniformBindGroupLayout) : texture_bind_group_layout(tex_mask),
+       texture_bind_group_layout(tex_mask),
+   };
+   const size_t layoutCount =
+@@ -416,6 +422,7 @@ wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+       .label = "GXCore Pipeline Layout",
+       .bindGroupLayoutCount = layoutCount,
+       .bindGroupLayouts = bindGroupLayouts.data(),
++      .immediateSize = immediates ? static_cast<uint32_t>(sizeof(gxc::DrawConstants)) : 0u,
+   };
+   const auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
+ 
+@@ -674,6 +681,7 @@ struct PassState {
+   WGPUBindGroup group2 = nullptr;
+   uint32_t offset2 = UINT32_MAX;
+   WGPUBindGroup group3 = nullptr;
++  gxc::DrawConstants constants{UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
+ };
+ PassState g_pass;
+ } // namespace
+@@ -721,12 +729,14 @@ struct DrawPart {
+ } // namespace
+ 
+ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
++  const bool immediates = immediate_constants();
+   const auto bind = [&](PipelineRef ref) {
+     if (!bind_pipeline(ref, pass))
+       return false;
+     if (ref != g_pass.pipeline) {
+       g_pass.pipeline = ref;
+-      g_pass.group1 = g_pass.group2 = g_pass.group3 = nullptr;
++      if (!immediates) g_pass.group1 = g_pass.group2 = g_pass.group3 = nullptr;
++      g_pass.constants = {UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
+     }
+     return true;
+   };
+@@ -866,19 +876,54 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
+       g_pass.offset2 = psOffset;
+     }
+   };
++  // With immediate constants: the constants group once a pass, and per part
++  // the rows of its four parts, the in-between buffer's where they were
++  // blended. The pixel row is the draw's own on its depth prepass too, so the
++  // colour draw that follows sets nothing.
++  const wgpu::BindGroup* constantsGroup = immediates ? &draw_constants_bind_group() : nullptr;
++  const auto setConstants = [&](const DrawPart& part) {
++    if (g_pass.group1 != constantsGroup->Get()) {
++      pass.SetBindGroup(1, *constantsGroup);
++      g_pass.group1 = constantsGroup->Get();
++    }
++    const bool blended = part.uniform.size != 0;
++    const VertexUniformRanges& vs = blended ? part.uniform : data.uniformRange;
++    gxc::DrawConstants constants{
++        .block = gxc::constant_row(vs.block, blended),
++        .matrices = gxc::constant_row(vs.matrices, blended),
++        .lights = gxc::constant_row(vs.lights, blended),
++    };
++    if (uberDraw)
++      constants.pixel = gxc::constant_row(data.uberPixelRange.offset, false);
++    else if (data.tev)
++      constants.pixel = part.pixel.size != 0 ? gxc::constant_row(part.pixel.offset, true)
++                                             : gxc::constant_row(data.pixelUniformRange.offset, false);
++    if (constants != g_pass.constants) {
++      pass.SetImmediates(0, &constants, sizeof(constants));
++      g_pass.constants = constants;
++    }
++  };
+   const auto draw = [&](bool pixel) {
+     for (const DrawPart& part : parts) {
+-      setGroup1(part);
+-      if (pixel)
+-        setGroup2(part);
++      if (immediates) setConstants(part);
++      else { setGroup1(part); if (pixel) setGroup2(part); }
+       const int32_t baseVertex = setVertices(part);
+       pass.DrawIndexed(part.indexCount, 1, part.firstIndex, baseVertex);
+     }
+   };
++  // The TEV path's group 2 with immediate constants: empty.
++  const auto setEmptyGroup2 = [&] {
++    if (g_pass.group2 != g_emptyBindGroup.Get()) {
++      pass.SetBindGroup(2, g_emptyBindGroup);
++      g_pass.group2 = g_emptyBindGroup.Get();
++      g_pass.offset2 = UINT32_MAX;
++    }
++  };
+   if (uberDraw) {
+     // group 2: the pixel constants and the shader key; group 3: all eight texmaps.
+     const uint32_t psOffset = data.uberPixelRange.offset;
+-    if (g_uniformBindGroup.Get() != g_pass.group2 || psOffset != g_pass.offset2) {
++    if (immediates) setEmptyGroup2();
++    else if (g_uniformBindGroup.Get() != g_pass.group2 || psOffset != g_pass.offset2) {
+       pass.SetBindGroup(2, g_uniformBindGroup, 1, &psOffset);
+       g_pass.group2 = g_uniformBindGroup.Get();
+       g_pass.offset2 = psOffset;
+@@ -898,6 +943,7 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
+   }
+   if (data.tev) {
+     // group 3 = texture (group 2, the PS uniform, is set for each part).
++    if (immediates) setEmptyGroup2();
+     if (data.textureBindGroup != 0) {
+       const auto& group = find_bind_group(data.textureBindGroup);
+       if (group.Get() != g_pass.group3) {
+@@ -1943,6 +1989,7 @@ bool submit_draw_plan(const gxc::DrawPlan& plan) {
+   const PipelineConfig colorConfig{
+       .version = GXCorePipelineConfigVersion,
+       .sparseUniforms = sparse_vertex_uniforms_enabled() ? 1u : 0u,
++      .immediateConstants = immediate_constants() ? 1u : 0u,
+       .key = plan.pipeline,
+       .msaaSamples = get_sample_count(),
+   };
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+index 0ee8153e..40bf32a4 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+@@ -88,11 +88,12 @@ DrawData* last_recorded_draw() noexcept;
+ // RGB and alpha blending carry donor-exact independent factors. v11: BP SU
+ // texture-coordinate scales enlarge pixel constants and alter TEV WGSL.
+ // Split VS binding layout/config identity and complete single-binding control.
+-constexpr uint32_t GXCorePipelineConfigVersion = 14;
++constexpr uint32_t GXCorePipelineConfigVersion = 15;
+ 
+ struct PipelineConfig {
+   uint32_t version = GXCorePipelineConfigVersion;
+-  uint32_t sparseUniforms = 0; // included in persisted/hash identity
++  uint32_t sparseUniforms = 0;
++  uint32_t immediateConstants = 0; // storage/immediate layout identity // included in persisted/hash identity
+   gxruntime::gxcore::PipelineKey key;
+   uint32_t msaaSamples = 1;
+   uint32_t depthOnly = 0;
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/immediate_constants.hpp b/GXRuntime/graphics/aurora/lib/gfx/immediate_constants.hpp
+new file mode 100644
+index 00000000..0c294aab
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/gfx/immediate_constants.hpp
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <cstring>
++namespace aurora::gfx {
++inline bool immediate_constants_opt_in(const char* value, bool sparse) noexcept {
++  return sparse && value != nullptr && std::strcmp(value, "1") == 0;
++}
++inline constexpr std::uint64_t kImmediateStorageBytes = 33554432ull * 7ull;
++inline constexpr bool immediate_constants_supported(std::uint32_t immediateBytes,
++    std::uint32_t stageBuffers, std::uint64_t bindingBytes, bool wgsl) noexcept {
++  return wgsl && immediateBytes != UINT32_MAX && immediateBytes >= 16 &&
++      stageBuffers != UINT32_MAX && stageBuffers >= 4 &&
++      bindingBytes != UINT64_MAX && bindingBytes >= kImmediateStorageBytes;
++}
++} // namespace aurora::gfx
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp b/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
+index 9c8a884b..deb2b49a 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
+@@ -460,8 +460,8 @@ static PendingPipeline* touch_pending_pipeline(PipelineRef hash, PipelinePriorit
+ // one shader at a time, so the compile takes no thread from the draws'
+ // pipelines while a scene loads.
+ // 0: no pipeline with the shader yet, 1: one compiling, 2: one made.
+-static std::array<uint8_t, 4> g_uberShaderState{};
+-static std::array<bool, 4> g_uberShaderKnown{};
++static std::array<uint8_t, 8> g_uberShaderState{};
++static std::array<bool, 8> g_uberShaderKnown{};
+ static bool g_cacheQueued = false;
+ 
+ enum class TakePass {
+@@ -524,7 +524,7 @@ static int8_t ubershader_of(const PipelineConfig&) {
+ static int8_t ubershader_of(const gxcore::PipelineConfig& config) {
+   if (config.depthOnly != 2u)
+     return -1;
+-  return static_cast<int8_t>((config.sparseUniforms != 0u ? 2u : 0u) +
++  return static_cast<int8_t>((config.immediateConstants != 0u ? 4u : 0u) + (config.sparseUniforms != 0u ? 2u : 0u) +
+                              (config.key.shader.use_dst_alpha != 0u ? 1u : 0u));
+ }
+ #endif
+@@ -1238,6 +1238,8 @@ static size_t load_pipeline_cache_entries(ShaderType type, uint32_t configVersio
+ 
+ #ifdef AURORA_ENABLE_GXCORE
+     if constexpr (std::is_same_v<PipelineConfig, gxcore::PipelineConfig>) {
++      if (config.sparseUniforms > 1u || config.immediateConstants > 1u ||
++          (config.immediateConstants && (!config.sparseUniforms || !immediate_constants()))) continue;
+       // An ubershader pipeline a draw asked for in an earlier run: its shader
+       // is in Dawn's blob cache.
+       if (const int8_t uber = ubershader_of(config); uber >= 0) {
+diff --git a/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp b/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp
+index 23628e7d..e2422095 100644
+--- a/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp
++++ b/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp
+@@ -866,9 +866,14 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
+   {
+     wgpu::Limits supportedLimits{};
+     g_adapter.GetLimits(&supportedLimits);
++    const bool requestImmediates = gfx::immediate_constants_requested() &&
++        gfx::immediate_constants_supported(supportedLimits.maxImmediateSize,
++        supportedLimits.maxStorageBuffersPerShaderStage, supportedLimits.maxStorageBufferBindingSize,
++        g_instance.HasWGSLLanguageFeature(wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace));
++    const uint32_t storageBuffers = requestImmediates ? 4u : 2u;
+     wgpu::CompatibilityModeLimits compatibilityModeLimits{wgpu::CompatibilityModeLimits::Init{
+-        .maxStorageBuffersInVertexStage = 2,
+-        .maxStorageBuffersInFragmentStage = 2,
++        .maxStorageBuffersInVertexStage = storageBuffers,
++        .maxStorageBuffersInFragmentStage = storageBuffers,
+     }};
+     const wgpu::Limits requiredLimits{
+         .nextInChain = &compatibilityModeLimits,
+@@ -881,7 +886,9 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
+                                                                             : supportedLimits.maxTextureDimension3D,
+         .maxTextureArrayLayers = supportedLimits.maxTextureArrayLayers == 0 ? WGPU_LIMIT_U32_UNDEFINED
+                                                                             : supportedLimits.maxTextureArrayLayers,
+-        .maxStorageBuffersPerShaderStage = 2,
++        .maxStorageBuffersPerShaderStage = storageBuffers,
++        .maxStorageBufferBindingSize = requestImmediates ? supportedLimits.maxStorageBufferBindingSize : WGPU_LIMIT_U64_UNDEFINED,
++        .maxImmediateSize = requestImmediates ? 16u : WGPU_LIMIT_U32_UNDEFINED,
+         .minUniformBufferOffsetAlignment =
+             supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
+         .minStorageBufferOffsetAlignment =
+diff --git a/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp b/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
+index 07ab969c..8c8c837f 100644
+--- a/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
++++ b/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
+@@ -17,6 +17,7 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <string>
++#include <string_view>
+ #include <type_traits>
+ #include <vector>
+ 
+@@ -687,4 +688,31 @@ struct UberPixelConstants {
+ static_assert(sizeof(PixelShaderConstants) % 16u == 0u);
+ std::string generate_uber_wgsl(bool dual_source, bool sparse_uniforms = true);
+ 
++// A generated module (generate_wgsl, generate_uber_wgsl) that reads its
++// constants from storage instead of dynamic-offset uniform bindings, so a draw
++// sets 16 bytes of immediate data rather than dynamic-offset bind groups:
++// group(1) is the
++// frame's constant buffer (binding 0) and the in-between frames' (binding 1),
++// read-only storage bound once a pass; the immediate DrawConstants holds where
++// the draw's vertex block, matrix memory, lights and pixel constants are, in
++// 16-byte rows, kConstantsInBetween set for a row of the in-between buffer.
++// vsc., vsm., vsl. and psc. reads become loads at those rows; the bindings of
++// the four parts go, and the texture group stays where it was (group(2), the
++// pixel constants' old place, takes an empty layout on the TEV path).
++struct DrawConstants {
++  std::uint32_t block = 0;
++  std::uint32_t matrices = 0;
++  std::uint32_t lights = 0;
++  std::uint32_t pixel = 0;
++  bool operator==(const DrawConstants&) const = default;
++};
++static_assert(sizeof(DrawConstants) == 16);
++inline constexpr std::uint32_t kConstantsInBetween = 0x80000000u;
++// Staging offsets are 16-byte aligned and bounded by their owned buffers.
++inline constexpr std::uint32_t constant_row(std::uint32_t offset, bool between) noexcept {
++  return offset / 16u | (between ? kConstantsInBetween : 0u);
++}
++std::string immediate_constants_wgsl(std::string_view wgsl);
++
++
+ } // namespace gxruntime::gxcore
+diff --git a/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp b/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
+index 3b7f344f..50ee0732 100644
+--- a/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
+@@ -2,6 +2,8 @@
+ #include "gxruntime/gxcore/shader.hpp"
+ 
+ #include <algorithm>
++#include <cctype>
++#include <string_view>
+ #include <cstdarg>
+ #include <cstddef>
+ #include <cstdio>
+@@ -1271,4 +1273,208 @@ struct VertexShaderConstants {
+   return out;
+ }
+ 
++// --- Constants from storage, the draw's rows in immediate data ----------------
++
++namespace {
++
++// A constant field the generators read, where it is: its part (the
++// DrawConstants member), its first 16-byte row in that part, its element type,
++// and whether it is indexed. The lights are an array of five-row structs.
++struct ConstantField {
++  const char* binding;
++  const char* name;
++  const char* part;
++  std::uint32_t row;
++  char type; // f, i or u: the load's vec4 type
++  bool indexed;
++};
++
++constexpr std::uint32_t row_of(std::size_t bytes) { return static_cast<std::uint32_t>(bytes / 16u); }
++
++using VSC = VertexShaderConstants;
++using PSC = PixelShaderConstants;
++const ConstantField kConstantFields[] = {
++    {"vsc", "posnormalmatrix", "block", row_of(offsetof(VSC, posnormalmatrix)), 'f', true},
++    {"vsc", "projection", "block", row_of(offsetof(VSC, projection)), 'f', true},
++    {"vsc", "texmatrices", "block", row_of(offsetof(VSC, texmatrices)), 'f', true},
++    {"vsc", "materials", "block", row_of(offsetof(VSC, materials)), 'i', true},
++    {"vsc", "cached_normal", "block", row_of(offsetof(VSC, cached_normal)), 'f', false},
++    {"vsc", "cached_tangent", "block", row_of(offsetof(VSC, cached_tangent)), 'f', false},
++    {"vsc", "cached_binormal", "block", row_of(offsetof(VSC, cached_binormal)), 'f', false},
++    {"vsm", "transformmatrices", "matrices", row_of(offsetof(VSC, transformmatrices) - kVertexMatrixOffset), 'f', true},
++    {"vsm", "normalmatrices", "matrices", row_of(offsetof(VSC, normalmatrices) - kVertexMatrixOffset), 'f', true},
++    {"vsl", "lights", "lights", 0, 'f', true},
++    {"psc", "colors", "pixel", row_of(offsetof(PSC, colors)), 'i', true},
++    {"psc", "kcolors", "pixel", row_of(offsetof(PSC, kcolors)), 'i', true},
++    {"psc", "alpha_ref", "pixel", row_of(offsetof(PSC, alpha_ref)), 'i', false},
++    {"psc", "fogcolor", "pixel", row_of(offsetof(PSC, fogcolor)), 'i', false},
++    {"psc", "fogi", "pixel", row_of(offsetof(PSC, fogi)), 'i', false},
++    {"psc", "fogf", "pixel", row_of(offsetof(PSC, fogf)), 'f', false},
++    {"psc", "fogrange", "pixel", row_of(offsetof(PSC, fogrange)), 'f', true},
++    {"psc", "zbias", "pixel", row_of(offsetof(PSC, zbias)), 'i', false},
++    {"psc", "texdims", "pixel", row_of(offsetof(PSC, texdims)), 'i', true},
++    {"psc", "indtexmtx", "pixel", row_of(offsetof(PSC, indtexmtx)), 'i', true},
++    {"psc", "key", "pixel", row_of(offsetof(UberPixelConstants, key)), 'u', true},
++    {"psc", "hud_multiplier", "pixel", row_of(offsetof(PSC, hud_multiplier)), 'f', false},
++    {"psc", "extra", "pixel", row_of(offsetof(UberPixelConstants, extra)), 'u', false},
++};
++static_assert(offsetof(UberPixelConstants, psc) == 0);
++
++// GpuLight's members, a row each.
++struct LightMember {
++  const char* name;
++  std::uint32_t row;
++  char type;
++};
++constexpr LightMember kLightMembers[] = {
++    {"color", 0, 'i'}, {"cosatt", 1, 'f'}, {"distatt", 2, 'f'}, {"pos", 3, 'f'}, {"dir", 4, 'f'},
++};
++static_assert(sizeof(GpuLight) == 5 * 16);
++
++// gx_draw.<part> + <row>u: a row of the draw's part.
++std::string fmt_row(const char* part, std::uint32_t row) {
++  return std::string("gx_draw.") + part + " + " + std::to_string(row) + "u";
++}
++
++bool ident_char(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }
++
++std::size_t ident_end(std::string_view s, std::size_t at) {
++  while (at < s.size() && ident_char(s[at]))
++    ++at;
++  return at;
++}
++
++// The index of the bracket at `open`'s match, or npos.
++std::size_t matching_bracket(std::string_view s, std::size_t open) {
++  int depth = 0;
++  for (std::size_t i = open; i < s.size(); ++i) {
++    if (s[i] == '[')
++      ++depth;
++    else if (s[i] == ']' && --depth == 0)
++      return i;
++  }
++  return std::string_view::npos;
++}
++
++std::string rewrite_reads(std::string_view s) {
++  std::string out;
++  out.reserve(s.size() + s.size() / 2);
++  std::size_t i = 0;
++  while (i < s.size()) {
++    const ConstantField* field = nullptr;
++    std::size_t nameEnd = 0;
++    if (s.size() - i > 4 && s[i + 3] == '.' && (i == 0 || !ident_char(s[i - 1]))) {
++      const std::string_view binding = s.substr(i, 3);
++      nameEnd = ident_end(s, i + 4);
++      const std::string_view name = s.substr(i + 4, nameEnd - (i + 4));
++      for (const ConstantField& f : kConstantFields)
++        if (binding == f.binding && name == f.name)
++          field = &f;
++    }
++    if (field == nullptr) {
++      out += s[i++];
++      continue;
++    }
++    char type = field->type;
++    std::string row = fmt_row(field->part, field->row);
++    std::size_t next = nameEnd;
++    if (field->indexed && next < s.size() && s[next] == '[') {
++      const std::size_t close = matching_bracket(s, next);
++      if (close == std::string_view::npos) {
++        out += s[i++];
++        continue;
++      }
++      const std::string index = rewrite_reads(s.substr(next + 1, close - next - 1));
++      next = close + 1;
++      if (std::strcmp(field->name, "lights") == 0) {
++        // vsl.lights[i].member
++        if (next >= s.size() || s[next] != '.') {
++          out += s[i++];
++          continue;
++        }
++        const std::size_t memberEnd = ident_end(s, next + 1);
++        const std::string_view member = s.substr(next + 1, memberEnd - next - 1);
++        const LightMember* light = nullptr;
++        for (const LightMember& m : kLightMembers)
++          if (member == m.name)
++            light = &m;
++        if (light == nullptr) {
++          out += s[i++];
++          continue;
++        }
++        type = light->type;
++        row = fmt_row(field->part, light->row) + " + u32(" + index + ") * 5u";
++        next = memberEnd;
++      } else {
++        row += " + u32(" + index + ")";
++      }
++    }
++    out += "gx_ld";
++    out += type;
++    out += '(';
++    out += row;
++    out += ')';
++    i = next;
++  }
++  return out;
++}
++
++} // namespace
++
++std::string immediate_constants_wgsl(std::string_view wgsl) {
++  // The four parts' bindings go; their struct declarations stay, unused.
++  std::string body;
++  body.reserve(wgsl.size());
++  std::size_t directivesEnd = 0;
++  std::size_t at = 0;
++  bool leading = true;
++  while (at < wgsl.size()) {
++    std::size_t end = wgsl.find('\n', at);
++    end = end == std::string_view::npos ? wgsl.size() : end + 1;
++    const std::string_view line = wgsl.substr(at, end - at);
++    const bool binding = line.find("var<uniform> vsc:") != std::string_view::npos ||
++                         line.find("var<uniform> vsm:") != std::string_view::npos ||
++                         line.find("var<uniform> vsl:") != std::string_view::npos ||
++                         line.find("var<uniform> psc:") != std::string_view::npos;
++    if (!binding)
++      body += line;
++    if (leading) {
++      if (line.starts_with("enable ") || line.starts_with("requires ") || line.starts_with("diagnostic") ||
++          line == "\n")
++        directivesEnd = body.size();
++      else
++        leading = false;
++    }
++    at = end;
++  }
++  std::string out = body.substr(0, directivesEnd);
++  out += "struct GxDrawConstants {\n"
++         "    block: u32,\n"
++         "    matrices: u32,\n"
++         "    lights: u32,\n"
++         "    pixel: u32,\n"
++         "};\n"
++         "var<immediate> gx_draw: GxDrawConstants;\n"
++         "@group(1) @binding(0) var<storage, read> gx_frame_constants: array<vec4u>;\n"
++         "@group(1) @binding(1) var<storage, read> gx_between_constants: array<vec4u>;\n"
++         "fn gx_ld(row: u32) -> vec4u {\n"
++         "    if (row >= 0x80000000u) { return gx_between_constants[row - 0x80000000u]; }\n"
++         "    return gx_frame_constants[row];\n"
++         "}\n"
++         "fn gx_ldf(row: u32) -> vec4f { return bitcast<vec4f>(gx_ld(row)); }\n"
++         "fn gx_ldi(row: u32) -> vec4i { return bitcast<vec4i>(gx_ld(row)); }\n"
++         "fn gx_ldu(row: u32) -> vec4u { return gx_ld(row); }\n";
++  out += rewrite_reads(std::string_view(body).substr(directivesEnd));
++  for (size_t i = 0; i < out.size(); ++i) {
++    if (out[i] == '/' && i + 1 < out.size() && out[i + 1] == '/') {
++      while (i < out.size() && out[i] != '\n') ++i;
++      continue;
++    }
++    for (const char* old : {"vsc.", "vsm.", "vsl.", "psc."})
++      if (out.compare(i,4,old) == 0) return {};
++  }
++  return out;
++}
++
++
+ } // namespace gxruntime::gxcore
