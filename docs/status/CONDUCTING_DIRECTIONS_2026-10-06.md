@@ -14,6 +14,10 @@ returns. During those procedures, the horizontal camera correction leaves
 native C-stick directions alone. Other native camera views retain their
 existing correction, including the signed `-128` saturation case.
 
+A subsequent source review confirmed that these are all four native Tact
+procedures and that the melody code consumes the native C-stick directions.
+It found no further automatic horizontal swap in the default input path.
+
 The permanent `bluewake_mouse_camera_pad_test` target extracts the production
 context reader, camera-frame handler and PAD functions, alongside its existing
 input-blocking and gesture-cleanup code. It uses the actual CPU layout and

@@ -259,14 +259,27 @@ The first headless baseline replay completed normally in 112.734 seconds at
 8500 retraces. Its terminal metadata records both original item awards, all
 85 periodic logical-state tuples and preservation of all 2836 inputs. Both
 the game and its parent terminated with exit zero and drained their streams;
-the original CARD remains unchanged. Independent interpretation is pending.
+the original CARD remains unchanged.
 
 Before invoking the baseline reader, review found that its exact data-tree
 whitelist omitted normal startup outputs: empty CARD and manager lock files,
 an empty crash report named for the game process, and offline network
 preferences. The baseline and derived diagnostic readers remain uninvoked.
-A narrow source-qualified reader correction is in progress; the completed
-game replay and original reader sources are preserved.
+The first independently invoked reader then stopped because its whitelist also
+omitted the three empty startup texture directories. That failed read and all
+earlier sources remain preserved. The separately reviewed correction requires
+exactly `Load/Textures/GZLE01`, with no textures, extra directories or siblings;
+its directory creation matches the qualified compiled settings source.
+
+The corrected independent file audit passed with 213125 checks. It verified
+all 2836 inputs, 420 protected resources, 2303 interpreter files and 11 actual
+artifacts before and after its read. It independently matched all 85 tuples,
+the original Tuner/chart awards, normal termination and the sole cleared-scene
+reset afterward. Its process exited zero with empty stderr; the launcher also
+verified its own sources and runtime after termination. The baseline is accepted
+only for the original replay comparisons. Quest selection, Tc ownership,
+registration, rescue/removal and the within-return timer proof remain unobserved
+in this unchanged host. No game replay was repeated to correct the file reader.
 
 Next are independent baseline interpretation and reference/OFF/ON rescue runs
 covering the six timer returns, original rewards,
