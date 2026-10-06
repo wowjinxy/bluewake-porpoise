@@ -188,10 +188,25 @@ remain unproved. Microsoft's
 describes checking availability before a delayed call; it does not establish
 that these particular Windows providers perform that check.
 
-A separate source-only facts collector is being prepared to inventory conditional
-dependency failures and required ordinary membership together. It grants no static
-closure, deployment or native admission. Runtime staging and game replay remain
-pending; the prior failed readers are unchanged.
+A separately source-reviewed facts collector stopped at its declared limit of
+256 physical providers while inventorying ordinary and conditional Windows
+dependencies. Its first failure is preserved. It produced no complete graph or
+required ordinary membership; this is a collection-limit failure, with no
+observed game or Windows loading failure. No runtime file was copied and no game
+case launched.
+
+Both independent preservation reviews confirm all 2376 original inputs and
+2303 current interpreter/runtime files remain exact. Earlier failed reads and
+the collector's first stopped result are retained; neither review admits a
+complete dependency graph.
+
+The next source proposal will discover required ordinary imports and their
+forwarders first, preserving raw delay-import tables as separate conditional
+facts. Uninspected conditional targets remain unproved. A new prospective replay
+prerequisite draft requires zero unresolved required ordinary edges and two
+independent actual file reviews before a separate bounded-experiment decision.
+It grants no automatic staging or native authorization. Earlier scopes and
+failed reads remain unchanged; runtime staging and game replay are pending.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
