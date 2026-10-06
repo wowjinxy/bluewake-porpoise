@@ -1,0 +1,183 @@
+--- /dev/null
++++ b/tests/known_single/generate.c
+@@ -0,0 +1,62 @@
++/* Authored instruction programs exercise the actual emitter and CPU runtime.
++ * No native/game inputs, guest state, or module is loaded. */
++#include "backend/emitter.h"
++#include "backend/option_sites.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++static PPCInst op(PPCOpcode code,unsigned d,unsigned a,unsigned b,unsigned c) {
++    PPCInst i={0};i.op=code;i.rD=d;i.rA=a;i.rB=b;i.rC=c;i.rc=1;return i;
++}
++static void add(PPCInst* p,unsigned* n,PPCInst i){p[(*n)++]=i;}
++static void program(FILE* out,unsigned which) {
++    PPCInst p[40];unsigned n=0;const u32 base=0x80006000u+which*0x100u;
++    add(p,&n,op(PPC_OP_PS_NEG,1,0,1,0));
++    add(p,&n,op(PPC_OP_PS_ABS,2,0,2,0));
++    add(p,&n,op(PPC_OP_PS_NABS,3,0,3,0));
++    if(which==1 || which==2 || which==3) {
++        PPCInst mem=op(which==2?PPC_OP_STW:PPC_OP_LWZ,4,10,0,0);mem.rS=4;mem.simm=0;add(p,&n,mem);
++    }
++    if(which==4) {
++        PPCInst branch=op(PPC_OP_BC,0,0,0,0);branch.bo=12;branch.bi=2;branch.branch_target=base+20;add(p,&n,branch);
++        add(p,&n,op(PPC_OP_PS_ADD,2,1,3,0));
++    }
++    if(which==5) {
++        PPCInst load=op(PPC_OP_LFS,2,10,0,0);load.simm=0;add(p,&n,load);
++    }
++    if(which==6) add(p,&n,op(PPC_OP_FRSP,2,0,2,0));
++    if(which==7) add(p,&n,op(PPC_OP_PS_RES,2,0,2,0));
++    if(which==8) add(p,&n,op(PPC_OP_PS_MERGE00,2,2,3,0));
++    add(p,&n,op(PPC_OP_PS_MUL,4,1,0,2));
++    add(p,&n,op(PPC_OP_PS_MADD,5,4,3,2));
++    add(p,&n,op(PPC_OP_PS_MSUB,6,1,5,2));
++    add(p,&n,op(PPC_OP_PS_NMADD,7,4,3,2));
++    add(p,&n,op(PPC_OP_PS_NMSUB,8,1,5,2));
++    add(p,&n,op(PPC_OP_PS_MULS0,9,1,0,2));
++    add(p,&n,op(PPC_OP_PS_MULS1,11,1,0,2));
++    add(p,&n,op(PPC_OP_PS_MADDS0,12,4,3,2));
++    add(p,&n,op(PPC_OP_PS_MADDS1,13,4,3,2));
++    add(p,&n,op(PPC_OP_FMULS,14,1,0,2));
++    add(p,&n,op(PPC_OP_PS_MADD,15,14,13,2));
++    if(which==9) {
++        PPCInst load=op(PPC_OP_LWZ,20,10,0,0);add(p,&n,load);
++        PPCInst compare=op(PPC_OP_CMPLI,0,20,0,0);compare.crfD=0;compare.uimm=0;add(p,&n,compare);
++        PPCInst branch=op(PPC_OP_BC,0,0,0,0);branch.bo=12;branch.bi=2;branch.branch_target=base+(n-2)*4;add(p,&n,branch);
++        add(p,&n,op(PPC_OP_PS_MUL,16,1,0,2));
++    }
++    for(unsigned i=0;i<n;++i)p[i].address=base+4*i;
++    if(!emit_function(out,p,n,base))exit(2);
++    fprintf(out,"/* program %u instructions %u end %08X */\n",which,n,base+4*n);
++}
++int main(int argc,char** argv) {
++    if(argc!=3)return 2;
++    if(!option_sites_load(argv[2]))return 3;
++    option_sites_resolve_dol();
++    char path[1024];snprintf(path,sizeof path,"%s/generated.h",argv[1]);
++    FILE* h=fopen(path,"wb");if(!h)return 4;emit_header(h);emit_footer(h);fclose(h);
++    snprintf(path,sizeof path,"%s/generated.c",argv[1]);
++    FILE* c=fopen(path,"wb");if(!c)return 5;
++    fprintf(c,"#define DOLRECOMP_CPU_HEADER \"core/cpu.h\"\n#include \"generated.h\"\n#include \"inline_fp.h\"\n#include \"fixture_support.h\"\n");
++    for(unsigned i=0;i<13;++i)program(c,i);
++    fclose(c);puts("13 actual emitted instruction programs");return 0;
++}
+--- /dev/null
++++ b/tests/known_single/known_single_test.c
+@@ -0,0 +1,101 @@
++/* Full actual emitted-code CPU/FP/exception comparison. All inputs are authored;
++ * callbacks model observable mutation, never native/game authority. */
++#include "core/cpu.h"
++#include <fenv.h>
++#include <math.h>
++#include <stdio.h>
++#include <string.h>
++#include <xmmintrin.h>
++unsigned dolrecomp_call_depth;
++unsigned char dolrecomp_option_flags[256];
++#define DECLARE(addr) void ref_##addr(CPUState*);void func_##addr(CPUState*);
++DECLARE(80006000) DECLARE(80006100) DECLARE(80006200) DECLARE(80006300)
++DECLARE(80006400) DECLARE(80006500) DECLARE(80006600) DECLARE(80006700)
++DECLARE(80006800) DECLARE(80006900) DECLARE(80006A00) DECLARE(80006B00) DECLARE(80006C00)
++typedef void(*Function)(CPUState*);
++static Function refs[]={ref_80006000,ref_80006100,ref_80006200,ref_80006300,ref_80006400,ref_80006500,ref_80006600,ref_80006700,ref_80006800,ref_80006900,ref_80006A00,ref_80006B00,ref_80006C00};
++static Function opts[]={func_80006000,func_80006100,func_80006200,func_80006300,func_80006400,func_80006500,func_80006600,func_80006700,func_80006800,func_80006900,func_80006A00,func_80006B00,func_80006C00};
++static const unsigned lengths[]={14,15,15,15,16,15,15,15,15,18,14,14,14};
++static const u64 patterns[]={
++ 0,0x8000000000000000ull,0x3FF0000000000000ull,0xBFF0000000000000ull,
++ 0x3FF0000002000001ull,0x400921FB54442D18ull,0x3FD5555555555555ull,
++ 0x7FF0000000000000ull,0xFFF0000000000000ull,0x7FF8000000000001ull,
++ 0x7FF0000000000001ull,0xFFF000000000007Full,1ull,0x8000000000000001ull,
++ 0x0010000000000000ull,0x36A0000000000000ull,0x3810000000000000ull,
++ 0x380FFFFFC0000000ull,0x47EFFFFFE0000000ull,0x7FEFFFFFFFFFFFFFull,
++ 0x3FEFFFFFF0000000ull,0x3FF0000010000000ull,0xC001FFFFE0000000ull,
++ 0x3E70000000000000ull,0x3FF0000000000001ull,0xBFF0000000000001ull,
++ 0x3FF0000020000000ull,0x3FF0000040000000ull,0x001FFFFFFFFFFFFFull,
++ 0x37E0000000000000ull,0xC7EFFFFFE0000000ull,0x46A0000000000000ull};
++static unsigned active_program,callback_mode,callbacks,hook_calls;
++static unsigned long long checks,cases,callback_cases,interrupted_cases;
++static u64 digest=1469598103934665603ull;
++static unsigned char memory[256],reference_memory[256];
++static f64 from_bits(u64 b){f64 d;memcpy(&d,&b,8);return d;}
++static void mutate(CPUState* cpu) {
++    ++callbacks;
++    cpu->fpr[1]=from_bits(0x3FF0000002000001ull);
++    cpu->ps1[1]=from_bits(0x4000000004000001ull);
++    cpu->fpr[2]=from_bits(0x4008000002000001ull);
++    cpu->ps1[2]=from_bits(0xBFE0000004000001ull);
++    cpu->fpscr^=0x00020000u;
++    if(callback_mode==3){cpu->cycle_deadline_budget=1;cpu->downcount=-(s64)cpu->cycle_observation_suffix;}
++}
++static u64 read_external(CPUState* cpu,u32 ea,u8 size) {
++    (void)ea;(void)size;mutate(cpu);
++    if(active_program==5)return 0x3F800001u;
++    return callbacks<3 && active_program==9 ? 0u : 7u;
++}
++static void write_external(CPUState* cpu,u32 ea,u64 value,u8 size) {
++    (void)ea;(void)value;(void)size;mutate(cpu);
++}
++u32 dolrecomp_native_hook(CPUState* cpu,u32 id) {
++    ++hook_calls;mutate(cpu);
++    return id==2u && callback_mode==2 ? 0x80000000u : 0u;
++}
++static int compare_case(unsigned seed,unsigned which,unsigned entry,unsigned rn,unsigned ni,unsigned host,unsigned option,unsigned budget) {
++    CPUState initial;memset(&initial,0,sizeof initial);
++    initial.pc=0x80006000u+which*0x100u+entry*4u;initial.lr=0x81234564u;
++    initial.msr=PPC_MSR_FP|PPC_MSR_FE0|PPC_MSR_FE1;initial.hid2=PPC_HID2_PSE|PPC_HID2_LSQE;
++    initial.fpscr=rn|(ni?4u:0u)|((seed%3u)==0u?0xF8u:0u);initial.cr=(seed&1u)?0x20000000u:0u;
++    initial.cycle_budget=(s64)budget;initial.cycle_deadline_budget=budget==256u?0:(s64)(budget+1u);
++    initial.ram=memory;initial.ram_size=sizeof memory;initial.gpr[10]=0xCC005000u;initial.gpr[4]=0x12345678u;
++    initial.external_read=read_external;initial.external_write=write_external;
++    for(unsigned r=0;r<32;++r){initial.fpr[r]=from_bits(patterns[(seed+r*3u)%32u]);initial.ps1[r]=from_bits(patterns[(seed*7u+r*5u)%32u]);}
++    const int rounds[]={FE_TONEAREST,FE_TOWARDZERO,FE_UPWARD,FE_DOWNWARD};
++    const unsigned flush[]={0,0x40u,0x8000u,0x8040u};
++    CPUState baseline=initial,candidate=initial;
++    unsigned ref_calls=0,ref_hooks=0,ref_mxcsr=0;int ref_flags=0;
++    active_program=which;callback_mode=which==3?3u:seed%4u;dolrecomp_option_flags[0]=(unsigned char)option;
++    memset(memory,(int)(seed+which),sizeof memory);callbacks=hook_calls=0;
++    fesetround(rounds[rn]);_mm_setcsr((_mm_getcsr()&~0x807Fu)|flush[host]);feclearexcept(FE_ALL_EXCEPT);
++    refs[which](&baseline);ref_calls=callbacks;ref_hooks=hook_calls;ref_mxcsr=_mm_getcsr()&0x3Fu;ref_flags=fetestexcept(FE_ALL_EXCEPT);
++    memcpy(reference_memory,memory,sizeof memory);
++    memset(memory,(int)(seed+which),sizeof memory);callbacks=hook_calls=0;
++    fesetround(rounds[rn]);_mm_setcsr((_mm_getcsr()&~0x807Fu)|flush[host]);feclearexcept(FE_ALL_EXCEPT);
++    opts[which](&candidate);
++    checks+=5;++cases;
++    if(memcmp(&baseline,&candidate,sizeof baseline)||memcmp(memory,reference_memory,sizeof memory)||ref_calls!=callbacks||ref_hooks!=hook_calls||ref_mxcsr!=(_mm_getcsr()&0x3Fu)||ref_flags!=fetestexcept(FE_ALL_EXCEPT)) {
++        fprintf(stderr,"PARITY seed=%u program=%u entry=%u rn=%u ni=%u host=%u option=%u budget=%u cpu=%d callback=%u/%u hook=%u/%u flags=%x/%x mxcsr=%x/%x pc=%08x/%08x fpscr=%08x/%08x\n",seed,which,entry,rn,ni,host,option,budget,memcmp(&baseline,&candidate,sizeof baseline),ref_calls,callbacks,ref_hooks,hook_calls,ref_flags,fetestexcept(FE_ALL_EXCEPT),ref_mxcsr,_mm_getcsr()&0x3Fu,baseline.pc,candidate.pc,baseline.fpscr,candidate.fpscr);
++        for(unsigned r=0;r<32;++r)if(memcmp(&baseline.fpr[r],&candidate.fpr[r],8)||memcmp(&baseline.ps1[r],&candidate.ps1[r],8))fprintf(stderr,"FPR%u %a/%a PS1 %a/%a\n",r,baseline.fpr[r],candidate.fpr[r],baseline.ps1[r],candidate.ps1[r]);
++        return 0;
++    }
++    if(callbacks||hook_calls)++callback_cases;
++    if(candidate.pc>=0x80006000u+which*0x100u&&candidate.pc<0x80006000u+which*0x100u+lengths[which]*4u)++interrupted_cases;
++    const unsigned char* bytes=(const unsigned char*)candidate.fpr;
++    for(unsigned i=0;i<sizeof candidate.fpr;++i)digest=(digest^bytes[i])*1099511628211ull;
++    return 1;
++}
++int main(void) {
++    if(sizeof(CPUState)!=3552u){fprintf(stderr,"actual CPU ABI size=%zu\n",sizeof(CPUState));return 2;}
++    const unsigned budgets[]={1,7,256};
++    for(unsigned seed=0;seed<32;++seed)for(unsigned which=0;which<13;++which)
++    for(unsigned entry=0;entry<lengths[which];++entry)for(unsigned rn=0;rn<4;++rn)
++    for(unsigned ni=0;ni<2;++ni)for(unsigned host=0;host<4;++host)
++    for(unsigned option=0;option<2;++option)for(unsigned b=0;b<3;++b)
++        if(!compare_case(seed,which,entry,rn,ni,host,option,budgets[b]))return 1;
++    fesetround(FE_TONEAREST);_mm_setcsr(_mm_getcsr()&~0xE07Fu);
++    if(!callback_cases||!interrupted_cases)return 3;
++    printf("known-single full-CPU parity: %llu checks / %llu cases / %llu callback cases / %llu interrupted cases / digest %016llx\n",checks,cases,callback_cases,interrupted_cases,(unsigned long long)digest);
++    return 0;
++}
+--- /dev/null
++++ b/tests/known_single/fixture_support.h
+@@ -0,0 +1,11 @@
++#ifndef AUTHORED_KNOWN_SINGLE_SUPPORT_H
++#define AUTHORED_KNOWN_SINGLE_SUPPORT_H
++extern unsigned char dolrecomp_option_flags[256];
++u32 dolrecomp_native_hook(CPUState* cpu,u32 id);
++static inline bool ppc_fp_available_inline(CPUState* cpu, u32 cia) {
++    if (cpu->msr & 0x00002000u) /* MSR[FP], PPC bit 18 */
++        return true;
++    return ppc_fp_available(cpu, cia);
++}
++
++#endif

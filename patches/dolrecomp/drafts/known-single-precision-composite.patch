@@ -1,0 +1,110 @@
+--- a/cmake/composite/inline_fp.h
++++ b/cmake/composite/inline_fp.h
+@@ -456,4 +456,107 @@
+ #define ppc_ps_sum0 bw_fp_ps_sum0
+ #define ppc_ps_sum1 bw_fp_ps_sum1
+ 
++/* AceSpectre's 83398f1 known-single idea, adapted to the accurate composite
++ * helpers. Facts are invocation-local, not CPU ABI state or cross-callback
++ * assumptions. Special values retain the existing interpreter fallback. */
++#if defined(DOLRECOMP_KNOWN_SINGLE_FACTS)
++#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
++#include <xmmintrin.h>
+ #endif
++static inline bool bw_fp_known_lane(u64 facts, u8 reg, unsigned lane) {
++    return (facts & (1ull << ((unsigned)reg * 2u + lane))) != 0;
++}
++static inline bool bw_fp_known_fma_mode(const CPUState* cpu) {
++#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
++    /* Guest RN nearest/NI off and host RN nearest, DAZ/FTZ off. Other modes
++     * keep the exact existing double-FMA/tie-correction path. */
++    return (cpu->fpscr & 7u) == 0 && (_mm_getcsr() & 0xE040u) == 0;
++#else
++    (void)cpu;
++    return false;
++#endif
++}
++static inline bool bw_fp_known_normal_or_zero(f64 value) {
++    u64 bits; memcpy(&bits, &value, sizeof bits);
++    bits &= 0x7FFFFFFFFFFFFFFFull;
++    return bits == 0 || bits >= 0x3810000000000000ull;
++}
++static inline f64 bw_fp_known_madd(const CPUState* cpu, f64 a, f64 c, f64 b,
++                                  bool subtract, bool ka, bool kc, bool kb) {
++    const f64 addend = subtract ? -b : b;
++    if (ka && kc && kb && bw_fp_known_normal_or_zero(a) &&
++        bw_fp_known_normal_or_zero(c) && bw_fp_known_normal_or_zero(b) &&
++        bw_fp_known_fma_mode(cpu))
++        return (f64)fmaf((f32)a, (f32)c, (f32)addend);
++    return bw_fp_fma_single(a, kc ? c : bw_fp_25bit(c), addend);
++}
++static inline void bw_fp_known_fmuls(CPUState* cpu, u8 d, u8 a, u8 c, u64 facts) {
++    const f64 x = cpu->fpr[a], y = cpu->fpr[c];
++    if (bw_fp_known_lane(facts, c, 0) && bw_fp_finite(x) && bw_fp_finite(y)) {
++        const f64 product = x * y;
++        if (product == product) {
++            bw_fp_write_single(cpu, d, bw_fp_single(cpu, product));
++            cpu->fpscr &= ~(BW_FP_FPSCR_FI | BW_FP_FPSCR_FR);
++            return;
++        }
++    }
++    bw_fp_fmuls(cpu, d, a, c);
++}
++static inline void bw_fp_known_ps_mul(CPUState* cpu, u8 d, u8 a, u8 c,
++                                      u64 facts, unsigned broadcast) {
++    const unsigned l0 = broadcast == 2u ? 1u : 0u;
++    const unsigned l1 = broadcast == 1u ? 0u : 1u;
++    const f64 a0 = cpu->fpr[a], a1 = cpu->ps1[a];
++    const f64 c0 = l0 ? cpu->ps1[c] : cpu->fpr[c];
++    const f64 c1 = l1 ? cpu->ps1[c] : cpu->fpr[c];
++    if (BW_FP_FINITE4(a0, a1, c0, c1)) {
++        const f64 r0 = a0 * (bw_fp_known_lane(facts,c,l0) ? c0 : bw_fp_25bit(c0));
++        const f64 r1 = a1 * (bw_fp_known_lane(facts,c,l1) ? c1 : bw_fp_25bit(c1));
++        if (r0 == r0 && r1 == r1) {
++            const f32 s0 = bw_fp_single(cpu,r0), s1 = bw_fp_single(cpu,r1);
++            bw_fp_ps_write(cpu,d,s0,s1,s0);
++            return;
++        }
++    }
++    if (broadcast == 1u) bw_fp_ps_muls0(cpu,d,a,c);
++    else if (broadcast == 2u) bw_fp_ps_muls1(cpu,d,a,c);
++    else bw_fp_ps_mul_op(cpu,d,a,c);
++}
++static inline void bw_fp_known_ps_madd(CPUState* cpu, u8 d, u8 a, u8 c, u8 b,
++                                       bool subtract, bool negative, u64 facts,
++                                       unsigned broadcast) {
++    const unsigned l0 = broadcast == 2u ? 1u : 0u;
++    const unsigned l1 = broadcast == 1u ? 0u : 1u;
++    const f64 a0=cpu->fpr[a], a1=cpu->ps1[a], b0=cpu->fpr[b], b1=cpu->ps1[b];
++    const f64 c0=l0 ? cpu->ps1[c] : cpu->fpr[c], c1=l1 ? cpu->ps1[c] : cpu->fpr[c];
++    if (BW_FP_FINITE6(a0,a1,c0,c1,b0,b1)) {
++        const f64 r0=bw_fp_known_madd(cpu,a0,c0,b0,subtract,bw_fp_known_lane(facts,a,0),bw_fp_known_lane(facts,c,l0),bw_fp_known_lane(facts,b,0));
++        const f64 r1=bw_fp_known_madd(cpu,a1,c1,b1,subtract,bw_fp_known_lane(facts,a,1),bw_fp_known_lane(facts,c,l1),bw_fp_known_lane(facts,b,1));
++        if (r0 == r0 && r1 == r1) {
++            f32 s0=bw_fp_single(cpu,r0), s1=bw_fp_single(cpu,r1);
++            if (negative) {s0=-s0;s1=-s1;}
++            bw_fp_ps_write(cpu,d,s0,s1,s0);
++            return;
++        }
++    }
++    if (broadcast == 1u) bw_fp_ps_madds0(cpu,d,a,c,b);
++    else if (broadcast == 2u) bw_fp_ps_madds1(cpu,d,a,c,b);
++    else bw_fp_ps_madd_op(cpu,d,a,c,b,subtract,negative);
++}
++#undef DOLRECOMP_KNOWN_FMULS
++#undef DOLRECOMP_KNOWN_PS_MUL
++#undef DOLRECOMP_KNOWN_PS_MULS0
++#undef DOLRECOMP_KNOWN_PS_MULS1
++#undef DOLRECOMP_KNOWN_PS_MADD
++#undef DOLRECOMP_KNOWN_PS_MADDS0
++#undef DOLRECOMP_KNOWN_PS_MADDS1
++#define DOLRECOMP_KNOWN_FMULS(cpu,d,a,c,k) bw_fp_known_fmuls(cpu,d,a,c,k)
++#define DOLRECOMP_KNOWN_PS_MUL(cpu,d,a,c,k) bw_fp_known_ps_mul(cpu,d,a,c,k,0u)
++#define DOLRECOMP_KNOWN_PS_MULS0(cpu,d,a,c,k) bw_fp_known_ps_mul(cpu,d,a,c,k,1u)
++#define DOLRECOMP_KNOWN_PS_MULS1(cpu,d,a,c,k) bw_fp_known_ps_mul(cpu,d,a,c,k,2u)
++#define DOLRECOMP_KNOWN_PS_MADD(cpu,d,a,c,b,s,n,k) bw_fp_known_ps_madd(cpu,d,a,c,b,s,n,k,0u)
++#define DOLRECOMP_KNOWN_PS_MADDS0(cpu,d,a,c,b,k) bw_fp_known_ps_madd(cpu,d,a,c,b,false,false,k,1u)
++#define DOLRECOMP_KNOWN_PS_MADDS1(cpu,d,a,c,b,k) bw_fp_known_ps_madd(cpu,d,a,c,b,false,false,k,2u)
++#endif
++
++#endif

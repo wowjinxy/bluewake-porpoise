@@ -1,0 +1,95 @@
+--- a/cmake/composite/native_game_math.c
++++ b/cmake/composite/native_game_math.c
+@@ -5201,8 +5201,61 @@
+ }
+ #endif
+ 
++/* Elliott Tate944a1f3c JMAEulerToQuat; exact fresh-gated replay.
++ * The loaded tables are data, not an assumed host sine/cosine implementation. */
++#if defined(BLUEWAKE_NATIVE_QUATERNION) && BLUEWAKE_NATIVE_QUATERNION == 1
++static u32 quat_offset(u32 angle, u32 shift) {
++    const u32 half = (u16)((s32)(s16)angle / 2); /* srawi+addze, toward zero */
++    shift &= 63u;
++    return shift >= 32u ? 0u : (half >> shift) << 2u;
++}
++static int quaternion(CPUState* cpu) {
++    const u32 sda = cpu->gpr[13] - 26460u, out = cpu->gpr[6];
++    if (!ready(cpu, 50, false) || !ram_ok(cpu, sda, 12) || !ram_ok(cpu, out, 16) ||
++        !apart(sda, 12, out, 16)) return 0;
++    const uintptr_t cp=(uintptr_t)cpu, rp=(uintptr_t)cpu->ram;
++    if (rp > UINTPTR_MAX-cpu->ram_size || cp > UINTPTR_MAX-sizeof *cpu ||
++        !(cp+sizeof *cpu <= rp || rp+cpu->ram_size <= cp)) return 0;
++    const u32 shift=word(cpu,sda), cosine=word(cpu,sda+4u), sine=word(cpu,sda+8u);
++    const u32 x=quat_offset(cpu->gpr[3],shift), y=quat_offset(cpu->gpr[4],shift), z=quat_offset(cpu->gpr[5],shift);
++    const u32 loads[]={sine+x,sine+y,sine+z,cosine+x,cosine+y,cosine+z};
++    for (unsigned i=0;i<6;++i)
++        if (!ram_ok(cpu,loads[i],4) || !apart(loads[i],4,out,16) || !bounded(word(cpu,loads[i]))) return 0;
++    cpu->gpr[7]=sine; cpu->gpr[8]=x; cpu->gpr[4]=y; cpu->gpr[0]=z; cpu->gpr[3]=cosine;
++    /* Each masked half-angle is nonnegative, so the final sraw clears CA.
++     * No intervening instruction observes earlier carry values. */
++    cpu->xer &= ~0x20000000u;
++    lfs(cpu,2,loads[0]);lfs(cpu,3,loads[1]);lfs(cpu,4,loads[2]);
++    lfs(cpu,5,loads[3]);lfs(cpu,6,loads[4]);lfs(cpu,7,loads[5]);
++#define QOP(pc_,op_,d_,a_,b_) do { cpu->pc=(pc_); op_(cpu,d_,a_,b_); } while (0)
++    QOP(0x803011BCu,bw_fp_fmuls,8,3,4);
++    QOP(0x803011C0u,bw_fp_fmuls,9,6,7);
++    QOP(0x803011C4u,bw_fp_fmuls,1,2,8);
++    QOP(0x803011C8u,bw_fp_fmuls,0,5,9);
++    QOP(0x803011CCu,bw_fp_fadds,0,1,0);stfs(cpu,0,out+12u);
++    QOP(0x803011D4u,bw_fp_fmuls,1,5,8);
++    QOP(0x803011D8u,bw_fp_fmuls,0,2,9);
++    QOP(0x803011DCu,bw_fp_fsubs,0,1,0);stfs(cpu,0,out);
++    QOP(0x803011E4u,bw_fp_fmuls,0,2,6);
++    QOP(0x803011E8u,bw_fp_fmuls,1,4,0);
++    QOP(0x803011ECu,bw_fp_fmuls,0,5,3);
++    QOP(0x803011F0u,bw_fp_fmuls,0,7,0);
++    QOP(0x803011F4u,bw_fp_fadds,0,1,0);stfs(cpu,0,out+4u);
++    QOP(0x803011FCu,bw_fp_fmuls,0,2,3);
++    QOP(0x80301200u,bw_fp_fmuls,1,7,0);
++    QOP(0x80301204u,bw_fp_fmuls,0,5,6);
++    QOP(0x80301208u,bw_fp_fmuls,0,4,0);
++    QOP(0x8030120Cu,bw_fp_fsubs,0,1,0);stfs(cpu,0,out+8u);
++#undef QOP
++    return finish(cpu,50,1);
++}
++#endif
++
+ int bluewake_native_game_math(CPUState* cpu, u32 address) {
+     if (cpu == NULL) return 0;
++#if defined(BLUEWAKE_NATIVE_QUATERNION) && BLUEWAKE_NATIVE_QUATERNION == 1
++    if (address == 0x80301150u) return quaternion(cpu);
++#endif
+ #if defined(BLUEWAKE_NATIVE_BG_MINMAX) && BLUEWAKE_NATIVE_BG_MINMAX == 1
+     if (address == 0x80247C4Cu) return bg_minmax(cpu);
+ #endif
+--- a/scripts/windows/native_game_math.py
++++ b/scripts/windows/native_game_math.py
+@@ -170,10 +170,16 @@
+     return text, done
+ 
+ 
+-def prepare(root, bg_minmax=False):
++def prepare(root, bg_minmax=False, quaternion=False):
+     # A reusable importer must not retain an earlier opt-in after it is removed.
+     FRAGMENTS.pop('bg_minmax', None)
+     ENTRIES.pop(0x80247C4C, None)
++    FRAGMENTS.pop('quaternion', None)
++    ENTRIES.pop(0x80301150, None)
++    if quaternion:
++        FRAGMENTS['quaternion'] = (0x802FD6E0, 0x80301150, 0x80301218,
++            '385f769797cc36b8ef7de0bca33c828a57de95ee5b26216e637b15fb75a6752b')
++        ENTRIES[0x80301150] = ('quaternion',)
+     if bg_minmax:
+         FRAGMENTS['bg_minmax'] = (0x802456E0, 0x80247C4C, 0x80247CD4,
+                                  '5051e6b41b1fdc74f81c715efccf8af7613eeb6506a49fbb9eb9487a2a7c0cca')
+@@ -220,8 +226,9 @@
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('composite', type=Path)
+     parser.add_argument('--enable-bg-minmax', action='store_true')
++    parser.add_argument('--enable-quaternion', action='store_true')
+     args = parser.parse_args()
+     try:
+-        prepare(args.composite, args.enable_bg_minmax)
++        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion)
+     except ValueError as error:
+         parser.exit(1, f'{error}\n')

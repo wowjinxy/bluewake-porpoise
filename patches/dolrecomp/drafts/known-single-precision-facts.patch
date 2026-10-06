@@ -1,0 +1,213 @@
+--- a/src/backend/emitter.c
++++ b/src/backend/emitter.c
+@@ -4,6 +4,41 @@
+ #include "backend/option_sites.h"
+ #include "emitter.h"
+ #include "backend/c_cfg.h"
++#include <stdlib.h>
++
++/* AceSpectre 83398f1: invocation-local facts preserve arbitrary PC entry. */
++static _Thread_local bool known_single_emit_active;
++static bool known_single_enabled(void) {
++    const char* value = getenv("DOLRECOMP_KNOWN_SINGLE");
++    return value && value[0] == '1' && value[1] == '\0';
++}
++
++static bool known_single_result(const PPCInst* inst) {
++    switch (inst->op) {
++    case PPC_OP_LFS: case PPC_OP_LFSU: case PPC_OP_LFSX: case PPC_OP_LFSUX:
++    case PPC_OP_PS_ADD: case PPC_OP_PS_SUB: case PPC_OP_PS_MUL: case PPC_OP_PS_DIV:
++    case PPC_OP_PS_RSQRTE: case PPC_OP_PS_MADD: case PPC_OP_PS_MSUB:
++    case PPC_OP_PS_NMADD: case PPC_OP_PS_NMSUB: case PPC_OP_PS_NEG: case PPC_OP_PS_ABS:
++    case PPC_OP_PS_NABS: case PPC_OP_PS_SUM0: case PPC_OP_PS_SUM1:
++    case PPC_OP_PS_MULS0: case PPC_OP_PS_MULS1: case PPC_OP_PS_MADDS0: case PPC_OP_PS_MADDS1:
++        return true;
++    default: return false;
++    }
++}
++
++static bool known_single_preserves(const PPCInst* inst) {
++    if (known_single_result(inst) && inst->op != PPC_OP_LFS && inst->op != PPC_OP_LFSU &&
++        inst->op != PPC_OP_LFSX && inst->op != PPC_OP_LFSUX) return true;
++    switch (inst->op) {
++    case PPC_OP_FMULS:
++    case PPC_OP_ADDI: case PPC_OP_ADDIS: case PPC_OP_ORI: case PPC_OP_ORIS:
++    case PPC_OP_XORI: case PPC_OP_XORIS: case PPC_OP_ANDI: case PPC_OP_ANDIS:
++    case PPC_OP_ADD: case PPC_OP_SUBF: case PPC_OP_OR: case PPC_OP_XOR: case PPC_OP_AND:
++    case PPC_OP_CMP: case PPC_OP_CMPL: case PPC_OP_CMPI: case PPC_OP_CMPLI:
++        return true;
++    default: return false;
++    }
++}
+ 
+ static u32 cr_field_shift(u8 crf) {
+     return 4u * (7u - (u32)crf);
+@@ -645,6 +680,17 @@
+         emit_cpu_label(cpu),
+         emit_cpu_macro(cpu),
+         emit_cpu_label(cpu));
++
++    if (known_single_enabled()) {
++        fprintf(out, "#define DOLRECOMP_KNOWN_SINGLE_FACTS 1\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_FMULS(cpu,d,a,c,k) ppc_fmuls(cpu,d,a,c)\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_PS_MUL(cpu,d,a,c,k) ppc_ps_mul_op(cpu,d,a,c)\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_PS_MULS0(cpu,d,a,c,k) ppc_ps_muls0(cpu,d,a,c)\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_PS_MULS1(cpu,d,a,c,k) ppc_ps_muls1(cpu,d,a,c)\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_PS_MADD(cpu,d,a,c,b,s,n,k) ppc_ps_madd_op(cpu,d,a,c,b,s,n)\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_PS_MADDS0(cpu,d,a,c,b,k) ppc_ps_madds0(cpu,d,a,c,b)\n");
++        fprintf(out, "#define DOLRECOMP_KNOWN_PS_MADDS1(cpu,d,a,c,b,k) ppc_ps_madds1(cpu,d,a,c,b)\n\n");
++    }
+ }
+ 
+ void emit_header(FILE* out) {
+@@ -671,6 +717,9 @@
+ 
+     if (ppc_op_uses_fpu(inst->op))
+         fprintf(out, "    if (!ppc_fp_available_inline(ctx, 0x%08Xu)) return;\n", inst->address);
++
++    if (known_single_emit_active && !known_single_preserves(inst))
++        fprintf(out, "    known_single = 0; /* observation/unknown boundary */\n");
+ 
+     switch (inst->op) {
+     case PPC_OP_MULLI:
+@@ -1152,6 +1201,9 @@
+         break;
+ 
+     case PPC_OP_FMULS:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_FMULS(ctx, %u, %u, %u, known_single);\n", inst->rD, inst->rA, inst->rC);
++        else
+         fprintf(out, "    ppc_fmuls(ctx, %u, %u, %u);\n", inst->rD, inst->rA, inst->rC);
+         if (inst->rc) emit_set_cr1_from_fpscr(out);
+         break;
+@@ -1337,6 +1389,9 @@
+         break;
+ 
+     case PPC_OP_PS_MUL:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_PS_MUL(ctx, %u, %u, %u, known_single);\n", inst->rD, inst->rA, inst->rC);
++        else
+         fprintf(out, "    ppc_ps_mul_op(ctx, %u, %u, %u);\n",
+                 inst->rD, inst->rA, inst->rC);
+         if (inst->rc) emit_set_cr1_from_fpscr(out);
+@@ -1362,6 +1417,14 @@
+     case PPC_OP_PS_MSUB:
+     case PPC_OP_PS_NMADD:
+     case PPC_OP_PS_NMSUB:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_PS_MADD(ctx, %u, %u, %u, %u, %s, %s, known_single);\n",
++                inst->rD, inst->rA, inst->rC, inst->rB,
++                (inst->op == PPC_OP_PS_MSUB || inst->op == PPC_OP_PS_NMSUB) ?
++                    "true" : "false",
++                (inst->op == PPC_OP_PS_NMADD || inst->op == PPC_OP_PS_NMSUB) ?
++                    "true" : "false");
++        else
+         fprintf(out, "    ppc_ps_madd_op(ctx, %u, %u, %u, %u, %s, %s);\n",
+                 inst->rD, inst->rA, inst->rC, inst->rB,
+                 (inst->op == PPC_OP_PS_MSUB || inst->op == PPC_OP_PS_NMSUB) ?
+@@ -1414,24 +1477,36 @@
+         break;
+ 
+     case PPC_OP_PS_MULS0:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_PS_MULS0(ctx, %u, %u, %u, known_single);\n", inst->rD, inst->rA, inst->rC);
++        else
+         fprintf(out, "    ppc_ps_muls0(ctx, %u, %u, %u);\n",
+                 inst->rD, inst->rA, inst->rC);
+         if (inst->rc) emit_set_cr1_from_fpscr(out);
+         break;
+ 
+     case PPC_OP_PS_MULS1:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_PS_MULS1(ctx, %u, %u, %u, known_single);\n", inst->rD, inst->rA, inst->rC);
++        else
+         fprintf(out, "    ppc_ps_muls1(ctx, %u, %u, %u);\n",
+                 inst->rD, inst->rA, inst->rC);
+         if (inst->rc) emit_set_cr1_from_fpscr(out);
+         break;
+ 
+     case PPC_OP_PS_MADDS0:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_PS_MADDS0(ctx, %u, %u, %u, %u, known_single);\n", inst->rD, inst->rA, inst->rC, inst->rB);
++        else
+         fprintf(out, "    ppc_ps_madds0(ctx, %u, %u, %u, %u);\n",
+                 inst->rD, inst->rA, inst->rC, inst->rB);
+         if (inst->rc) emit_set_cr1_from_fpscr(out);
+         break;
+ 
+     case PPC_OP_PS_MADDS1:
++        if (known_single_emit_active)
++            fprintf(out, "    DOLRECOMP_KNOWN_PS_MADDS1(ctx, %u, %u, %u, %u, known_single);\n", inst->rD, inst->rA, inst->rC, inst->rB);
++        else
+         fprintf(out, "    ppc_ps_madds1(ctx, %u, %u, %u, %u);\n",
+                 inst->rD, inst->rA, inst->rC, inst->rB);
+         if (inst->rc) emit_set_cr1_from_fpscr(out);
+@@ -1924,6 +1999,12 @@
+         break;
+     }
+ 
++    if (known_single_emit_active) {
++        if (known_single_result(inst))
++            fprintf(out, "    known_single |= 0x%016llXull;\n", (unsigned long long)(3ull << (2u * inst->rD)));
++        else if (inst->op == PPC_OP_FMULS)
++            fprintf(out, "    known_single &= ~0x%016llXull; /* scalar fault may preserve D */\n", (unsigned long long)(3ull << (2u * inst->rD)));
++    }
+     fprintf(out, "\n");
+ }
+ 
+@@ -2172,6 +2253,7 @@
+ // the guest state as it is at this point and either lets the block go on or
+ // names the guest address to continue at.
+ static void emit_option_hook(FILE* out, const OptionSite* site) {
++    if (known_single_emit_active) fprintf(out, "    known_single = 0; /* before native hook */\n");
+     fprintf(out, "    if (dolrecomp_option_flags[%uu]) {\n", site->option);
+     fprintf(out, "        const u32 hook_next = dolrecomp_native_hook(ctx, %uu);\n", site->value);
+     fprintf(out, "        if (hook_next != 0u) {\n");
+@@ -2179,6 +2261,7 @@
+     fprintf(out, "            return;\n");
+     fprintf(out, "        }\n");
+     fprintf(out, "    }\n");
++    if (known_single_emit_active) fprintf(out, "    known_single = 0; /* after native hook */\n");
+ }
+ 
+ static void emit_flat_function(FILE* out, const PPCInst* insts, u32 count,
+@@ -2208,6 +2291,7 @@
+      * screening run instead of being rewritten. */
+     fprintf(out, "void func_%08X%s(CPUState* ctx) {\n", func_addr,
+             fast ? "_precise" : "");
++    if (known_single_emit_active) fprintf(out, "    u64 known_single = 0; /* every PC entry starts unknown */\n");
+     if (!fast) {
+         fprintf(out, "    bool cycle_block_prepaid = false;\n");
+     } else {
+@@ -2257,6 +2341,8 @@
+     for (u32 i = 0; i < count; i++) {
+         bool charged_with_leader = false;
+         fprintf(out, "label_%08X:\n", insts[i].address);
++        if (known_single_emit_active && (cfg->leaders[i] || cfg->loop_ends[i] != UINT32_MAX))
++            fprintf(out, "    known_single = 0; /* join/loop boundary */\n");
+         if (cfg->loop_ends[i] != UINT32_MAX) {
+             u32 continuation = insts[cfg->loop_ends[i]].address + 4u;
+             fprintf(out, "    loop_%08X(ctx);\n", insts[i].address);
+@@ -2350,8 +2436,10 @@
+             out, &insts[i], func_addr, func_end,
+             c_function_cfg_can_loop_directly(cfg, insts, func_addr, i),
+             has_local_returns, "");
+-        if (substitutes)
++        if (substitutes) {
+             fprintf(out, "    }\n");
++            if (known_single_emit_active) fprintf(out, "    known_single = 0; /* option alternative join */\n");
++        }
+         if (site && site->kind == OPTION_SITE_HOOK_AFTER)
+             emit_option_hook(out, site);
+         if (!fast)
+@@ -2396,8 +2484,10 @@
+                               cfg.loop_ends[i], false);
+     }
+ 
++    known_single_emit_active = known_single_enabled();
+     emit_flat_function(out, insts, count, &cfg, func_addr, func_end,
+                        has_local_returns, false);
++    known_single_emit_active = false;
+ 
+     c_function_cfg_destroy(&cfg);
+     return true;

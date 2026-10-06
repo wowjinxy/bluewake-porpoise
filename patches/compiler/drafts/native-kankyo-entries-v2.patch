@@ -1,0 +1,1007 @@
+diff --git a/cmake/composite/CMakeLists.txt b/cmake/composite/CMakeLists.txt
+index ba39a10..c5114ff 100644
+--- a/cmake/composite/CMakeLists.txt
++++ b/cmake/composite/CMakeLists.txt
+@@ -177,7 +177,7 @@ if(BLUEWAKE_NATIVE_ENTRIES)
+   if(NOT BLUEWAKE_GATHER_PIPE OR NOT BLUEWAKE_DIRECT_CALLS)
+     message(FATAL_ERROR "Native entries require gather-pipe and versioned direct-call support")
+   endif()
+-  target_sources(${MODULE_NAME} PRIVATE native_entries.c native_fifo.c native_bg.c native_mtxcalc.c native_search.c)
++  target_sources(${MODULE_NAME} PRIVATE native_entries.c native_fifo.c native_bg.c native_mtxcalc.c native_search.c native_kankyo.c)
+   target_include_directories(${MODULE_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+ endif()
+ 
+diff --git a/cmake/composite/native_entries.c b/cmake/composite/native_entries.c
+index ff9cb76..192dba8 100644
+--- a/cmake/composite/native_entries.c
++++ b/cmake/composite/native_entries.c
+@@ -5,6 +5,7 @@
+ #include "native_vec.h"
+ #include "native_mtxcalc.h"
+ #include "native_search.h"
++#include "native_kankyo.h"
+ 
+ #if defined(_WIN32)
+ #define BW_ENTRIES_EXPORT __declspec(dllexport)
+@@ -49,6 +50,10 @@ int bluewake_native_entries_try(CPUState* cpu, u32 address) {
+     case BLUEWAKE_SEARCH_NAME_STEP:
+     case BLUEWAKE_SEARCH_JUDGE_FILTER:
+         return bluewake_native_search(cpu, address);
++    case BLUEWAKE_KANKYO_S16_RATIO:
++    case BLUEWAKE_KANKYO_COLOR_RATIO:
++    case BLUEWAKE_KYEFF_S16_RATIO:
++        return bluewake_native_kankyo(cpu, address);
+     default: return 0;
+     }
+ }
+@@ -59,4 +64,5 @@ BW_ENTRIES_EXPORT void bluewake_native_entries_report(void) {
+     bluewake_native_vec_sr_report();
+     bluewake_native_mtxcalc_report();
+     bluewake_native_search_report();
++    bluewake_native_kankyo_report();
+ }
+diff --git a/cmake/composite/native_kankyo.c b/cmake/composite/native_kankyo.c
+new file mode 100644
+index 0000000..34764ad
+--- /dev/null
++++ b/cmake/composite/native_kankyo.c
+@@ -0,0 +1,242 @@
++/* Adapted from Elliott Tate (elliotttate), donor 944a1f3c2b130a8086295428a0847938a777a2d7.
++ * The original translated block replay is retained; BlueWake owns admission. */
++/* The environment's colour blends (GZLE01 s16_data_ratio_set in d_kankyo and
++ * in d_kyeff, kankyo_color_ratio_set), native.
++ *
++ * dScnKy_env_light_c blends every light, ambient, fog and sky colour of the
++ * scene between palettes each frame, a component at a time:
++ * kankyo_color_ratio_set makes three calls of s16_data_ratio_set (a + (s16)(t
++ * x (b - a)), through the int-to-float conversion's magic double and fctiwz),
++ * adds, scales by the scene's colour ratio and clamps to 0..255. Small as they
++ * are, at Dragon Roost the two were 1.6 percent of the game thread (0.9 at
++ * Forest Haven), nearly all of it the translation's block machinery.
++ *
++ * Each replays its blocks in order on the same values (native_replay.h: the
++ * translation's inline floating-point paths on a local FPSCR, fctiwz as
++ * GXRuntime's ppc_fctiw leaves it, the clock block by block) and commits only
++ * at the end: every stack store in place (kankyo_color_ratio_set's frame,
++ * with its saved f29..f31 and r28..r31, and s16_data_ratio_set's below it as
++ * its last call leaves it), the registers as the last instruction to write
++ * each left them (r0, r3, r4 and r11; f0, f1 and f2, with the second halves
++ * the single operations wrote; the second halves of f29..f31 as the paired
++ * save and restore round them), CR0 from the last compare, the FPSCR, the
++ * reservation, the cycles (20 for s16_data_ratio_set; 134 to 136 for
++ * kankyo_color_ratio_set, with its inline register save and restore) and the
++ * last cycle suffix (lwz's 5, mtlr's 2), pc at the return address.
++ *
++ * It declines, changing nothing, unless that is certain: FP available,
++ * rounding to nearest, paired singles unscaled, no exception pending, no
++ * write journal, the frames and the constants it reads plain RAM with the
++ * constants clear of the frames, the conversion's magic double the usual
++ * 0x4330000080000000, every block prepaid and none stopped for the budget,
++ * and every floating-point operation on the translation's inline path (a
++ * non-finite ratio or scale, which would go to the interpreter, declines).
++ *
++ * tests/native_kankyo_test.c compares all three with the translation, every
++ * register and byte. No identifier here may be `ctx`. */
++#include "native_kankyo.h"
++#include "native_replay.h"
++
++#include <stdio.h>
++
++/* Enabled only by the existing versioned native_entries_v1 owner. */
++
++enum { KY_S16, KY_COLOR, KY_KYEFF_S16, KY_COUNT };
++static unsigned long long s_ky_runs[KY_COUNT], s_ky_declined[KY_COUNT];
++
++void bluewake_native_kankyo_report(void) {
++    fprintf(stderr,
++            "[native-kankyo] s16-ratio=%llu/%llu color-ratio=%llu/%llu kyeff-s16-ratio=%llu/%llu (native/declined)\n",
++            s_ky_runs[0], s_ky_declined[0], s_ky_runs[1], s_ky_declined[1], s_ky_runs[2], s_ky_declined[2]);
++}
++
++#define KY_MAGIC 0x4330000080000000ull
++#define KY_MAGIC_HIGH 0x43300000u
++#define KY_KANKYO_MAGIC (-21080)     /* lfd f2, -21080(r2) in d_kankyo */
++#define KY_KYEFF_MAGIC (-20784)      /* lfd f2, -20784(r2) in d_kyeff */
++#define KY_ALL_COL_RATIO 0x803E56B0u /* g_env_light.mAllColRatio: lis r3,0x803E; addi r3,r3,0x4AB4; lfs f0,3068(r3) */
++
++/* One s16_data_ratio_set(r3, r4, f1) on values: what it leaves. */
++typedef struct KyS16 {
++    u32 r0, r3, w12;
++    u64 stored;  /* f0 as stfd writes it, and as the register holds it */
++    f64 product; /* fmuls's result: f0's second half */
++} KyS16;
++
++static inline __attribute__((always_inline)) KyS16 ky_s16_calc(NrFp* fp, u32 r3, u32 r4, f64 ratio) {
++    KyS16 c;
++    const u32 a = (u32)(s32)(s16)r3;          /* extsh r3, r3 */
++    const s32 diff = (s32)(s16)r4 - (s32)a;   /* extsh r0, r4; subf r0, r3, r0 */
++    c.w12 = (u32)diff ^ 0x80000000u;          /* xoris r0, r0, 0x8000; stw r0, 12(r1) */
++    /* lis r0, 17200; stw; lfd f0, 8(r1); fsubs f0, f0, f2: the conversion's
++     * double less the magic is diff itself, exactly (|diff| < 2^17, so the
++     * single rounding keeps it too), and its FPRF is the next instruction's
++     * to replace. fmuls f0, f1, f0: diff is its own 25-bit multiplier. */
++    if (!nr_finite(ratio))
++        fp->bad = true;
++    const f32 single = nr_round(fp, ratio * (f64)diff);
++    nr_fprf(fp, nr_class32(single));
++    fp->fpscr &= ~(NR_FPSCR_FI | NR_FPSCR_FR);
++    c.product = (f64)single;
++    f64 f0 = c.product;
++    u64 bits;
++    if (nr_fctiwz(fp, c.product, &bits)) /* fctiwz f0, f0 */
++        f0 = f64_value(bits);
++    c.stored = f64_bits(f0);                         /* stfd f0, 16(r1); lwz r0, 20(r1) */
++    c.r0 = a + (u32)(s32)(s16)(u32)c.stored;         /* extsh r0, r0; add r0, r3, r0 */
++    c.r3 = (u32)(s32)(s16)c.r0;                      /* extsh r3, r0 */
++    return c;
++}
++
++/* s16_data_ratio_set's frame stores, at r1 = sp on entry. */
++static inline __attribute__((always_inline)) void ky_s16_store(const NrOut* o, u32 sp, const KyS16* c) {
++    const u32 frame = sp - 32u;
++    nr_store32(o, frame, sp);                 /* stwu r1, -32(r1) */
++    nr_store32(o, frame + 12u, c->w12);       /* stw r0, 12(r1) */
++    nr_store32(o, frame + 8u, KY_MAGIC_HIGH); /* stw r0, 8(r1) */
++    nr_store64(o, frame + 16u, c->stored);    /* stfd f0, 16(r1) */
++}
++
++/* s16_data_ratio_set (r3 a, r4 b, f1 the ratio): one block of 20 cycles. */
++static int ky_s16(CPUState* cpu, s32 magic_offset) {
++    NrClock k;
++    if (!nr_clock_start(cpu, &k))
++        return 0;
++    const u32 sp = cpu->gpr[1], frame = sp - 32u, magic = cpu->gpr[2] + (u32)magic_offset;
++    if (!nr_ram(cpu, frame, 24u) || !nr_ram(cpu, magic, 8u) || !nr_apart(magic, 8u, frame, 24u) ||
++        nr_dword(cpu, magic) != KY_MAGIC || !nr_block(&k, 20u))
++        return 0;
++    NrFp fp = {cpu->fpscr, false};
++    const KyS16 c = ky_s16_calc(&fp, cpu->gpr[3], cpu->gpr[4], cpu->fpr[1]);
++    if (fp.bad)
++        return 0;
++    const NrOut o = nr_out(cpu);
++    ky_s16_store(&o, sp, &c);
++    cpu->gpr[0] = c.r0;
++    cpu->gpr[3] = c.r3;
++    cpu->fpr[0] = f64_value(c.stored);
++    cpu->ps1[0] = c.product;
++    cpu->fpr[2] = f64_value(KY_MAGIC);
++    cpu->fpscr = fp.fpscr;
++    cpu->downcount = k.downcount;
++    cpu->cycle_observation_suffix = 5u; /* later lwz r0, 20(r1), both s16 entries */
++    cpu->pc = cpu->lr & ~3u;
++    return 1;
++}
++
++/* kankyo_color_ratio_set (r3 b0A, r4 b0B, f1 blendAB0, r5 b1A, r6 b1B, f2
++ * blendAB1, r7 add, f3 mul). Its frame is 96 bytes; the three calls'
++ * frames lie 32 below it. */
++static int ky_color(CPUState* cpu) {
++    NrClock k;
++    if (!nr_clock_start(cpu, &k) || !nr_pairs_plain(cpu))
++        return 0;
++    const u32 sp = cpu->gpr[1], frame = sp - 96u, low = sp - 128u, magic = cpu->gpr[2] + (u32)KY_KANKYO_MAGIC;
++    /* Every store lies in [sp - 128, sp + 8). */
++    if (!nr_ram(cpu, low, 136u) || !nr_ram(cpu, magic, 8u) || !nr_ram(cpu, KY_ALL_COL_RATIO, 4u) ||
++        !nr_apart(magic, 8u, low, 136u) || !nr_apart(KY_ALL_COL_RATIO, 4u, low, 136u) ||
++        nr_dword(cpu, magic) != KY_MAGIC)
++        return 0;
++    NrFp fp = {cpu->fpscr, false};
++    const f64 f1 = cpu->fpr[1], f2 = cpu->fpr[2], f3 = cpu->fpr[3];
++    const KyS16 c1 = ky_s16_calc(&fp, cpu->gpr[3] & 0xFFu, cpu->gpr[4] & 0xFFu, f1);
++    const KyS16 c2 = ky_s16_calc(&fp, cpu->gpr[5] & 0xFFu, cpu->gpr[6] & 0xFFu, f1);
++    const KyS16 c3 = ky_s16_calc(&fp, c1.r3, c2.r3, f2);
++    /* 8018F958: add r0, r3, r30; extsh r3, r0; the conversion; lfs f0, the
++     * colour ratio; fmuls f0, f0, f31; fmuls f0, f1, f0; fctiwz; lwz r3. */
++    const u32 sum = (u32)(s32)(s16)(c3.r3 + cpu->gpr[7]);
++    const u32 w12 = sum ^ 0x80000000u;
++    const f64 rt = (f64)(s32)sum; /* fsubs f1, f0, f1: exactly (as in the calls); its FPRF the fmuls's to replace */
++    const f64 ratio = nr_single_bits(nr_word(cpu, KY_ALL_COL_RATIO));
++    const f64 scale = nr_fmuls(&fp, ratio, f3);
++    const f64 product = nr_fmuls(&fp, rt, scale);
++    f64 f0 = product;
++    u64 bits;
++    if (nr_fctiwz(&fp, product, &bits))
++        f0 = f64_value(bits);
++    if (fp.bad)
++        return 0;
++    const u64 stored = f64_bits(f0);
++    const u32 xer = cpu->xer;
++    u32 r3 = (u32)stored, r0 = (u32)(s32)(s16)r3;
++    const bool negative = (s32)r0 < 0; /* extsh. r0, r3; bge */
++    if (negative)
++        r3 = 0u;                       /* li r3, 0 */
++    r0 = (u32)(s32)(s16)r3;            /* extsh r0, r3; cmpwi r0, 255; ble */
++    const u32 cr = nr_cr0_signed(cpu->cr, xer, (s32)r0, 255);
++    const bool over = (s32)r0 > 255;
++    if (over)
++        r3 = 255u;                     /* li r3, 255 */
++    /* The blocks: 8018F8E4 (11), the inline save, 8018F910 (9), the call
++     * (20), 8018F934 (5), the call, 8018F948 (4), the call, 8018F958 (19),
++     * 8018F9A4 (1) when negative, 8018F9A8 (3), 8018F9B4 (1) when over,
++     * 8018F9B8 (8), the inline restore, 8018F9D8 (5). */
++    if (!nr_block(&k, 11u) || !nr_inline_gpr(&k) || !nr_block(&k, 9u) || !nr_block(&k, 20u) ||
++        !nr_block(&k, 5u) || !nr_block(&k, 20u) || !nr_block(&k, 4u) || !nr_block(&k, 20u) ||
++        !nr_block(&k, 19u) || (negative && !nr_block(&k, 1u)) || !nr_block(&k, 3u) ||
++        (over && !nr_block(&k, 1u)) || !nr_block(&k, 8u) || !nr_inline_gpr(&k) || !nr_block(&k, 5u))
++        return 0;
++
++    /* The stores, from values read first. */
++    const u32 lr = cpu->lr;
++    u64 saved[3];
++    u32 pairs[3][2], gprs[4];
++    f64 rounded[3];
++    for (unsigned i = 0; i < 3u; ++i) {
++        saved[i] = f64_bits(cpu->fpr[31u - i]);
++        pairs[i][0] = nr_to_single_ftz(saved[i]);
++        pairs[i][1] = nr_to_single_ftz(f64_bits(cpu->ps1[31u - i]));
++        rounded[i] = f64_value(nr_to_double(pairs[i][1]));
++    }
++    for (unsigned i = 0; i < 4u; ++i)
++        gprs[i] = cpu->gpr[28u + i];
++    const NrOut o = nr_out(cpu);
++    nr_store32(&o, frame, sp);              /* stwu r1, -96(r1) */
++    nr_store32(&o, sp + 4u, lr);            /* mflr r0; stw r0, 100(r1) */
++    for (unsigned i = 0; i < 3u; ++i) {     /* f31 at 80, f30 at 64, f29 at 48: stfd, psq_st */
++        const u32 at = frame + 80u - 16u * i;
++        nr_store64(&o, at, saved[i]);
++        nr_store32(&o, at + 8u, pairs[i][0]);
++        nr_store32(&o, at + 12u, pairs[i][1]);
++    }
++    for (unsigned i = 0; i < 4u; ++i)       /* _savegpr_28 at r11 = r1 + 48 */
++        nr_store32(&o, frame + 32u + 4u * i, gprs[i]);
++    ky_s16_store(&o, frame, &c3);           /* the three calls' frame, as the last leaves it */
++    nr_store32(&o, frame + 12u, w12);
++    nr_store32(&o, frame + 8u, KY_MAGIC_HIGH);
++    nr_store64(&o, frame + 16u, stored);
++
++    /* The registers: f29..f31 as psq_l, then lfd, restore them. */
++    cpu->gpr[0] = lr; /* lwz r0, 100(r1); mtlr r0 */
++    cpu->gpr[3] = r3;
++    cpu->gpr[4] = c2.r3;
++    cpu->gpr[11] = frame + 48u;
++    cpu->fpr[0] = f64_value(stored);
++    cpu->ps1[0] = product;
++    cpu->fpr[1] = cpu->ps1[1] = rt;
++    cpu->fpr[2] = f64_value(KY_MAGIC);
++    for (unsigned i = 0; i < 3u; ++i)
++        cpu->ps1[31u - i] = rounded[i];
++    cpu->cr = cr;
++    cpu->fpscr = fp.fpscr;
++    cpu->downcount = k.downcount;
++    cpu->cycle_observation_suffix = 2u; /* mtlr r0 */
++    cpu->pc = lr & ~3u;
++    return 1;
++}
++
++int bluewake_native_kankyo(CPUState* cpu, u32 address) {
++    unsigned which;
++    int done;
++    switch (address) {
++    case BLUEWAKE_KANKYO_S16_RATIO: which = KY_S16; done = ky_s16(cpu, KY_KANKYO_MAGIC); break;
++    case BLUEWAKE_KANKYO_COLOR_RATIO: which = KY_COLOR; done = ky_color(cpu); break;
++    case BLUEWAKE_KYEFF_S16_RATIO: which = KY_KYEFF_S16; done = ky_s16(cpu, KY_KYEFF_MAGIC); break;
++    default: return 0;
++    }
++    if (done)
++        s_ky_runs[which]++;
++    else
++        s_ky_declined[which]++;
++    return done;
++}
+diff --git a/cmake/composite/native_kankyo.h b/cmake/composite/native_kankyo.h
+new file mode 100644
+index 0000000..72ab521
+--- /dev/null
++++ b/cmake/composite/native_kankyo.h
+@@ -0,0 +1,21 @@
++#ifndef BLUEWAKE_NATIVE_KANKYO_H
++#define BLUEWAKE_NATIVE_KANKYO_H
++
++/* The environment's colour blends natively (native_kankyo.c). */
++
++#include "core/cpu.h"
++
++#define BLUEWAKE_KANKYO_S16_RATIO 0x8018F894u      /* s16_data_ratio_set__Fssf (d_kankyo) */
++#define BLUEWAKE_KANKYO_COLOR_RATIO 0x8018F8E4u    /* kankyo_color_ratio_set__FUcUcfUcUcfsf */
++#define BLUEWAKE_KYEFF_S16_RATIO 0x8019803Cu       /* s16_data_ratio_set__Fssf (d_kyeff) */
++
++
++/* The function at `address`, entered with the return address in LR, through
++ * its blr: nonzero with every register, flag, cycle and byte as the
++ * translation leaves them; zero, with nothing changed, where that is not
++ * certain or the address is not one of these. No identifier here may be
++ * `ctx`. */
++int bluewake_native_kankyo(CPUState* cpu, u32 address);
++void bluewake_native_kankyo_report(void);
++
++#endif
+diff --git a/cmake/composite/native_replay.h b/cmake/composite/native_replay.h
+new file mode 100644
+index 0000000..acb0f6f
+--- /dev/null
++++ b/cmake/composite/native_replay.h
+@@ -0,0 +1,660 @@
++#ifndef BLUEWAKE_NATIVE_REPLAY_H
++#define BLUEWAKE_NATIVE_REPLAY_H
++
++/* The fourth set of natives' shared pieces (native_kankyo.c, native_anim.c,
++ * native_cc.c): the translation's floating-point instructions replayed on
++ * values, its cycle accounting replayed on a running downcount, and plain
++ * RAM.
++ *
++ * The floating-point operations are inline_fp.h's inline paths, the very
++ * expressions the translated chunks compute (the interpreter's single
++ * rounding with NI's flush, the 25-bit multiplier, the fused multiply-add's
++ * tie correction), applied to local values and a local FPSCR instead of the
++ * guest registers. Where the translation would leave its inline path for the
++ * interpreter (a NaN or infinite operand, a NaN product, a zero divisor), the
++ * replay marks itself bad and the native declines: it has changed nothing
++ * yet, since a native commits its registers and stores only once the whole
++ * function has been replayed. So whatever a native accepts - denormals and
++ * huge values included - it computes exactly as the translation does, with
++ * the same host operations under the same MXCSR. fctiwz is GXRuntime's
++ * ppc_fctiw, written out on the local FPSCR (its exception bits, FX, VX and
++ * FEX as set_fp_exception and ppc_fpscr_updated leave them).
++ *
++ * The clock replays the blocks a path enters: each leader's budget test (the
++ * translation returns to the chassis loop there) and its precharge test
++ * (dolrecomp_block_can_precharge: otherwise the block runs instruction by
++ * instruction, its accesses storing cycle suffix 0). A native accepts only
++ * paths on which every block is prepaid and nothing returns for the budget.
++ * With the downcount at most zero on entry, a prepaid copy's deadline refund
++ * (a suffix beyond the deadline) cannot happen either: the precharge test
++ * left the deadline at least a block's cycles away, and a suffix is less.
++ *
++ * No identifier here may be `ctx`. */
++
++#include "core/cpu.h"
++#include "inline_fp.h"
++
++#include <math.h>
++
++#define NR static inline __attribute__((always_inline))
++
++#define NR_FPSCR_FX 0x80000000u
++#define NR_FPSCR_FEX 0x40000000u
++#define NR_FPSCR_VX 0x20000000u
++#define NR_FPSCR_XX 0x02000000u
++#define NR_FPSCR_VXSNAN 0x01000000u
++#define NR_FPSCR_FR 0x00040000u
++#define NR_FPSCR_FI 0x00020000u
++#define NR_FPSCR_VXCVI 0x00000100u
++#define NR_FPSCR_VE 0x00000080u
++#define NR_FPSCR_NI 0x00000004u
++#define NR_FPSCR_VX_ANY 0x01F80700u /* VXSNAN VXISI VXIDI VXZDZ VXIMZ VXVC VXSOFT VXSQRT VXCVI */
++
++/* --- Bits. ------------------------------------------------------------------- */
++
++/* A value's bits, opaque to the optimiser. Clang turns a bit test on a value
++ * it can see came from a double (an exponent field of zero, the bits less
++ * the sign zero) into a floating-point compare, which the host's
++ * denormals-are-zero mode - the module arms it for the guest's NI - answers
++ * differently: a denormal then tests as zero. The translation's helpers
++ * test the bits, so these keep them integers. */
++NR u64 nr_opaque64(u64 bits) {
++    __asm__("" : "+r"(bits));
++    return bits;
++}
++
++NR u32 nr_opaque32(u32 bits) {
++    __asm__("" : "+r"(bits));
++    return bits;
++}
++
++NR u64 nr_bits(f64 value) {
++    u64 bits;
++    memcpy(&bits, &value, sizeof bits);
++    return nr_opaque64(bits);
++}
++
++/* --- Plain RAM. ----------------------------------------------------------- */
++
++/* `size` bytes at `address` in MEM1 proper, unaliased: what the translation's
++ * fast loads and stores reach without leaving line. */
++NR bool nr_ram(const CPUState* cpu, u32 address, u32 size) {
++    return cpu->ram != NULL && ppc_dispatch_poll_read_stable((CPUState*)cpu, address, size);
++}
++
++NR u8* nr_at(const CPUState* cpu, u32 address) { return cpu->ram + (address - GC_RAM_BASE); }
++NR u32 nr_word(const CPUState* cpu, u32 address) { return read_be32(nr_at(cpu, address)); }
++NR u16 nr_half(const CPUState* cpu, u32 address) { return read_be16(nr_at(cpu, address)); }
++NR u64 nr_dword(const CPUState* cpu, u32 address) { return read_be64(nr_at(cpu, address)); }
++
++NR bool nr_apart(u32 a, u32 a_size, u32 b, u32 b_size) {
++    return (u64)a + a_size <= (u64)b || (u64)b + b_size <= (u64)a;
++}
++
++/* Stores, each clearing a reservation on its granule as the translation's do
++ * (the slow path it takes while one is held: mem_writeN). Through a copy of
++ * the RAM pointer, and with the reservation looked at only when one was held
++ * at the start, so the compiler need not reload the guest state after each
++ * store (a byte store may alias anything). */
++typedef struct NrOut {
++    CPUState* cpu;
++    u8* ram;
++    bool reserved;
++} NrOut;
++
++NR NrOut nr_out(CPUState* cpu) { return (NrOut){cpu, cpu->ram, cpu->reserve_valid}; }
++
++NR void nr_clear(const NrOut* o, u32 address) {
++    if (o->reserved)
++        clear_matching_reservation(o->cpu, address);
++}
++
++NR void nr_store32(const NrOut* o, u32 address, u32 value) {
++    nr_clear(o, address);
++    write_be32(o->ram + (address - GC_RAM_BASE), value);
++}
++
++NR void nr_store64(const NrOut* o, u32 address, u64 value) {
++    nr_clear(o, address);
++    write_be64(o->ram + (address - GC_RAM_BASE), value);
++}
++
++NR void nr_store16(const NrOut* o, u32 address, u16 value) {
++    nr_clear(o, address);
++    write_be16(o->ram + (address - GC_RAM_BASE), value);
++}
++
++NR void nr_store8(const NrOut* o, u32 address, u8 value) {
++    nr_clear(o, address);
++    o->ram[address - GC_RAM_BASE] = value;
++}
++
++/* convert_to_double (types.h), always inline. */
++NR u64 nr_to_double(u32 value) {
++    const u64 x = value;
++    u64 exp = (x >> 23) & 0xFFu;
++    u64 frac = x & 0x007FFFFFu;
++    if (exp > 0 && exp < 255) {
++        const u64 y = !(exp >> 7);
++        const u64 z = (y << 61) | (y << 60) | (y << 59);
++        return ((x & 0xC0000000u) << 32) | z | ((x & 0x3FFFFFFFu) << 29);
++    } else if (exp == 0 && frac != 0) {
++        exp = 1023 - 126;
++        do {
++            frac <<= 1;
++            exp -= 1;
++        } while ((frac & 0x00800000u) == 0);
++        return ((x & 0x80000000u) << 32) | (exp << 52) | ((frac & 0x007FFFFFu) << 29);
++    } else {
++        const u64 y = exp >> 7;
++        const u64 z = (y << 61) | (y << 60) | (y << 59);
++        return ((x & 0xC0000000u) << 32) | z | ((x & 0x3FFFFFFFu) << 29);
++    }
++}
++
++/* convert_to_single_ftz (types.h), always inline. */
++NR u32 nr_to_single_ftz(u64 x) {
++    x = nr_opaque64(x);
++    const u32 exp = (u32)((x >> 52) & 0x7FFu);
++    if (exp > 896 || (x & ~0x8000000000000000ull) == 0)
++        return (u32)(((x >> 32) & 0xC0000000u) | ((x >> 29) & 0x3FFFFFFFu));
++    return (u32)((x >> 32) & 0x80000000u);
++}
++
++/* convert_to_single (types.h): stfs. */
++NR u32 nr_to_single(u64 x) {
++    x = nr_opaque64(x);
++    const u32 exp = (u32)((x >> 52) & 0x7FFu);
++    if (exp > 896 || (x & ~0x8000000000000000ull) == 0) {
++        return (u32)(((x >> 32) & 0xC0000000u) | ((x >> 29) & 0x3FFFFFFFu));
++    } else if (exp >= 874) {
++        u32 t = (u32)(0x80000000u | ((x & 0x000FFFFFFFFFFFFFull) >> 21));
++        t = t >> (905 - exp);
++        t |= (u32)((x >> 32) & 0x80000000u);
++        return t;
++    } else {
++        return (u32)(((x >> 32) & 0xC0000000u) | ((x >> 29) & 0x3FFFFFFFu));
++    }
++}
++
++/* lfs, psq_l (type 0): a single's bits as the double the register holds. */
++NR f64 nr_single_bits(u32 bits) { return f64_value(nr_to_double(bits)); }
++
++/* psq_st (type 0) of one half, and psq_l of it back: what a paired-single
++ * save and restore leaves in that half. */
++NR f64 nr_pair_round_trip(f64 value) { return f64_value(nr_to_double(nr_to_single_ftz(nr_bits(value)))); }
++
++/* --- The FPSCR. ---------------------------------------------------------- */
++
++typedef struct NrFp {
++    u32 fpscr;
++    bool bad; /* the translation would have left its inline path */
++} NrFp;
++
++NR bool nr_finite(f64 value) {
++    return (nr_bits(value) & 0x7FF0000000000000ull) != 0x7FF0000000000000ull;
++}
++
++/* force_25bit_c (bw_fp_25bit), always inline. */
++NR f64 nr_25bit(f64 d) {
++    u64 integral = nr_bits(d);
++    const u64 exponent = integral & 0x7FF0000000000000ull;
++    const u64 fraction = integral & 0x000FFFFFFFFFFFFFull;
++    if (exponent == 0 && fraction != 0) {
++        s64 keep_mask = (s64)0xFFFFFFFFF8000000ll;
++        u64 round = 0x8000000u;
++        const unsigned shift = (unsigned)__builtin_clzll(fraction) - 11u;
++        keep_mask >>= shift;
++        round >>= shift;
++        integral = (integral & (u64)keep_mask) + (integral & round);
++    } else {
++        integral = (integral & 0xFFFFFFFFF8000000ull) + (integral & 0x8000000ull);
++    }
++    return f64_value(integral);
++}
++
++/* force_25_bit (bw_fp_25bit_fma: the fused multiply-add's multiplier), always inline. */
++NR f64 nr_25bit_fma(f64 value) {
++    u64 bits = nr_bits(value);
++    const u64 fraction = bits & 0x000FFFFFFFFFFFFFull;
++    u64 keep_mask = 0xFFFFFFFFF8000000ull;
++    u64 round = 0x0000000008000000ull;
++    if ((bits & 0x7FF0000000000000ull) == 0 && fraction != 0) {
++        const unsigned shift = (unsigned)__builtin_clzll(fraction) - 11u;
++        if (shift < 28) {
++            keep_mask = ~((1ull << (27 - shift)) - 1);
++            round >>= shift;
++        } else {
++            keep_mask = ~0ull;
++            round = 0;
++        }
++    }
++    bits = (bits & keep_mask) + (bits & round);
++    return f64_value(bits);
++}
++
++/* bw_fp_fma_single: the single fused multiply-add's tie correction, always inline. */
++NR f64 nr_fma_single(f64 a, f64 c_round, f64 addend) {
++    f64 result = fma(a, c_round, addend);
++    u64 bits = nr_bits(result);
++    if ((bits & 0x000000001FFFFFFFull) == 0x0000000010000000ull) {
++        const f64 a_prime = addend - result;
++        const f64 b_prime = result + a_prime;
++        const f64 delta_a = fma(a, c_round, a_prime);
++        const f64 delta_b = addend - b_prime;
++        const f64 error = delta_a + delta_b;
++        if (error != 0.0) {
++            if ((error > 0.0) == (result > 0.0))
++                bits++;
++            else
++                bits--;
++            result = f64_value(bits);
++        }
++    }
++    return result;
++}
++
++/* classify_f32 (bw_fp_class32), always inline. */
++NR u32 nr_class32(f32 value) {
++    u32 bits;
++    memcpy(&bits, &value, sizeof bits);
++    bits = nr_opaque32(bits);
++    const u32 sign = bits >> 31;
++    const u32 exponent = bits & 0x7F800000u;
++    const u32 fraction = bits & 0x007FFFFFu;
++    if (exponent == 0x7F800000u)
++        return fraction ? 0x11u : (sign ? 0x09u : 0x05u);
++    if (exponent == 0)
++        return fraction ? (sign ? 0x18u : 0x14u) : (sign ? 0x12u : 0x02u);
++    return sign ? 0x08u : 0x04u;
++}
++
++/* ppc_fpscr_updated */
++NR void nr_fpscr_updated(NrFp* s) {
++    u32 f = s->fpscr;
++    f = (f & ~NR_FPSCR_VX) | ((f & NR_FPSCR_VX_ANY) ? NR_FPSCR_VX : 0u);
++    f = (f & ~NR_FPSCR_FEX) | ((((f >> 22) & f & 0xF8u) != 0u) ? NR_FPSCR_FEX : 0u);
++    s->fpscr = f;
++}
++
++/* set_fp_exception */
++NR void nr_fp_exception(NrFp* s, u32 bit) {
++    if ((s->fpscr & bit) != bit)
++        s->fpscr |= NR_FPSCR_FX;
++    s->fpscr |= bit;
++    nr_fpscr_updated(s);
++}
++
++NR void nr_fprf(NrFp* s, u32 value) { s->fpscr = (s->fpscr & ~(0x1Fu << 12)) | ((value & 0x1Fu) << 12); }
++
++/* force_single (bw_fp_single), on the local FPSCR's NI. */
++NR f32 nr_round(const NrFp* s, f64 value) {
++    if (s->fpscr & NR_FPSCR_NI) {
++        const u64 bits = nr_bits(value);
++        if ((bits & 0x7FFFFFFFFFFFFFFFull) < 0x3810000000000000ull) {
++            const u32 flushed = (u32)((bits & 0x8000000000000000ull) >> 32);
++            f32 zero;
++            memcpy(&zero, &flushed, sizeof zero);
++            return zero;
++        }
++    }
++    return (f32)value;
++}
++
++/* --- The arithmetic: inline_fp.h's inline paths. ------------------------- */
++
++/* fadds, fsubs: the result in both halves. */
++NR f64 nr_fadds(NrFp* s, f64 x, f64 y) {
++    if (!(nr_finite(x) && nr_finite(y))) {
++        s->bad = true;
++        return 0.0;
++    }
++    const f32 r = nr_round(s, x + y);
++    nr_fprf(s, nr_class32(r));
++    return (f64)r;
++}
++
++NR f64 nr_fsubs(NrFp* s, f64 x, f64 y) {
++    if (!(nr_finite(x) && nr_finite(y))) {
++        s->bad = true;
++        return 0.0;
++    }
++    const f32 r = nr_round(s, x - y);
++    nr_fprf(s, nr_class32(r));
++    return (f64)r;
++}
++
++/* fmuls d, a, c */
++NR f64 nr_fmuls(NrFp* s, f64 a, f64 c) {
++    if (!(nr_finite(a) && nr_finite(c))) {
++        s->bad = true;
++        return 0.0;
++    }
++    const f64 product = a * nr_25bit(c);
++    if (product != product) {
++        s->bad = true;
++        return 0.0;
++    }
++    const f32 r = nr_round(s, product);
++    nr_fprf(s, nr_class32(r));
++    s->fpscr &= ~(NR_FPSCR_FI | NR_FPSCR_FR);
++    return (f64)r;
++}
++
++/* fdivs */
++NR f64 nr_fdivs(NrFp* s, f64 x, f64 y) {
++    if (!(nr_finite(x) && nr_finite(y)) || y == 0.0) {
++        s->bad = true;
++        return 0.0;
++    }
++    const f32 r = nr_round(s, x / y);
++    nr_fprf(s, nr_class32(r));
++    return (f64)r;
++}
++
++/* fmadds, fmsubs, fnmadds, fnmsubs d, a, c, b: the result in both halves. */
++NR f64 nr_fmadds(NrFp* s, f64 a, f64 c, f64 b, bool subtract, bool negative) {
++    if (!(nr_finite(a) && nr_finite(c) && nr_finite(b))) {
++        s->bad = true;
++        return 0.0;
++    }
++    f64 result = (f64)(f32)nr_fma_single(a, nr_25bit_fma(c), subtract ? -b : b);
++    if (result != result) {
++        s->bad = true;
++        return 0.0;
++    }
++    if (negative)
++        result = -result;
++    nr_fprf(s, nr_class32((f32)result));
++    return result;
++}
++
++/* fcmpu, fcmpo cr0: the CR0 code, the FPCC or'ed into the FPSCR. */
++NR u32 nr_fcmp(NrFp* s, f64 a, f64 b) {
++    if (a != a || b != b) {
++        s->bad = true;
++        return 0u;
++    }
++    const u32 compare = a < b ? 0x8u : (a > b ? 0x4u : 0x2u);
++    s->fpscr |= compare << 12;
++    return compare;
++}
++
++/* fctiwz (ppc_fctiw, toward zero): false where it writes nothing (an invalid
++ * conversion with VE set). */
++NR bool nr_fctiwz(NrFp* s, f64 value, u64* output) {
++    const f64 rounded = trunc(value);
++    u32 result;
++    bool invalid = false;
++    if (value != value) {
++        const u64 bits = nr_bits(value);
++        if ((bits & 0x0008000000000000ull) == 0u)
++            nr_fp_exception(s, NR_FPSCR_VXSNAN);
++        result = 0x80000000u;
++        invalid = true;
++    } else if (rounded >= 2147483648.0) {
++        result = 0x7FFFFFFFu;
++        invalid = true;
++    } else if (rounded < -2147483648.0) {
++        result = 0x80000000u;
++        invalid = true;
++    } else {
++        result = (u32)(s32)rounded;
++    }
++    s->fpscr &= ~(NR_FPSCR_FI | NR_FPSCR_FR);
++    if (invalid) {
++        nr_fp_exception(s, NR_FPSCR_VXCVI);
++    } else if (rounded != value) {
++        nr_fp_exception(s, NR_FPSCR_XX);
++        s->fpscr |= NR_FPSCR_FI;
++        if (fabs(rounded) > fabs(value))
++            s->fpscr |= NR_FPSCR_FR;
++    }
++    if (invalid && (s->fpscr & NR_FPSCR_VE))
++        return false;
++    *output = 0xFFF8000000000000ull | result | ((result == 0u && (nr_bits(value) >> 63) != 0u) ? 0x100000000ull : 0ull);
++    return true;
++}
++
++/* --- Paired singles: inline_fp.h's inline paths on pairs. ------------------ */
++
++typedef struct NrPair {
++    f64 a, b; /* the first half (fpr) and the second (ps1) */
++} NrPair;
++
++NR bool nr_finite_pair(NrPair x) { return nr_finite(x.a) && nr_finite(x.b); }
++
++/* bw_fp_ps_write's single roundings, and the FPRF of the first half. */
++NR NrPair nr_ps_result(NrFp* s, f64 r0, f64 r1) {
++    const f32 s0 = nr_round(s, r0), s1 = nr_round(s, r1);
++    nr_fprf(s, nr_class32(s0));
++    return (NrPair){(f64)s0, (f64)s1};
++}
++
++/* ps_mul d, a, c */
++NR NrPair nr_ps_mul(NrFp* s, NrPair a, NrPair c) {
++    if (!(nr_finite_pair(a) && nr_finite_pair(c))) {
++        s->bad = true;
++        return a;
++    }
++    const f64 p0 = a.a * nr_25bit(c.a), p1 = a.b * nr_25bit(c.b);
++    if (p0 != p0 || p1 != p1) {
++        s->bad = true;
++        return a;
++    }
++    return nr_ps_result(s, p0, p1);
++}
++
++/* ps_muls0 d, a, c: c's first half. */
++NR NrPair nr_ps_muls0(NrFp* s, NrPair a, f64 c0) {
++    if (!(nr_finite_pair(a) && nr_finite(c0))) {
++        s->bad = true;
++        return a;
++    }
++    const f64 c_round = nr_25bit(c0);
++    const f64 p0 = a.a * c_round, p1 = a.b * c_round;
++    if (p0 != p0 || p1 != p1) {
++        s->bad = true;
++        return a;
++    }
++    return nr_ps_result(s, p0, p1);
++}
++
++/* ps_add, ps_sub */
++NR NrPair nr_ps_add(NrFp* s, NrPair a, NrPair b) {
++    if (!(nr_finite_pair(a) && nr_finite_pair(b))) {
++        s->bad = true;
++        return a;
++    }
++    return nr_ps_result(s, a.a + b.a, a.b + b.b);
++}
++
++NR NrPair nr_ps_sub(NrFp* s, NrPair a, NrPair b) {
++    if (!(nr_finite_pair(a) && nr_finite_pair(b))) {
++        s->bad = true;
++        return a;
++    }
++    return nr_ps_result(s, a.a - b.a, a.b - b.b);
++}
++
++/* ps_madd, ps_msub, ps_nmadd, ps_nmsub d, a, c, b: the multiplier rounded
++ * as force_25bit_c rounds it (bw_fp_ps_madd), then the single roundings,
++ * then the negation. */
++NR NrPair nr_ps_madd(NrFp* s, NrPair a, NrPair c, NrPair b, bool subtract, bool negative) {
++    if (!(nr_finite_pair(a) && nr_finite_pair(c) && nr_finite_pair(b))) {
++        s->bad = true;
++        return a;
++    }
++    const f64 r0 = nr_fma_single(a.a, nr_25bit(c.a), subtract ? -b.a : b.a);
++    const f64 r1 = nr_fma_single(a.b, nr_25bit(c.b), subtract ? -b.b : b.b);
++    if (r0 != r0 || r1 != r1) {
++        s->bad = true;
++        return a;
++    }
++    f32 s0 = nr_round(s, r0), s1 = nr_round(s, r1);
++    if (negative) {
++        s0 = -s0;
++        s1 = -s1;
++    }
++    nr_fprf(s, nr_class32(s0));
++    return (NrPair){(f64)s0, (f64)s1};
++}
++
++/* ps_res (GXRuntime's ppc_ps_res_op): the estimate table's reciprocals, its
++ * exceptions; the FPRF of the first half as a single. */
++NR NrPair nr_ps_res(NrFp* s, NrPair b) {
++    const f64 x = b.a, y = b.b;
++    if (x == 0.0 || y == 0.0) {
++        nr_fp_exception(s, 0x04000000u); /* ZX */
++        s->fpscr &= ~(NR_FPSCR_FI | NR_FPSCR_FR);
++    }
++    if (isnan(x) || isinf(x) || isnan(y) || isinf(y))
++        s->fpscr &= ~(NR_FPSCR_FI | NR_FPSCR_FR);
++    const u64 bx = nr_bits(x), by = nr_bits(y);
++    const bool snan_x = (bx & 0x7FF0000000000000ull) == 0x7FF0000000000000ull && (bx & 0x000FFFFFFFFFFFFFull) != 0u &&
++                        (bx & 0x0008000000000000ull) == 0u;
++    const bool snan_y = (by & 0x7FF0000000000000ull) == 0x7FF0000000000000ull && (by & 0x000FFFFFFFFFFFFFull) != 0u &&
++                        (by & 0x0008000000000000ull) == 0u;
++    if (snan_x || snan_y)
++        nr_fp_exception(s, NR_FPSCR_VXSNAN);
++    const NrPair r = {ppc_approx_reciprocal(x), ppc_approx_reciprocal(y)};
++    nr_fprf(s, nr_class32((f32)r.a));
++    return r;
++}
++
++/* --- Single precision. -------------------------------------------------------
++ *
++ * Long chains of dependent single operations (the Hermite splines, the
++ * conversions to cell indices) gain little from the replay's double
++ * arithmetic and its two conversions an operation. On zero or normal singles whose every
++ * result is zero or normal (at least 2^-125 and finite), host single
++ * arithmetic gives the translation's results: a sum, difference, product or
++ * quotient of singles computed in double and rounded once to single is the
++ * single operation correctly rounded (double rounding is innocuous, 53 >= 2 x
++ * 24 + 2), the 25-bit multiplier leaves a single unchanged, the fused
++ * multiply-add's tie correction gives fmaf, and nothing nears the range where
++ * NI flushes or the host's flush to zero acts. Anything else - a register
++ * that is not such a single, a result out of that range - takes the double
++ * replay, which is exact for every input it accepts. */
++
++/* A double register or loaded value that is a zero or a normal single of at
++ * least 2^-125, as that single. */
++NR bool nr_plain(f64 value, f32* out) {
++    const u64 bits = nr_bits(value);
++    const u64 exponent = (bits >> 52) & 0x7FFu;
++    *out = (f32)value;
++    return (bits & 0x7FFFFFFFFFFFFFFFull) == 0u ||
++           (exponent >= 898u && exponent <= 1150u && (bits & 0x1FFFFFFFull) == 0u);
++}
++
++/* A single result: zero, or normal of at least 2^-125. */
++NR f32 nr_r(f32 value, bool* bad) {
++    u32 bits;
++    memcpy(&bits, &value, sizeof bits);
++    bits = nr_opaque32(bits);
++    const u32 exponent = bits & 0x7F800000u;
++    *bad |= !((bits & 0x7FFFFFFFu) == 0u || (exponent >= (2u << 23) && exponent != 0x7F800000u));
++    return value;
++}
++
++/* An lfs's value as a single, if plain. */
++NR bool nr_plain_word(u32 word, f32* out) {
++    const u32 exponent = word & 0x7F800000u;
++    memcpy(out, &word, sizeof *out);
++    return (word & 0x7FFFFFFFu) == 0u || (exponent >= (2u << 23) && exponent != 0x7F800000u);
++}
++
++/* The class of a plain single result (FPRF). */
++NR u32 nr_class_plain(f32 value) {
++    u32 bits;
++    memcpy(&bits, &value, sizeof bits);
++    bits = nr_opaque32(bits);
++    return (bits & 0x7FFFFFFFu) == 0u ? (bits >> 31 ? 0x12u : 0x02u) : (bits >> 31 ? 0x08u : 0x04u);
++}
++
++/* --- Integer compares: CR0 with XER's SO. --------------------------------- */
++
++NR u32 nr_cr0(u32 cr, u32 xer, bool less, bool greater) {
++    const u32 bits = (less ? 0x8u : greater ? 0x4u : 0x2u) | ((xer >> 31) & 1u);
++    return (cr & 0x0FFFFFFFu) | (bits << 28);
++}
++
++NR u32 nr_cr0_signed(u32 cr, u32 xer, s32 a, s32 b) { return nr_cr0(cr, xer, a < b, a > b); }
++NR u32 nr_cr0_unsigned(u32 cr, u32 xer, u32 a, u32 b) { return nr_cr0(cr, xer, a < b, a > b); }
++
++/* --- The clock. ---------------------------------------------------------- */
++
++typedef struct NrClock {
++    s64 downcount, budget, deadline;
++} NrClock;
++
++/* The conditions every native here starts from: no exception pending, FP
++ * available, round to nearest, no write journal, a positive budget not spent,
++ * and the downcount at most zero. */
++NR bool nr_clock_start(const CPUState* cpu, NrClock* k) {
++    k->downcount = cpu->downcount;
++    k->budget = cpu->cycle_budget;
++    k->deadline = cpu->cycle_deadline_budget;
++    return cpu->exception == 0u && (cpu->msr & PPC_MSR_FP) != 0u && (cpu->fpscr & 3u) == 0u &&
++           g_mem_write_journal == NULL && k->budget > 0 && k->downcount <= 0 && k->downcount > -k->budget;
++}
++
++/* Not spent: the test at a block leader, a call and a return dispatch. */
++NR bool nr_live(const NrClock* k) { return k->downcount > -k->budget; }
++
++/* A block leader entered and prepaid. */
++NR bool nr_block(NrClock* k, u32 cycles) {
++    if (k->downcount <= -k->budget)
++        return false;
++    if (k->deadline > 0) {
++        const s64 remaining = k->deadline + k->downcount;
++        if (remaining < 0 || remaining < (s64)cycles)
++            return false;
++    }
++    k->downcount -= cycles;
++    return true;
++}
++
++/* The inline _savegpr_N/_restgpr_N (scripts/windows/inline_save_restore_gpr.py):
++ * five cycles when the budget allows them, and the turn's test after. */
++NR bool nr_inline_gpr(NrClock* k) {
++    if (!(k->downcount - 4 > -k->budget))
++        return false;
++    k->downcount -= 5;
++    return k->downcount > -k->budget;
++}
++
++/* Paired singles unscaled (GQR0 type 0 both ways) and enabled (HID2 LSQE):
++ * the translation's psq_l and psq_st inline forms. */
++NR bool nr_pairs_plain(const CPUState* cpu) {
++    return (cpu->hid2 & PPC_HID2_LSQE) != 0u && (cpu->gqr[0] & 0x00070007u) == 0u;
++}
++
++/* The decline gate of the fifth and sixth sets (native_gx.c). */
++#define NATIVE_GATE_WINDOW 256u
++#define NATIVE_GATE_DECLINES 160u
++#define NATIVE_GATE_SKIP 16384u
++
++typedef struct NativeGate {
++    unsigned tries, declines, skip;
++} NativeGate;
++
++extern int bluewake_native_gate_enabled;
++
++static inline __attribute__((always_inline)) int native_gate_skips(NativeGate* gate) {
++    if (gate->skip == 0u)
++        return 0;
++    gate->skip--;
++    return 1;
++}
++
++static inline __attribute__((always_inline)) void native_gate_note(NativeGate* gate, int declined) {
++    gate->declines += (unsigned)declined;
++    if (++gate->tries < NATIVE_GATE_WINDOW)
++        return;
++    if (gate->declines >= NATIVE_GATE_DECLINES && bluewake_native_gate_enabled)
++        gate->skip = NATIVE_GATE_SKIP;
++    gate->tries = gate->declines = 0u;
++}
++
++#endif
+diff --git a/scripts/windows/native_entries.py b/scripts/windows/native_entries.py
+index f42ad39..567f4f8 100644
+--- a/scripts/windows/native_entries.py
++++ b/scripts/windows/native_entries.py
+@@ -26,6 +26,9 @@ HOOK = re.compile(r'    if \(bluewake_native_entries_try\(ctx, 0x([0-9A-F]{8})u\
+ # name -> chunk, first label, end label, SHA256 of the original translated body.
+ # Shared matrix/save callees retain the established BlueWake certificates.
+ FRAGMENTS = {
++    'kankyo_s16': (0x8018D6E0, 0x8018F894, 0x8018F8E4, '67101768ed42463b31ae3169337a1bebbe3bdda4fcec96215602073a885142c1'),
++    'kankyo_color': (0x8018D6E0, 0x8018F8E4, 0x8018F9E8, 'd25ab3817f4d00a1cf5db02f5deb26531be57ec39d45e9ff83024857abd3ef7f'),
++    'kyeff_s16': (0x801956E0, 0x8019803C, 0x8019808C, 'd3f6a13a4fd19e27e2c61266c48b38b387eb3b58ec4fad39efe81164a5d9319d'),
+     'fifo_pos': (0x802D56E0, 0x802D8BD8, 0x802D8C58, 'f34113280227b04dfc801d60bea93c3802b1d6ed4e646ec6698c1ed9190a1129'),
+     'fifo_nrm': (0x802D56E0, 0x802D8C58, 0x802D8CC4, '254777e9a533104f0b8151d92b30a4a181a73ad19fbf0122a4e11ec2bfe1a52e'),
+     'fifo_nrm33': (0x802D56E0, 0x802D8CC4, 0x802D8D30, '12baba3a6412f207ddd3555a5cd723c457be54fc7d560c2a31cba7593f74ebd0'),
+@@ -49,6 +52,9 @@ FRAGMENTS = {
+     'find_object': (0x800256E0, 0x8002833C, 0x80028410, '89a98e1bbb6a1d1db4c08ae6c62f04d6e5b5d463cdb197b6b691eeeb1a791d96'),
+ }
+ ENTRIES = {
++    0x8018F894: ('kankyo_s16',),
++    0x8018F8E4: ('kankyo_color', 'kankyo_s16', 'save', 'restore'),
++    0x8019803C: ('kyeff_s16',),
+     0x802D8BD8: ('fifo_pos',), 0x802D8C58: ('fifo_nrm',), 0x802D8CC4: ('fifo_nrm33',),
+     0x8024734C: ('same_actor',), 0x800A9684: ('grp_entry', 'grp_tail'), 0x8030DB24: ('vec_sr',),
+     0x802F5090: ('basic', 'j3d_info', 'concat', 'copy', 'save', 'restore'),

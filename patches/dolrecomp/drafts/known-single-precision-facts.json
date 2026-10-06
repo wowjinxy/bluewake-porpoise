@@ -1,0 +1,149 @@
+{
+  "status": "INACTIVE_DRAFT_AUTHORED_PARITY_ONLY",
+  "item": 13,
+  "donor": {
+    "commit": "83398f1ccd93dc9f0e11ac626c0c11ae5b74ee5c",
+    "author": "AceSpectre <69684743+AceSpectre@users.noreply.github.com>"
+  },
+  "gate": {
+    "environment": "DOLRECOMP_KNOWN_SINGLE",
+    "enabled_only": "1",
+    "default": false,
+    "scope": "generator emission; invocation-local facts; no CPU ABI fields"
+  },
+  "patches": [
+    {
+      "path": "patches\\dolrecomp\\drafts\\known-single-precision-facts.patch",
+      "sha256": "cf8585614a0b2805b7f5e355e9d11c639ae5a0f47616401e5423099c85410d50",
+      "bytes": 9472
+    },
+    {
+      "path": "patches\\dolrecomp\\drafts\\known-single-precision-composite.patch",
+      "sha256": "528c86374007f82a5d868a942f04555fdfd62f19ee82ee6dc4f0fa9f20171c0c",
+      "bytes": 5367
+    },
+    {
+      "path": "patches\\dolrecomp\\drafts\\known-single-precision-tests.patch",
+      "sha256": "9f4bde1263dce3c90056f8b9466712d220197f1a035967ec00e3428c973c9391",
+      "bytes": 10785
+    }
+  ],
+  "sources": [
+    {
+      "path": "build\\performance-13-known-single-20261006\\candidate\\DolRecomp\\src\\backend\\emitter.c",
+      "sha256": "7708b4fd92fadd33293c82d4452293d4e424f9fb4b2ae9c13c0e25e4c62883d9",
+      "bytes": 108786
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\candidate\\cmake\\composite\\inline_fp.h",
+      "sha256": "2c35997c8ac450b5448f459d025592120c9dd795afc3d9c199e8cc760c43f816",
+      "bytes": 23664
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\generate.c",
+      "sha256": "d177d34b0d2d9e9134397b2042af5a680ab1bef42cbf0766d623d1d03d73b9d5",
+      "bytes": 2991
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\known_single_test.c",
+      "sha256": "576ad3bc335c8eb9470bf2e41401abfafce1c72e75b458afc8f7e65a580490f8",
+      "bytes": 7026
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\fixture_support.h",
+      "sha256": "42e6352c5323769022817b7a990d1d01e885beff04c70112892f32654a907b58",
+      "bytes": 376
+    }
+  ],
+  "actual": [
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v6\\result.json",
+      "sha256": "3ae0c1e7cc5f936f8bbc88e1d0a1c4551709f8a5c5d3580daaba00e51b09b656",
+      "bytes": 1426
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v5\\logs\\30.log",
+      "sha256": "430937e019a7ee17b184e1e1697857ab327ecbaf796a26cc2af38dc4172968ab",
+      "bytes": 139
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v6\\logs\\0.log",
+      "sha256": "430937e019a7ee17b184e1e1697857ab327ecbaf796a26cc2af38dc4172968ab",
+      "bytes": 139
+    }
+  ],
+  "counts": {
+    "checks_per_mode": 5990400,
+    "cases_per_mode": 1198080,
+    "callback_cases": 143360,
+    "interrupted_cases": 591360,
+    "cpu_bytes": 3552,
+    "digest": "dcaafc8ed92d23e5"
+  },
+  "assembly": {
+    "reference": {
+      "assembly": {
+        "path": "build\\performance-13-known-single-20261006\\actual-v5\\o3\\reference.s",
+        "sha256": "f8abaf43dabf54e83ae775402db3c05a5ac78acbf18eb2619dbf09e4eed4f34e",
+        "bytes": 236055
+      },
+      "object": {
+        "path": "build\\performance-13-known-single-20261006\\actual-v5\\o3\\reference.obj",
+        "sha256": "f44e0c981e12ed1579c29d25e8bd7e9636819301d52fff3e14f7994925020b19",
+        "bytes": 56389
+      },
+      "scalar_fma_single": 0,
+      "scalar_fma_double": 12,
+      "mxcsr_reads": 0
+    },
+    "candidate": {
+      "assembly": {
+        "path": "build\\performance-13-known-single-20261006\\actual-v5\\o3\\candidate.s",
+        "sha256": "005553a3cb63d5dc04cc6da90ae24a0e6952657357cd8e1abe81850a0c2f7c13",
+        "bytes": 239670
+      },
+      "object": {
+        "path": "build\\performance-13-known-single-20261006\\actual-v5\\o3\\candidate.obj",
+        "sha256": "fcd22caa1df82153f1c83fee75c4a4582bd3d4507938b8c4da2661ec3ca16919",
+        "bytes": 57212
+      },
+      "scalar_fma_single": 1,
+      "scalar_fma_double": 14,
+      "mxcsr_reads": 1
+    }
+  },
+  "preserved_failures": [
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v1\\result.json",
+      "sha256": "18e8daecdd150f809955fbc92acb60b562fe727282213d2809029c74f3baae42",
+      "bytes": 208
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v2\\result.json",
+      "sha256": "5faff3a3c6ab6603d98775db28bd5e05efd22d70e31877df6ee1ec38cceb7a59",
+      "bytes": 17544
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v3\\result.json",
+      "sha256": "0568d1bb8c612d3811e04f190afaf8b5aaa45a25e6dfc5d22d7344ce2c36ea90",
+      "bytes": 57424
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v4\\result.json",
+      "sha256": "d0874b4466f4839d1be31211dad39715a69fb1af0c0918e09ac776a037eb0960",
+      "bytes": 77664
+    },
+    {
+      "path": "build\\performance-13-known-single-20261006\\actual-v5\\result.json",
+      "sha256": "8a8a4154c04e804401490ad328c51af3d0873e1cb348d7e0e0bcc4d0e2bbaa31",
+      "bytes": 109653
+    }
+  ],
+  "limitations": [
+    "No native, rendered, throughput or timing qualification.",
+    "Initial fmaf path changed host denormal flag; fixed by normal-or-zero operand guard, original failure retained.",
+    "Candidate COFF grows and runtime mask/fenv checks may outweigh saved rounding.",
+    "Existing precise scheduler/computed-goto/native hooks remain; no donor function scheduler or ABI imported.",
+    "Exhaustive alias combinations and complete game opcode corpus are not qualified."
+  ]
+}
