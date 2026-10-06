@@ -39,8 +39,8 @@ still unqualified; the adapter waits for its genuine pipeline to finish.
 Fatal loss of native continuation is reported separately and never counted
 as a successful save or completed drain.
 
-Qualification covers source compilation, build wiring and an initial native
-CARD load. The
+Qualification covers source compilation, build wiring, an initial native
+CARD load and two unsaved native reward runs. The
 final C++17 adapter passed optimized and sanitizer-enabled compile checks,
 each with 281 audited compiler dependencies. Its unchanged 17-function C ABI
 also passed both compile configurations. Final main passed optimized builds
@@ -71,6 +71,32 @@ preserved. This case uses no machine state, warp, inventory capture, reward
 or save. Its logic and start-policy digests identify explicit experimental
 metadata; they do not establish starting inventory or beatability.
 
-Genuine replacement/award/manual-save and a fresh CARD reload remain separate
-acceptance steps. No playable randomizer, full item pool, starting inventory,
-tracker, entrance shuffle or beatability claim follows from this integration.
+Two further hidden runs each pass all 17 reward gates after 4,000 retraces.
+The same-item Orange control completes one selection and one native award.
+The basic Picto replacement then changes the accepted creation argument to
+0x23 (35 decimal), completes the native deleting-item owner and confirms the
+Picto inventory postcondition. Each run emits exactly one native ItemAward
+from the audited LinkUG return in the genuine CARD-load epoch. The void award
+return value is not a success signal. Both sessions report one substitution,
+one completed award, zero saves and a clean stop. Their working CARDs and
+stored generation-one pairs remain unchanged, with empty stored ledgers.
+Only original controller input, the explicitly reviewed NextStage scene
+request and the accepted reward-argument substitution drive these runs.
+
+The new permanent regression target links the complete GXRuntime core. Its
+first optimized run stopped during seed-store creation in a deeply nested
+fixture directory. With shorter owned
+data paths, the unchanged optimized executable and a fresh sanitizer build
+each pass all 8,181 checks with empty stderr and no native module/helper
+invocations. Each build compiles 46 translation units, including all 34 core
+units; all 46 sanitizer objects are instrumented. Actual compiler dependencies,
+archive members and linker reproductions are closed before fixture execution.
+Seven configure cases check caller guards, source/standard metadata and the
+missing-core rejection. The new target is included under the existing Windows
+regression and runtime-host testing guards. The original path failure and its
+files are retained; Windows long-path publication remains unqualified.
+
+Native manual-save, reward replay/cancellation and a fresh confirmed CARD
+reload remain separate acceptance steps. No playable randomizer, full item
+pool, starting inventory, tracker, entrance shuffle or beatability claim
+follows from this integration.
