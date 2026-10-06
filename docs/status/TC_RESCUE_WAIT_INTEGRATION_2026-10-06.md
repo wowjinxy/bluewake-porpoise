@@ -245,17 +245,30 @@ The baseline log reader has passed source review. It checks the original awards,
 ordinary cleared-scene reset after the normal-stop line. The unchanged baseline
 does not record quest selection, Tc ownership, rescue/removal or the within-return
 timer comparison; those require the separate diagnostic cases. The original
-overly strict reader and a preparation failure remain preserved. A baseline-only
-bounded decision now awaits independent review and a separate launch allowance;
-the game process is limited to 600 seconds, with a 900-second parent bound.
+overly strict reader and a preparation failure remain preserved. The baseline-only
+bounded decision and hidden launcher passed independent source review. Its one
+authorized run was limited to 600 seconds, with a 900-second parent bound.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
 failure reports when output inventory is invalid. The four original command
 vectors are byte-identical. This is source qualification; runtime guard behavior,
-Windows loading and native game outcomes still await actual runs.
+Windows loading and native game outcomes require actual case observations.
 
-Next are genuine baseline/reference/OFF/ON rescue runs
+The first headless baseline replay completed normally in 112.734 seconds at
+8500 retraces. Its terminal metadata records both original item awards, all
+85 periodic logical-state tuples and preservation of all 2836 inputs. Both
+the game and its parent terminated with exit zero and drained their streams;
+the original CARD remains unchanged. Independent interpretation is pending.
+
+Before invoking the baseline reader, review found that its exact data-tree
+whitelist omitted normal startup outputs: empty CARD and manager lock files,
+an empty crash report named for the game process, and offline network
+preferences. The baseline and derived diagnostic readers remain uninvoked.
+A narrow source-qualified reader correction is in progress; the completed
+game replay and original reader sources are preserved.
+
+Next are independent baseline interpretation and reference/OFF/ON rescue runs
 covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
 graphical-session ownership remains unqualified. The menu and ownership
