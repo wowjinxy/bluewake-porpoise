@@ -14,6 +14,8 @@ extern "C" {
 #define BLUEWAKE_CONTROLS_AXES 10u
 #define BLUEWAKE_CONTROLS_ACTIONS 4u
 #define BLUEWAKE_CONTROLS_ACTION_KEYS 2u
+#define BLUEWAKE_CONTROLS_TRIGGER_PRESS 16384
+#define BLUEWAKE_CONTROLS_TRIGGER_RELEASE 12000
 
 typedef enum BluewakeControlsAction {
     BLUEWAKE_ACTION_JUMP,
@@ -52,6 +54,9 @@ typedef struct BluewakeControlsSnapshot {
     bool invert_camera_y;
     int32_t action_keys[BLUEWAKE_CONTROLS_ACTIONS][BLUEWAKE_CONTROLS_ACTION_KEYS];
     int32_t action_buttons[BLUEWAKE_CONTROLS_ACTIONS];
+    // Quick Items only: SDL left/right trigger axis, or -1 for button/unbound.
+    // Mutually exclusive with action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS].
+    int32_t quick_items_trigger;
 } BluewakeControlsSnapshot;
 
 typedef struct BluewakeControlsDevice {
@@ -101,6 +106,7 @@ bool bluewake_controls_set_dead_zones(BluewakeControlsDeadZones dead_zones);
 bool bluewake_controls_set_invert(bool stick_x, bool stick_y, bool camera_x, bool camera_y);
 bool bluewake_controls_set_action_key(unsigned action, unsigned source, int32_t scancode);
 bool bluewake_controls_set_action_button(unsigned action, int32_t native_button);
+bool bluewake_controls_set_quick_items_trigger(int32_t native_axis);
 const char* bluewake_controls_action_name(unsigned action);
 // Brief action presses latch on the event thread and are sampled once per VI.
 void bluewake_controls_action_event(const void* sdl_event);

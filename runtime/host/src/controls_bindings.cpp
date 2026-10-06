@@ -85,6 +85,8 @@ struct InputSnapshot {
     bool keyboard_enabled = false;
     int32_t action_keys[BLUEWAKE_CONTROLS_ACTIONS][2]{};
     int32_t action_buttons[BLUEWAKE_CONTROLS_ACTIONS]{-1, -1, -1, -1};
+    int32_t quick_items_trigger = -1;
+    BluewakeControlsAxis triggers[2]{};
     int32_t native_keys[BLUEWAKE_CONTROLS_BUTTONS]{};
     int32_t native_buttons[BLUEWAKE_CONTROLS_BUTTONS]{};
 };
@@ -94,6 +96,7 @@ bool input_blocked, capture_held;
 bool suppress_stick, suppress_camera, suppress_zoom_up, suppress_zoom_down;
 BluewakeControlsActions actions;
 bool capture_actions_held = true;
+bool modifier_trigger_held;
 bool suppressed_keys[BLUEWAKE_CONTROLS_ACTIONS][2]{}, previous_keys[BLUEWAKE_CONTROLS_ACTIONS][2]{}, pending_keys[BLUEWAKE_CONTROLS_ACTIONS][2]{};
 bool suppressed_buttons[BLUEWAKE_CONTROLS_ACTIONS]{}, previous_buttons[BLUEWAKE_CONTROLS_ACTIONS]{}, pending_buttons[BLUEWAKE_CONTROLS_ACTIONS]{};
 
@@ -105,6 +108,7 @@ void invalidate_actions() {
     actions.generation = generation;
     actions.blocked = input_blocked;
     capture_actions_held = true;
+    modifier_trigger_held = false;
     std::memset(previous_keys, 0, sizeof previous_keys);
     std::memset(pending_keys, 0, sizeof pending_keys);
     std::memset(previous_buttons, 0, sizeof previous_buttons);
@@ -128,6 +132,8 @@ void publish_input(const BluewakeControlsSnapshot* state) {
         input_snapshot.zoom_up = state->controller_buttons[3];
         input_snapshot.zoom_down = state->controller_buttons[2];
         std::copy(std::begin(state->action_buttons), std::end(state->action_buttons), input_snapshot.action_buttons);
+        input_snapshot.quick_items_trigger = state->quick_items_trigger;
+        std::copy(state->controller_axes + 8, state->controller_axes + 10, input_snapshot.triggers);
         std::copy(std::begin(state->controller_buttons), std::end(state->controller_buttons), input_snapshot.native_buttons);
         if (legacy_swap_ab) std::swap(input_snapshot.native_buttons[7],input_snapshot.native_buttons[8]);
         if (legacy_swap_xy) std::swap(input_snapshot.native_buttons[9],input_snapshot.native_buttons[10]);
@@ -140,11 +146,16 @@ void publish_input(const BluewakeControlsSnapshot* state) {
         old.keyboard_enabled != input_snapshot.keyboard_enabled ||
         std::memcmp(old.action_keys, input_snapshot.action_keys, sizeof old.action_keys) != 0 ||
         std::memcmp(old.action_buttons, input_snapshot.action_buttons, sizeof old.action_buttons) != 0 ||
+        old.quick_items_trigger != input_snapshot.quick_items_trigger ||
+        std::memcmp(old.triggers, input_snapshot.triggers, sizeof old.triggers) != 0 ||
         std::memcmp(old.native_keys, input_snapshot.native_keys, sizeof old.native_keys) != 0 ||
         std::memcmp(old.native_buttons, input_snapshot.native_buttons, sizeof old.native_buttons) != 0 ||
         std::memcmp(old.axes, input_snapshot.axes, sizeof old.axes) != 0 ||
         old.zones.enabled != input_snapshot.zones.enabled ||
-        old.zones.stick != input_snapshot.zones.stick) {
+        old.zones.stick != input_snapshot.zones.stick ||
+        old.zones.emulate_triggers != input_snapshot.zones.emulate_triggers ||
+        old.zones.trigger_left != input_snapshot.zones.trigger_left ||
+        old.zones.trigger_right != input_snapshot.zones.trigger_right) {
         invalidate_actions();
     }
     // A replacement controller must release held input before taking over.
@@ -154,6 +165,9 @@ void publish_input(const BluewakeControlsSnapshot* state) {
 bool fail(const char* message) { error = message; return false; }
 bool valid_key(int value) { return value >= PAD_KEY_MOUSE_X2 && value < SDL_SCANCODE_COUNT; }
 bool valid_button(int value) { return value >= -1 && value < SDL_GAMEPAD_BUTTON_COUNT; }
+bool valid_modifier_trigger(int value) {
+    return value == -1 || value == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || value == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+}
 bool valid_axis(const BluewakeControlsAxis& value) {
     return value.axis >= -1 && value.axis < SDL_GAMEPAD_AXIS_COUNT &&
         valid_button(value.button) && (value.sign == -1 || value.sign == 1) &&
@@ -181,6 +195,7 @@ void keyboard_defaults(BluewakeControlsSnapshot& state) {
     state.action_keys[BLUEWAKE_ACTION_FIRST_PERSON][1] = PAD_KEY_INVALID;
     state.action_keys[BLUEWAKE_ACTION_QUICK_ITEMS][0] = SDL_SCANCODE_TAB;
     state.action_keys[BLUEWAKE_ACTION_QUICK_ITEMS][1] = PAD_KEY_INVALID;
+    state.quick_items_trigger = -1;
 }
 void controller_defaults(BluewakeControlsSnapshot& state, uint16_t product = 0) {
     std::fill(std::begin(state.controller_buttons), std::end(state.controller_buttons), -1);
@@ -192,6 +207,7 @@ void controller_defaults(BluewakeControlsSnapshot& state, uint16_t product = 0) 
     state.action_buttons[BLUEWAKE_ACTION_SPRINT] = SDL_GAMEPAD_BUTTON_LEFT_STICK;
     state.action_buttons[BLUEWAKE_ACTION_FIRST_PERSON] = SDL_GAMEPAD_BUTTON_RIGHT_STICK;
     state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS] = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+    state.quick_items_trigger = -1;
 }
 void capture_keyboard() {
     u32 count = 0;
@@ -352,7 +368,7 @@ bool parse(std::istream& in, Settings& candidate) {
         int values[12]{};
         unsigned bit = 0;
         if (section == -1) {
-            if (name == "version") { bit = 1; if (value != "1" && value != "2" && value != "3") return false; version = value[0] - '0'; }
+            if (name == "version") { bit = 1; if (value != "1" && value != "2" && value != "3" && value != "4") return false; version = value[0] - '0'; }
             else if (name == "keyboard_enabled") { bit = 2; if (!numbers(value, values, 1) || (values[0] != 0 && values[0] != 1)) return false; candidate.keyboard.keyboard_enabled = values[0] != 0; }
             else if (name == "key_buttons") { bit = 4; if (!numbers(value, values, 12)) return false; for (unsigned i=0;i<12;++i) { if (bluewake_controls_key_reserved(values[i])) return false; candidate.keyboard.key_buttons[i]=values[i]; } }
             else if (name == "key_axes") { bit = 8; if (!numbers(value, values, 10)) return false; for (unsigned i=0;i<10;++i) { if (bluewake_controls_key_reserved(values[i])) return false; candidate.keyboard.key_axes[i]=values[i]; } }
@@ -360,7 +376,7 @@ bool parse(std::istream& in, Settings& candidate) {
             else if (name == "preferred_guid") { bit = 32; if (!value.empty() && !guid_valid(value)) return false; candidate.preferred_guid=value; }
             else if (name == "preferred_serial") { bit = 64; if (!unhex(value, candidate.preferred_serial)) return false; }
             else if (name == "host_keys") {
-                const unsigned count = version == 3 ? BLUEWAKE_CONTROLS_ACTIONS * 2u : 6u;
+                const unsigned count = version >= 3 ? BLUEWAKE_CONTROLS_ACTIONS * 2u : 6u;
                 bit = 128; if (version < 2 || !numbers(value, values, count)) return false;
                 for (unsigned i = 0; i < count; ++i) {
                     if (bluewake_controls_key_reserved(values[i])) return false;
@@ -388,19 +404,26 @@ bool parse(std::istream& in, Settings& candidate) {
                 state.invert_stick_x=values[0]!=0; state.invert_stick_y=values[1]!=0;
                 state.invert_camera_x=values[2]!=0; state.invert_camera_y=values[3]!=0;
             } else if (name == "host_buttons") {
-                const unsigned count = version == 3 ? BLUEWAKE_CONTROLS_ACTIONS : 3u;
+                const unsigned count = version >= 3 ? BLUEWAKE_CONTROLS_ACTIONS : 3u;
                 bit=1u << 13; if (version < 2 || !numbers(value,values,count)) return false;
                 for (unsigned i=0;i<count;++i) {
                     if (!valid_button(values[i]) || values[i] == SDL_GAMEPAD_BUTTON_BACK) return false;
                     state.action_buttons[i] = values[i];
                 }
+            } else if (name == "quick_items_trigger") {
+                bit = 1u << 14;
+                if (version < 4 || !numbers(value, values, 1) || !valid_modifier_trigger(values[0])) return false;
+                state.quick_items_trigger = values[0];
             }
             if (!bit || profile_seen[section] & bit) return false;
             profile_seen[section] |= bit;
         }
     }
     return !in.bad() && version != 0 && global_seen == (version >= 2 ? 255u : 127u) && (candidate.automatic || !candidate.preferred_guid.empty()) &&
-        std::all_of(profile_seen.begin(), profile_seen.end(), [version](unsigned seen) { return seen == (version >= 2 ? 16383u : 8191u); });
+        std::all_of(profile_seen.begin(), profile_seen.end(), [version](unsigned seen) { return seen == (version >= 4 ? 32767u : version >= 2 ? 16383u : 8191u); }) &&
+        std::all_of(candidate.profiles.begin(), candidate.profiles.end(), [](const auto& profile) {
+            return profile.state.quick_items_trigger == -1 || profile.state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS] == -1;
+        });
 }
 void changed(bool keyboard = false) {
     dirty = true; error.clear(); status = "Unsaved control changes";
@@ -565,7 +588,16 @@ bool bluewake_controls_set_action_key(unsigned action,unsigned source,int32_t ke
 bool bluewake_controls_set_action_button(unsigned action,int32_t button){
     auto* profile = current_profile(); if (!profile) return fail("Connect a controller first");
     if (action >= BLUEWAKE_CONTROLS_ACTIONS || !valid_button(button) || button == SDL_GAMEPAD_BUTTON_BACK) return fail("Invalid or reserved action button");
-    profile->state.action_buttons[action] = button; changed(); return true;
+    profile->state.action_buttons[action] = button;
+    if (action == BLUEWAKE_ACTION_QUICK_ITEMS) profile->state.quick_items_trigger = -1;
+    changed(); return true;
+}
+bool bluewake_controls_set_quick_items_trigger(int32_t axis){
+    auto* profile = current_profile(); if (!profile) return fail("Connect a controller first");
+    if (!valid_modifier_trigger(axis)) return fail("Choose the left or right trigger");
+    profile->state.quick_items_trigger = axis;
+    profile->state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS] = -1;
+    changed(); return true;
 }
 const char* bluewake_controls_action_name(unsigned action){return action < BLUEWAKE_CONTROLS_ACTIONS ? action_names[action] : "";}
 void bluewake_controls_set_legacy_preferences(bool ab,bool xy,bool cx,bool cy){
@@ -623,6 +655,7 @@ void bluewake_controls_retrace(void){
     const auto& state = input_snapshot;
     if (!state.initialized || input_blocked) return;
     bool key_levels[BLUEWAKE_CONTROLS_ACTIONS][2]{}, pad_levels[BLUEWAKE_CONTROLS_ACTIONS]{};
+    uint16_t modifier_trigger_buttons = 0;
     int key_count = 0;
     const bool* keys = SDL_GetKeyboardState(&key_count);
     const auto mouse = SDL_GetMouseState(nullptr,nullptr);
@@ -637,10 +670,28 @@ void bluewake_controls_retrace(void){
     if (pad && SDL_GamepadConnected(pad)) {
         for (unsigned a = 0; a < BLUEWAKE_CONTROLS_ACTIONS; ++a) if (state.action_buttons[a] >= 0)
             pad_levels[a] = SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(state.action_buttons[a]));
+        if (state.quick_items_trigger >= 0) {
+            const int value = SDL_GetGamepadAxis(pad,static_cast<SDL_GamepadAxis>(state.quick_items_trigger));
+            // A source already held on menu close/rebind must release first,
+            // including the hysteresis interval below the activation threshold.
+            if (capture_actions_held) modifier_trigger_held = value > BLUEWAKE_CONTROLS_TRIGGER_RELEASE;
+            else if (value >= BLUEWAKE_CONTROLS_TRIGGER_PRESS) modifier_trigger_held = true;
+            else if (value <= BLUEWAKE_CONTROLS_TRIGGER_RELEASE) modifier_trigger_held = false;
+            pad_levels[BLUEWAKE_ACTION_QUICK_ITEMS] = modifier_trigger_held;
+            if (state.zones.emulate_triggers) for (unsigned side = 0; side < 2; ++side) {
+                const auto& native = state.triggers[side];
+                const auto zone = side ? state.zones.trigger_right : state.zones.trigger_left;
+                // Aurora emulates a digital L/R only when it has no button
+                // mapping. Match the actual physical axis and current threshold.
+                if (state.native_buttons[side ? 5 : 6] == -1 && native.button == -1 &&
+                    native.axis == state.quick_items_trigger && native.sign == 1 && value > zone)
+                    modifier_trigger_buttons |= cpad_buttons[side ? 5 : 6];
+            }
+        } else modifier_trigger_held = false;
         const auto x = mapped_pair(pad,state,0,state.zones.stick);
         const auto y = mapped_pair(pad,state,2,state.zones.stick);
         actions.movement_tilt = std::min(1.0f,std::sqrt(x*x + y*y));
-    }
+    } else modifier_trigger_held = false;
     SDL_UnlockJoysticks();
     if (capture_actions_held) {
         std::memcpy(suppressed_keys,key_levels,sizeof suppressed_keys);
@@ -675,8 +726,9 @@ void bluewake_controls_retrace(void){
     actions.quick_items_down = key_held[BLUEWAKE_ACTION_QUICK_ITEMS] || pad_held[BLUEWAKE_ACTION_QUICK_ITEMS];
     if (pad_held[BLUEWAKE_ACTION_QUICK_ITEMS]) {
         const int source = state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS];
-        for (unsigned i = 0; i < BLUEWAKE_CONTROLS_BUTTONS; ++i)
+        if (source >= 0) for (unsigned i = 0; i < BLUEWAKE_CONTROLS_BUTTONS; ++i)
             if (state.native_buttons[i] == source) actions.quick_items_native_buttons |= cpad_buttons[i];
+        actions.quick_items_native_buttons |= modifier_trigger_buttons;
     }
     for (unsigned s = 0; s < 2; ++s) {
         if (!key_levels[BLUEWAKE_ACTION_QUICK_ITEMS][s] || suppressed_keys[BLUEWAKE_ACTION_QUICK_ITEMS][s]) continue;
@@ -744,7 +796,7 @@ bool bluewake_controls_reset_controller(void){
 bool bluewake_controls_save(void){
     if(!ready)return fail("Controls are not initialized");
     std::ostringstream text;
-    text<<"[controls]\nversion=3\nkeyboard_enabled="<<saved.keyboard.keyboard_enabled<<'\n';
+    text<<"[controls]\nversion=4\nkeyboard_enabled="<<saved.keyboard.keyboard_enabled<<'\n';
     write_numbers(text,"key_buttons",saved.keyboard.key_buttons);write_numbers(text,"key_axes",saved.keyboard.key_axes);
     text<<"automatic="<<saved.automatic<<"\npreferred_guid="<<saved.preferred_guid<<"\npreferred_serial="<<hex(saved.preferred_serial)<<'\n';
     text<<"host_keys=";
@@ -758,6 +810,7 @@ bool bluewake_controls_save(void){
         text<<"dead_zones="<<zone.enabled<<','<<zone.emulate_triggers<<','<<zone.stick<<','<<zone.camera<<','<<zone.trigger_left<<','<<zone.trigger_right<<'\n';
         text<<"invert="<<state.invert_stick_x<<','<<state.invert_stick_y<<','<<state.invert_camera_x<<','<<state.invert_camera_y<<'\n';
         write_numbers(text,"host_buttons",state.action_buttons);
+        text<<"quick_items_trigger="<<state.quick_items_trigger<<'\n';
     }
     const auto bytes=text.str();
     // Each process owns an exclusively created candidate. Two running games
@@ -897,7 +950,9 @@ bool bluewake_controls_load(void){
     Settings candidate;
     if(!parse(file,candidate))return fail("Invalid controls.ini; current controls were preserved");
     saved=std::move(candidate);selected=0;dirty=false;apply_keyboard=true;apply_controller=true;
-    error.clear();status="Controls loaded";bluewake_controls_refresh();return true;
+    error.clear();status="Controls loaded";bluewake_controls_refresh();
+    // Reloading identical mappings must still require held host actions to release.
+    bluewake_controls_cancel_actions();return true;
 }
 bool bluewake_controls_dirty(void){return dirty;}
 const char* bluewake_controls_error(void){return error.c_str();}

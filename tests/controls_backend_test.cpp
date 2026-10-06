@@ -123,6 +123,67 @@ void menu_open(bool open) {
     bluewake_controls_set_input_blocked(open);
     PADBlockInput(open);
 }
+void trigger_modifier_backend(VirtualPad& pad,VirtualPad& other) {
+    const auto selected=bluewake_controls_selected();
+    assert(bluewake_controls_select(pad.id));
+    const auto original=snapshot();
+    pad.neutral();other.neutral();camera_read();pad_read();
+    // Rebinding only the enhancement must leave all ordinary native input intact.
+    pad.axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,32767);
+    pad.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,32767);
+    for(unsigned i : {0u,1u,2u,3u,4u,9u,10u}) if(original.controller_buttons[i]>=0)
+        pad.button(static_cast<SDL_GamepadButton>(original.controller_buttons[i]),true);
+    const auto before=pad_read();
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
+    const auto after=pad_read();
+    assert(before.button==after.button&&before.extButton==after.extButton);
+    assert(before.triggerLeft==after.triggerLeft&&before.triggerRight==after.triggerRight);
+    assert(before.triggerLeft>0&&before.triggerRight>0);
+    assert(snapshot().controller_axes[8].axis==original.controller_axes[8].axis);
+    assert(snapshot().controller_axes[9].axis==original.controller_axes[9].axis);
+    pad.neutral();camera_read();pad_read();
+    assert(bluewake_controls_set_button(5,-1)&&bluewake_controls_set_button(6,-1));
+    assert(bluewake_controls_set_axis(8,{SDL_GAMEPAD_AXIS_LEFT_TRIGGER,1,-1}));
+    assert(bluewake_controls_set_axis(9,{SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,1,-1}));
+    auto zones=original.dead_zones;zones.emulate_triggers=true;zones.trigger_left=zones.trigger_right=20000;
+    assert(bluewake_controls_set_dead_zones(zones));
+    auto level=[&](SDL_GamepadAxis axis,int value) {
+        // SDL maps the full signed joystick range to 0..32767 and truncates.
+        pad.axis(axis,static_cast<Sint16>(value ? value*2-32767 : -32768));
+        const int observed=SDL_GetGamepadAxis(SDL_GetGamepadFromID(pad.id),axis);
+        if(observed!=value)std::fprintf(stderr,"Trigger mapping: expected %d, observed %d\n",value,observed);
+        assert(observed==value);
+    };
+    auto check=[&](bool expected,uint16_t mask=0) {
+        BluewakeControlsActions actions{};bluewake_controls_retrace();assert(bluewake_controls_read_actions(&actions));
+        assert(actions.quick_items_down==expected&&actions.quick_items_native_buttons==mask);
+        assert((actions.quick_items_native_buttons&0x0060)==0);
+    };
+    check(false);other.axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,32767);check(false);
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,16383);check(false);
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,16384);check(true);
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,25000);check(true,0x0200);
+    assert((pad_read().button&PAD_TRIGGER_L)!=0);
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,15000);check(true);
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,12000);check(false);
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,25000);check(true,0x0200);
+    menu_open(true);check(false);assert_neutral(pad_read());
+    menu_open(false);check(false);assert_neutral(pad_read());
+    level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,15000);check(false);
+    pad.neutral();check(false);pad_read();level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,25000);check(true,0x0200);
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
+    level(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,25000);check(false);
+    pad.neutral();check(false);level(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,25000);check(true,0x0400);
+    assert(bluewake_controls_select(other.id));
+    assert(bluewake_controls_select(pad.id));check(false); // Device replacement cannot leak held input.
+    pad.neutral();check(false);
+    assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_QUICK_ITEMS,original.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]));
+    assert(snapshot().quick_items_trigger==-1);
+    for(unsigned i=5;i<=6;++i)assert(bluewake_controls_set_button(i,original.controller_buttons[i]));
+    for(unsigned i=8;i<=9;++i)assert(bluewake_controls_set_axis(i,original.controller_axes[i]));
+    assert(bluewake_controls_set_dead_zones(original.dead_zones));
+    other.neutral();assert(bluewake_controls_select(selected));camera_read();pad_read();
+}
 void add_serial_profile(std::string& contents, const std::string& guid,
                         const char* serial_hex, int native_a) {
     const auto begin = contents.find("[controller " + guid + ":]");
@@ -337,10 +398,10 @@ int main() {
 
     // Import the old schema while preserving the existing 12/10 game bindings.
     auto legacy = good;
-    const auto legacy_version = legacy.find("version=3");
+    const auto legacy_version = legacy.find("version=4");
     assert(legacy_version != std::string::npos);
     legacy.replace(legacy_version,9,"version=1");
-    for (const auto* field : {"host_keys=","host_buttons="})
+    for (const auto* field : {"host_keys=","host_buttons=","quick_items_trigger="})
         for (size_t at = legacy.find(field); at != std::string::npos; at = legacy.find(field))
             legacy.erase(at,legacy.find('\n',at)-at+1);
     write_file(file,legacy);
@@ -351,9 +412,10 @@ int main() {
     assert(snapshot().action_keys[BLUEWAKE_ACTION_SPRINT][1] == SDL_SCANCODE_RSHIFT);
     assert(snapshot().action_keys[BLUEWAKE_ACTION_QUICK_ITEMS][0] == SDL_SCANCODE_TAB);
     assert(snapshot().action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS] == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
-    assert(bluewake_controls_save() && read_file(file).find("version=3") != std::string::npos);
+    assert(bluewake_controls_save() && read_file(file).find("version=4") != std::string::npos);
     for (auto key : keys) PADLatchKeyEvent(key,0);
     SDL_Delay(2);
+    trigger_modifier_backend(first,returned);
     assert(bluewake_controls_select(first.id));
     assert(bluewake_controls_set_action_key(BLUEWAKE_ACTION_JUMP,0,SDL_SCANCODE_V));
     assert(bluewake_controls_set_action_key(BLUEWAKE_ACTION_JUMP,1,PAD_KEY_MOUSE_X1));
@@ -449,10 +511,10 @@ int main() {
     assert(snapshot().action_buttons[BLUEWAKE_ACTION_JUMP] == -1);
     assert(bluewake_controls_save());
     auto nso_legacy = read_file(file);
-    const auto nso_version = nso_legacy.find("version=3");
+    const auto nso_version = nso_legacy.find("version=4");
     assert(nso_version != std::string::npos);
     nso_legacy.replace(nso_version,9,"version=1");
-    for (const auto* field : {"host_keys=","host_buttons="})
+    for (const auto* field : {"host_keys=","host_buttons=","quick_items_trigger="})
         for (size_t at=nso_legacy.find(field);at!=std::string::npos;at=nso_legacy.find(field))
             nso_legacy.erase(at,nso_legacy.find('\n',at)-at+1);
     write_file(file,nso_legacy);assert(bluewake_controls_load());

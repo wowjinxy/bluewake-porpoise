@@ -58,6 +58,84 @@ void expect_rejected(const std::filesystem::path& path,const std::string& data){
     assert(id==bluewake_controls_selected());assert(was_dirty==bluewake_controls_dirty());assert(applied==writes);
     assert(std::strlen(bluewake_controls_error())!=0);
 }
+void trigger_modifier_contract(SDL_Gamepad& pad,SDL_Gamepad& other,const std::filesystem::path& file) {
+    BluewakeControlsSnapshot original{},other_original{},state{};
+    bluewake_controls_snapshot(&original);
+    assert(bluewake_controls_select(other.id));bluewake_controls_snapshot(&other_original);
+    assert(bluewake_controls_select(pad.id));
+    assert(!bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_LEFTX));
+    assert(!bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_COUNT));
+    assert(!bluewake_controls_set_quick_items_trigger(-2));
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
+    bluewake_controls_snapshot(&state);
+    assert(state.quick_items_trigger==SDL_GAMEPAD_AXIS_LEFT_TRIGGER&&state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==-1);
+    assert(std::memcmp(original.controller_buttons,state.controller_buttons,sizeof state.controller_buttons)==0);
+    assert(std::memcmp(original.controller_axes,state.controller_axes,sizeof state.controller_axes)==0);
+    assert(bluewake_controls_set_button(5,-1)&&bluewake_controls_set_button(6,-1));
+    assert(bluewake_controls_set_axis(8,{SDL_GAMEPAD_AXIS_LEFT_TRIGGER,1,-1}));
+    assert(bluewake_controls_set_axis(9,{SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,1,-1}));
+    auto zones=original.dead_zones;zones.emulate_triggers=true;zones.trigger_left=zones.trigger_right=20000;
+    assert(bluewake_controls_set_dead_zones(zones));
+    raw_keys.fill(false);pad.raw_buttons.fill(false);pad.raw_axes.fill(0);other.raw_axes.fill(0);
+    unsigned step=0;
+    auto check=[&](bool down,uint16_t mask=0) {
+        ++step;
+        BluewakeControlsActions value{};bluewake_controls_retrace();assert(bluewake_controls_read_actions(&value));
+        if(value.quick_items_down!=down||value.quick_items_native_buttons!=mask)
+            std::cerr<<"Trigger step "<<step<<": expected "<<down<<'/'<<mask<<", observed "
+                     <<value.quick_items_down<<'/'<<value.quick_items_native_buttons<<'\n';
+        assert(value.quick_items_down==down&&value.quick_items_native_buttons==mask);
+        assert((value.quick_items_native_buttons&0x0060)==0); // LT/RT must never exempt unrelated X/Y.
+    };
+    check(false);
+    other.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=32767;check(false); // Selected device only.
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=-32768;check(false);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=BLUEWAKE_CONTROLS_TRIGGER_PRESS-1;check(false);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=BLUEWAKE_CONTROLS_TRIGGER_PRESS;check(true);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;check(true,0x0200);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=15000;check(true); // Hysteresis, below native L activation.
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=BLUEWAKE_CONTROLS_TRIGGER_RELEASE;check(false);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;check(true,0x0200);
+    bluewake_controls_set_input_blocked(true);bluewake_controls_set_input_blocked(false);check(false);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=15000;check(false); // Still held after menu close.
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=12000;check(false);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;check(true,0x0200);
+    assert(bluewake_controls_set_axis(8,{SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,1,-1}));
+    assert(bluewake_controls_set_axis(9,{SDL_GAMEPAD_AXIS_LEFT_TRIGGER,1,-1}));
+    check(false);pad.raw_axes.fill(0);check(false);
+    pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;check(true,0x0400); // Remapped to native R.
+    zones.emulate_triggers=false;assert(bluewake_controls_set_dead_zones(zones));check(false);
+    pad.raw_axes.fill(0);check(false);pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;check(true);
+    zones.emulate_triggers=true;assert(bluewake_controls_set_dead_zones(zones));
+    assert(bluewake_controls_set_button(5,SDL_GAMEPAD_BUTTON_NORTH));
+    pad.raw_axes.fill(0);check(false);pad.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;check(true);
+    assert(bluewake_controls_set_button(5,-1));pad.raw_axes.fill(0);check(false);
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
+    pad.raw_axes[SDL_GAMEPAD_AXIS_RIGHT_TRIGGER]=25000;check(false); // Rebind held source requires release.
+    pad.raw_axes.fill(0);check(false);pad.raw_axes[SDL_GAMEPAD_AXIS_RIGHT_TRIGGER]=25000;check(true,0x0200);
+    assert(save());const auto persisted=read(file);
+    write(file,"version=4\ninvalid=1\n");assert(!bluewake_controls_load());check(true,0x0200);
+    write(file,persisted);assert(bluewake_controls_load());check(false); // Load cannot leak a held modifier.
+    bluewake_controls_snapshot(&state);assert(state.quick_items_trigger==SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+    assert(bluewake_controls_select(other.id));assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
+    assert(bluewake_controls_select(pad.id));assert(save());assert(bluewake_controls_load());
+    assert(bluewake_controls_select(other.id));bluewake_controls_snapshot(&state);
+    assert(state.quick_items_trigger==SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+    assert(bluewake_controls_select(pad.id));bluewake_controls_snapshot(&state);
+    assert(state.quick_items_trigger==SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+    pad.connected=false;bluewake_controls_refresh();check(false);
+    pad.connected=true;bluewake_controls_refresh();check(false); // Held reconnect stays suppressed.
+    pad.raw_axes.fill(0);check(false);pad.raw_axes[SDL_GAMEPAD_AXIS_RIGHT_TRIGGER]=25000;check(true,0x0200);
+    assert(bluewake_controls_select(other.id));
+    assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_QUICK_ITEMS,other_original.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]));
+    assert(bluewake_controls_select(pad.id));
+    assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_QUICK_ITEMS,original.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]));
+    bluewake_controls_snapshot(&state);assert(state.quick_items_trigger==-1);
+    for(unsigned i=5;i<=6;++i)assert(bluewake_controls_set_button(i,original.controller_buttons[i]));
+    for(unsigned i=8;i<=9;++i)assert(bluewake_controls_set_axis(i,original.controller_axes[i]));
+    assert(bluewake_controls_set_dead_zones(original.dead_zones));
+    pad.raw_axes.fill(0);other.raw_axes.fill(0);check(false);
+}
 #ifdef _WIN32
 int concurrent_writer(const std::filesystem::path& directory,int scancode,const wchar_t* event_name) {
     SDL_Gamepad first{11,2,{},"serial-first"},second{22,1,{},"serial-second"};
@@ -135,6 +213,7 @@ bool same_bindings(const BluewakeControlsSnapshot& a,const BluewakeControlsSnaps
     field(a.dead_zones.camera,b.dead_zones.camera,"camera_zone");
     field(a.dead_zones.trigger_left,b.dead_zones.trigger_left,"left_zone");
     field(a.dead_zones.trigger_right,b.dead_zones.trigger_right,"right_zone");
+    field(a.quick_items_trigger,b.quick_items_trigger,"quick_items_trigger");
     field(a.invert_stick_x,b.invert_stick_x,"invert_stick_x");
     field(a.invert_stick_y,b.invert_stick_y,"invert_stick_y");
     field(a.invert_camera_x,b.invert_camera_x,"invert_camera_x");
@@ -344,8 +423,8 @@ int main(){
     assert(state.keyboard_enabled&&state.key_buttons[7]==SDL_SCANCODE_J);
     // Version 1 maps survive migration and gain the original host-action defaults.
     auto legacy=good;
-    legacy.replace(legacy.find("version=3"),9,"version=1");
-    for(const auto* field:{"host_keys=","host_buttons="})for(size_t at=legacy.find(field);at!=std::string::npos;at=legacy.find(field))
+    legacy.replace(legacy.find("version=4"),9,"version=1");
+    for(const auto* field:{"host_keys=","host_buttons=","quick_items_trigger="})for(size_t at=legacy.find(field);at!=std::string::npos;at=legacy.find(field))
         legacy.erase(at,legacy.find('\n',at)-at+1);
     write(file,legacy);assert(bluewake_controls_load());bluewake_controls_snapshot(&state);
     assert(state.controller_buttons[7]==SDL_GAMEPAD_BUTTON_NORTH&&state.controller_axes[0].axis==SDL_GAMEPAD_AXIS_LEFTY);
@@ -355,7 +434,8 @@ int main(){
     assert(state.action_buttons[BLUEWAKE_ACTION_FIRST_PERSON]==SDL_GAMEPAD_BUTTON_RIGHT_STICK);
     assert(state.action_keys[BLUEWAKE_ACTION_QUICK_ITEMS][0]==SDL_SCANCODE_TAB);
     assert(state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
-    assert(save());assert(read(file).find("version=3")!=std::string::npos);
+    assert(state.quick_items_trigger==-1);
+    assert(save());assert(read(file).find("version=4")!=std::string::npos);
     assert(!bluewake_controls_set_action_key(0,2,SDL_SCANCODE_V));
     assert(!bluewake_controls_set_action_key(BLUEWAKE_CONTROLS_ACTIONS,0,SDL_SCANCODE_V));
     assert(!bluewake_controls_set_action_key(0,0,SDL_SCANCODE_F1));
@@ -387,6 +467,7 @@ int main(){
     SDL_Event modifier_tap{};modifier_tap.type=SDL_EVENT_KEY_DOWN;modifier_tap.key.scancode=SDL_SCANCODE_TAB;
     bluewake_controls_action_event(&modifier_tap);modifier_tap.type=SDL_EVENT_KEY_UP;bluewake_controls_action_event(&modifier_tap);
     bluewake_controls_retrace();assert(bluewake_controls_read_actions(&actions)&&!actions.quick_items_down); // Modifier does not latch taps.
+    trigger_modifier_contract(second,first,file);
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_JUMP,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
     bluewake_controls_retrace();second.raw_buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER]=true;
     bluewake_controls_retrace();assert(bluewake_controls_read_actions(&actions)&&actions.jump_pressed&&actions.jump_modifier_conflict);
@@ -438,7 +519,19 @@ int main(){
     assert(state.action_keys[BLUEWAKE_ACTION_QUICK_ITEMS][0]==SDL_SCANCODE_TAB);
     assert(state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
     // Version 2 retains custom action maps and gains only the new modifier defaults.
-    auto v2=action_good;v2.replace(v2.find("version=3"),9,"version=2");
+    auto v3=action_good;v3.replace(v3.find("version=4"),9,"version=3");
+    for(size_t at=v3.find("quick_items_trigger=");at!=std::string::npos;at=v3.find("quick_items_trigger="))
+        v3.erase(at,v3.find('\n',at)-at+1);
+    write(file,v3);assert(bluewake_controls_load());bluewake_controls_snapshot(&state);
+    assert(state.quick_items_trigger==-1&&state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+    assert(save());assert(read(file)==action_good);
+    auto bad_trigger=action_good;
+    auto trigger_at=bad_trigger.find("quick_items_trigger=");
+    bad_trigger.replace(trigger_at,bad_trigger.find('\n',trigger_at)-trigger_at,"quick_items_trigger=0");expect_rejected(file,bad_trigger);
+    bad_trigger=action_good;bad_trigger.replace(trigger_at,bad_trigger.find('\n',trigger_at)-trigger_at,"quick_items_trigger=4");
+    expect_rejected(file,bad_trigger); // A trigger and digital modifier cannot both be selected.
+    expect_rejected(file,action_good+"quick_items_trigger=-1\n"); // Duplicate field.
+    auto v2=v3;v2.replace(v2.find("version=3"),9,"version=2");
     for(const auto* field:{"host_keys=","host_buttons="}) {
         size_t at=0;
         while((at=v2.find(field,at))!=std::string::npos) {

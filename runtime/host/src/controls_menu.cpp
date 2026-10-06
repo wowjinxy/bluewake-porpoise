@@ -213,7 +213,10 @@ void action_rows(bool keyboard,const BluewakeControlsSnapshot& state) {
         }
         row_text("%s%s",bluewake_controls_action_name(action),keyboard && i % 2 ? " (alternate)" : "");
         if (!compact_rows) ImGui::TableNextColumn();
-        row_plain_text(keyboard ? key_name(state.action_keys[action][i % 2]) : button_name(state.action_buttons[action]));
+        const char* controller_source = action == BLUEWAKE_ACTION_QUICK_ITEMS && state.quick_items_trigger >= 0 ?
+            (state.quick_items_trigger == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? "Left trigger (ZL / LT)" : "Right trigger (ZR / RT)") :
+            button_name(state.action_buttons[action]);
+        row_plain_text(keyboard ? key_name(state.action_keys[action][i % 2]) : controller_source);
         if (!compact_rows) ImGui::TableNextColumn();
         if (ImGui::Button("Bind")) bluewake_controls_menu_begin_capture(keyboard ? BLUEWAKE_CAPTURE_KEY_ACTION : BLUEWAKE_CAPTURE_CONTROLLER_ACTION,i);
         ImGui::SameLine();
@@ -419,11 +422,15 @@ extern "C" bool bluewake_controls_menu_event(const void* sdl_event) {
         } else {
             complete_capture(bluewake_controls_set_axis(capture_slot, {-1, 1, event->gbutton.button}));
         }
-    } else if (capture_kind == BLUEWAKE_CAPTURE_CONTROLLER_AXIS &&
+    } else if ((capture_kind == BLUEWAKE_CAPTURE_CONTROLLER_AXIS ||
+                (capture_kind == BLUEWAKE_CAPTURE_CONTROLLER_ACTION && capture_slot == BLUEWAKE_ACTION_QUICK_ITEMS)) &&
                event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION && event->gaxis.which == capture_device) {
         const int value = event->gaxis.value;
         const bool trigger = event->gaxis.axis >= SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
-        if (value >= 16384 || (!trigger && value <= -16384))
+        if (capture_kind == BLUEWAKE_CAPTURE_CONTROLLER_ACTION) {
+            if (trigger && value >= BLUEWAKE_CONTROLS_TRIGGER_PRESS)
+                complete_capture(bluewake_controls_set_quick_items_trigger(event->gaxis.axis));
+        } else if (value >= 16384 || (!trigger && value <= -16384))
             complete_capture(bluewake_controls_set_axis(capture_slot,
                 {event->gaxis.axis, value < 0 ? -1 : 1, -1}));
     }
@@ -438,6 +445,8 @@ extern "C" void bluewake_controls_menu_draw(void) {
         ImGui::TextWrapped("Binding: %s",capture_name());
         if (!capture_armed) ImGui::TextWrapped("Release held keys/buttons and center the stick first.");
         else if (keyboard_capture()) ImGui::TextWrapped("Press a keyboard key or mouse button. Escape cancels.");
+        else if (capture_kind == BLUEWAKE_CAPTURE_CONTROLLER_ACTION && capture_slot == BLUEWAKE_ACTION_QUICK_ITEMS)
+            ImGui::TextWrapped("Press a controller button or the left/right trigger. Release held inputs first. Escape cancels.");
         else if (axis) ImGui::TextWrapped("Move a stick, press a trigger or a controller button. Escape cancels.");
         else ImGui::TextWrapped("Press a controller button. Stick and trigger mappings are in the section below.");
         if (ImGui::Button("Cancel binding (Esc)")) bluewake_controls_menu_cancel_capture();

@@ -39,7 +39,8 @@ void assert_persisted_profile() {
     assert(value.action_keys[BLUEWAKE_ACTION_SPRINT][1]==PAD_KEY_MOUSE_X2);
     assert(value.action_keys[BLUEWAKE_ACTION_QUICK_ITEMS][0]==SDL_SCANCODE_TAB);
     assert(value.action_buttons[BLUEWAKE_ACTION_FIRST_PERSON]==SDL_GAMEPAD_BUTTON_EAST);
-    assert(value.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+    assert(value.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==-1);
+    assert(value.quick_items_trigger==SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
 }
 #ifdef _WIN32
 void fresh_process_reload(const std::filesystem::path& folder) {
@@ -99,6 +100,7 @@ void save_retry_contract(const std::filesystem::path& folder) {
     BluewakeControlsSnapshot latest{};bluewake_controls_snapshot(&latest);
     latest.dead_zones.stick=12345;assert(bluewake_controls_set_dead_zones(latest.dead_zones));
     assert(bluewake_controls_set_invert(false,false,false,true));
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
     assert(std::string(bluewake_controls_menu_save_error())==failure); // Core edit cleared its own error only.
     bluewake_controls_menu_set_open(false);assert(!blocked&&bluewake_controls_dirty());
     assert(CloseHandle(locked));
@@ -199,6 +201,33 @@ int main(){
     event=controller_button(11,SDL_GAMEPAD_BUTTON_BACK);assert(bluewake_controls_menu_event(&event));assert(bluewake_controls_menu_capturing());
     event=controller_button(11,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);assert(bluewake_controls_menu_event(&event));
     bluewake_controls_snapshot(&snapshot);assert(snapshot.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+    const auto native_before=snapshot;
+    controller.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=25000;
+    assert(bluewake_controls_menu_begin_capture(BLUEWAKE_CAPTURE_CONTROLLER_ACTION,BLUEWAKE_ACTION_QUICK_ITEMS));
+    event={};event.type=SDL_EVENT_GAMEPAD_AXIS_MOTION;event.gaxis.which=11;event.gaxis.axis=SDL_GAMEPAD_AXIS_LEFT_TRIGGER;event.gaxis.value=25000;
+    assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing()); // Held on capture entry.
+    controller.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=13000;
+    assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing());
+    controller.raw_axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER]=12000;event.gaxis.value=12000;
+    assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing()); // Neutral arms capture.
+    event.gaxis.which=12;event.gaxis.value=32767;
+    assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing());
+    event.gaxis.which=11;event.gaxis.axis=SDL_GAMEPAD_AXIS_LEFTX;
+    assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing()); // Sticks cannot bind this action.
+    event.gaxis.axis=SDL_GAMEPAD_AXIS_LEFT_TRIGGER;event.gaxis.value=16383;
+    assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing());
+    event.gaxis.value=BLUEWAKE_CONTROLS_TRIGGER_PRESS;
+    assert(bluewake_controls_menu_event(&event)&&!bluewake_controls_menu_capturing());
+    bluewake_controls_snapshot(&snapshot);
+    assert(snapshot.quick_items_trigger==SDL_GAMEPAD_AXIS_LEFT_TRIGGER&&snapshot.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==-1);
+    assert(std::memcmp(snapshot.controller_buttons,native_before.controller_buttons,sizeof snapshot.controller_buttons)==0);
+    assert(std::memcmp(snapshot.controller_axes,native_before.controller_axes,sizeof snapshot.controller_axes)==0);
+    controller.raw_axes.fill(0);
+    assert(bluewake_controls_menu_begin_capture(BLUEWAKE_CAPTURE_CONTROLLER_ACTION,BLUEWAKE_ACTION_JUMP));
+    event.gaxis.value=32767;assert(bluewake_controls_menu_event(&event)&&bluewake_controls_menu_capturing()); // Other actions stay button-only.
+    bluewake_controls_menu_cancel_capture();
+    assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_QUICK_ITEMS,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+    bluewake_controls_snapshot(&snapshot);assert(snapshot.quick_items_trigger==-1);
     assert(!bluewake_controls_menu_begin_capture(BLUEWAKE_CAPTURE_KEY_ACTION,BLUEWAKE_CONTROLS_ACTIONS * 2));
     assert(!bluewake_controls_menu_begin_capture(BLUEWAKE_CAPTURE_CONTROLLER_ACTION,BLUEWAKE_CONTROLS_ACTIONS));
 

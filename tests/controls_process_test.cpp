@@ -42,6 +42,7 @@ void write_profile(const std::filesystem::path& dir) {
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_JUMP,SDL_GAMEPAD_BUTTON_WEST));
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_SPRINT,SDL_GAMEPAD_BUTTON_NORTH));
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_FIRST_PERSON,SDL_GAMEPAD_BUTTON_LEFT_STICK));
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
     assert(bluewake_controls_select(beta.id));
     assert(bluewake_controls_set_keyboard_enabled(true));
     assert(bluewake_controls_set_key(false,7,SDL_SCANCODE_B));
@@ -60,6 +61,7 @@ void write_profile(const std::filesystem::path& dir) {
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_JUMP,SDL_GAMEPAD_BUTTON_EAST));
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_SPRINT,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
     assert(bluewake_controls_set_action_button(BLUEWAKE_ACTION_FIRST_PERSON,SDL_GAMEPAD_BUTTON_NORTH));
+    assert(bluewake_controls_set_quick_items_trigger(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
     assert(bluewake_controls_save());
     assert(!bluewake_controls_dirty() && !std::filesystem::exists(dir/"controls.ini.tmp"));
     std::cout << "Saved custom controls and same-GUID serial-specific preference for a fresh process\n";
@@ -86,6 +88,7 @@ void read_profile(const std::filesystem::path& dir) {
     assert(state.action_buttons[BLUEWAKE_ACTION_JUMP] == SDL_GAMEPAD_BUTTON_EAST);
     assert(state.action_buttons[BLUEWAKE_ACTION_SPRINT] == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
     assert(state.action_buttons[BLUEWAKE_ACTION_FIRST_PERSON] == SDL_GAMEPAD_BUTTON_NORTH);
+    assert(state.quick_items_trigger==SDL_GAMEPAD_AXIS_RIGHT_TRIGGER&&state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==-1);
     assert(state.controller_buttons[7] == SDL_GAMEPAD_BUTTON_NORTH);
     assert(state.controller_axes[0].axis == SDL_GAMEPAD_AXIS_RIGHTX && state.controller_axes[0].sign == 1);
     assert(state.controller_axes[1].axis == SDL_GAMEPAD_AXIS_RIGHTX && state.controller_axes[1].sign == -1);
@@ -117,6 +120,7 @@ void read_profile(const std::filesystem::path& dir) {
     assert(state.action_buttons[BLUEWAKE_ACTION_JUMP] == SDL_GAMEPAD_BUTTON_WEST);
     assert(state.action_buttons[BLUEWAKE_ACTION_SPRINT] == SDL_GAMEPAD_BUTTON_NORTH);
     assert(state.action_buttons[BLUEWAKE_ACTION_FIRST_PERSON] == SDL_GAMEPAD_BUTTON_LEFT_STICK);
+    assert(state.quick_items_trigger==SDL_GAMEPAD_AXIS_LEFT_TRIGGER&&state.action_buttons[BLUEWAKE_ACTION_QUICK_ITEMS]==-1);
     assert(state.action_keys[BLUEWAKE_ACTION_JUMP][0] == SDL_SCANCODE_V);
     assert(!std::filesystem::exists(dir/"controller_ports.dat"));
     std::cout << "Fresh process loaded actions, mappings, GUID/serial preference, dead zones and inversions\n";
