@@ -315,9 +315,11 @@ Source reviews also accept the six-role host rebuild: three main compiles and
 three links, each retaining 73 accepted objects, including the shared trace
 sink. Its execution and new native diagnostic cohort remain pending.
 
-Next are provider diagnosis and separately qualified reference/OFF/ON rescue
-runs covering the six timer returns, original rewards,
-cleanup, replay and save recovery. The initial provider covers headless sessions;
-graphical-session ownership remains unqualified. The menu and ownership
-candidates remain private, the public main is unchanged, and the existing tester
-does not enable the skip.
+On October 6, the maintainer deferred this optional speedup. The Tingle rescue
+wait-skip stays disabled. Existing source, failed attempts, diagnostic results
+and authored regression evidence are preserved; no reference/OFF/ON continuation
+is scheduled. Provider diagnosis, native timer returns, original rewards,
+cleanup, replay, save recovery and graphical-session ownership remain open.
+The menu and ownership candidates remain private, and the shipping game and
+tester do not enable the skip. This work is not a prerequisite for core port,
+gameplay, other roadmap milestones or a tester build.

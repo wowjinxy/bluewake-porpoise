@@ -24,8 +24,9 @@ The source qualification digest is
 the actual result digest is
 `30f7c160394a7daddc7b9bcc95b2a7db41995b7a0f328ac0b57055784e1a09ad`.
 
-This commit adds the core and its regression target. Host ownership and menu
-integration are being qualified separately. Genuine rescue runs, original
-awards and cleanup, optimized replay, save recovery and graphical-session
-support remain pending. The shipping game and existing tester do not enable
-this feature.
+This commit adds the core and its regression target. The maintainer deferred
+the optional speedup on October 6. Host ownership, menu integration, genuine
+rescue runs, original awards and cleanup, optimized replay, save recovery and
+graphical-session support remain pending. Existing work and diagnostics are
+preserved. The shipping game and tester leave this feature disabled; it is not
+a prerequisite for core port, gameplay, other milestones or tester builds.
