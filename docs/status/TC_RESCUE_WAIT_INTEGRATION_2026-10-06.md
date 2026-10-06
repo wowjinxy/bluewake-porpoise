@@ -134,6 +134,23 @@ diagnostic streams are empty; each link retains the same 101-byte -gcodeview
 warning. Neither a host executable nor a game module was run. Adjacent runtime
 deployment and native behavior still need qualification.
 
+Both source reviews now accept the four isolated baseline/reference/OFF/ON
+case plans. They retain the original 73-segment input route, normal CARD loading,
+8500-retrace limit and separate save copies. Original periodic logical-state
+hashes are sampled evidence; reference/OFF raw checkpoint equality and ON's
+same-return timer checks remain separate requirements. The unchanged baseline
+cannot emit the recorder's raw boundary files.
+
+The first static dependency-reader run stopped on a Windows API-set contract
+alias. Its exact full-name lookup missed the schema's hashed contract prefix
+and importer-specific mapping. The failed output is preserved, and an independent
+file audit confirms all 2307 recorded inputs remain unchanged. Microsoft's
+[loader documentation](https://learn.microsoft.com/en-us/windows/win32/apiindex/api-set-loader-operation)
+describes schema redirection; the numerical lookup correction is being checked
+against the current table and [Wine's loader source](https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/loader.c).
+This investigation does not establish actual Windows loader behavior. No game
+case has launched, and runtime staging remains pending.
+
 Next are genuine baseline/reference/OFF/ON rescue runs
 covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
