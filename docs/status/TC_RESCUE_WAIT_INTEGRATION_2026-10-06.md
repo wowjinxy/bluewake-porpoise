@@ -85,10 +85,26 @@ its own review and authorization before compiling the remaining sources.
 
 The settings compile also retained a 975-byte nonfatal format-security warning
 for a fixed availability-name string passed to ImGui::TextWrapped. The accepted
-prefix is not diagnostic free. No failed compile was relabeled or rerun.
+prefix is not diagnostic free. The original failed attempt and its artifacts
+remain unchanged.
 
-Next are complete host links and genuine OFF/ON rescue runs covering the six
-timer returns, original rewards,
+The separately reviewed continuation completed all 15 remaining optimized
+compiles and both complete host links. Together with the four borrowed settings
+objects, the actual dependencies contain 3,636 mentions across 580 distinct
+inputs. The OFF link contains 64 ordered objects and 170 closed inputs; ON
+contains 73 ordered objects and 179 closed inputs. Both executables preserve
+the original embedded manifest and add no imported DLL families or symbols.
+Independent file-only checks cover the actual objects, dependency files,
+ordered reproduction archives and executable metadata. All borrowed inputs
+remain unchanged. These are build and file checks; neither executable was run.
+
+The new core compile retains deprecated ATOMIC_VAR_INIT warnings, and both
+links retain the warning that -gcodeview is unused during linking. Those
+diagnostics remain alongside the original stopped camera attempt and settings
+warning. The recipe is not diagnostic free.
+
+Next are the read-only provider regression and genuine OFF/ON rescue runs
+covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
 graphical-session ownership remains unqualified. The menu and ownership
 candidates remain private, the public main is unchanged, and the existing tester
