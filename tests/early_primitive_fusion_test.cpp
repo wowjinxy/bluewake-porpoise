@@ -31,7 +31,8 @@ struct Input {
 struct Capture {
   std::vector<ar::ConsumedDraw> draws;
   std::vector<gxc::DrawPlan> plans;
-  static void draw(const ar::ConsumedDraw& d,unsigned long long,void* u) { static_cast<Capture*>(u)->draws.push_back(d); }
+  std::vector<unsigned long long> ordinals;
+  static void draw(const ar::ConsumedDraw& d,unsigned long long n,void* u) { auto& c=*static_cast<Capture*>(u);c.draws.push_back(d);c.ordinals.push_back(n); }
   static void plan(const gxc::DrawPlan& p,void* u) { static_cast<Capture*>(u)->plans.push_back(p); }
 };
 static ar::RenderPacket state(std::uint64_t seq,ar::RenderStateKind kind,unsigned index,unsigned value,unsigned aux=0) {
@@ -141,4 +142,103 @@ static void core_boundaries() {
     if(mode==3){CHECK(captured.plans[0].draw_scope==77);CHECK(captured.plans[1].draw_scope==77);CHECK(captured.plans[1].draw_scope_part==2);}
   }
 }
-int main(){topology();boundaries();core_boundaries();std::printf("gxcore_fusion_tests: %u checks, %u failures\n",checks,failures);return failures?1:0;}
+
+// Regression: guest arrays can change after can-append's Draw-time proof and
+// before one of that Draw's trailing spans. The latest append must split,
+// retaining exact old owners and every current span already delivered.
+static void late_array_fallback() {
+  for (unsigned prefix=1;prefix<=3;++prefix) for(unsigned mode=0;mode<5;++mode) {
+    Input in; Capture cap; ar::ConsumingAuroraRenderSink c; setup(c,in,cap);
+    std::uint64_t seq=3;
+    auto av=payload(4),bv=payload(5,12),cv=payload(5,24);
+    CHECK(c.submit_packet(draw(seq++,0x98,av))); CHECK(c.submit_packet(span(seq++,av)));
+    for(unsigned i=1;i<prefix;++i) {
+      c.fuse_next_draw(1024); CHECK(c.submit_packet(draw(seq++,0xa0,bv)));
+      CHECK(c.submit_packet(span(seq++,bv)));
+    }
+    const auto prior=c.draws().back();
+    c.fuse_next_draw(1024); auto d=draw(seq++,0x98,cv);
+    d.draw.payload_pn_matrix_mask=4;
+    d.draw.transform_flags|=ar::kDrawTransformPayloadPnMatrixValid;
+    CHECK(c.submit_packet(d)); CHECK(c.fused_draws()==prefix);
+    if(mode==0)in.bytes[1]^=0x80;
+    if(mode==1)in.available=false;
+    auto sp=span(seq++,cv);
+    if(mode==2)sp.resource.element_size=8; // incompatible layout is unfused
+    if(mode==3)sp.resource.index_size=2;
+    if(mode==4){sp.resource.vertex_offset=1;sp.resource.element_size=8;}
+    CHECK(c.submit_packet(sp));
+    CHECK(c.failure_reason()==nullptr); CHECK(c.fused_draws()==prefix-1);
+    CHECK(cap.draws.size()==1); CHECK(cap.ordinals[0]==prefix); CHECK(cap.draws[0].vertex_payload==prior.vertex_payload);
+    CHECK(cap.draws[0].segments==prior.segments); CHECK(cap.draws[0].vertex_count==prior.vertex_count);
+    CHECK(cap.draws[0].payload_pn_matrix_mask==prior.payload_pn_matrix_mask);
+    CHECK(cap.draws[0].arrays[0].owned_data==prior.arrays[0].owned_data);
+    CHECK(c.draws().back().vertex_payload==cv); CHECK(c.draws().back().segments.empty());
+    CHECK(c.draws().back().payload_pn_matrix_mask==4); CHECK(c.draws().back().primitive==0x98);
+    CHECK(c.draws().back().arrays[0].resolved==(mode!=1));
+    if(mode==0)CHECK(std::memcmp(c.draws().back().arrays[0].host_data,in.bytes.data(),sp.resource.size)==0);
+    c.flush_assembly(); CHECK(cap.draws.size()==2); CHECK(cap.ordinals[1]==prefix+1); CHECK(c.failure_reason()==nullptr);
+    CHECK(c.draw_packets()==prefix+1); CHECK(c.vertex_inputs()==4+prefix*5);
+    CHECK(c.payload_bytes()==4+prefix*5);
+    if(mode==0) {
+      gxc::GapCounters gaps{};auto ps=plan_state();
+      auto old=ps.build_draw_plan(cap.draws[0],gaps),old_ref=ps.build_draw_plan(prior,gaps);
+      CHECK(old.ok&&old_ref.ok); CHECK(old.vertices==old_ref.vertices); CHECK(old.indices==old_ref.indices);
+      auto now=ps.build_draw_plan(cap.draws[1],gaps);
+      Input fresh;fresh.bytes=in.bytes;Capture refcap;ar::ConsumingAuroraRenderSink ref;setup(ref,fresh,refcap);
+      CHECK(ref.submit_packet(draw(3,0x98,cv)));CHECK(ref.submit_packet(span(4,cv)));ref.flush_assembly();
+      auto separate=ps.build_draw_plan(refcap.draws[0],gaps);
+      CHECK(now.ok&&separate.ok); CHECK(now.vertices==separate.vertices); CHECK(now.indices==separate.indices);
+      // Subsequent guest mutation and reset cannot alter either captured owner.
+      in.bytes.assign(in.bytes.size(),0x55);c.reset();
+      auto old_after=ps.build_draw_plan(cap.draws[0],gaps),new_after=ps.build_draw_plan(cap.draws[1],gaps);
+      CHECK(old_after.vertices==old.vertices);CHECK(new_after.vertices==now.vertices);
+    }
+  }
+  // Roll back an already extended first attribute when a later attribute
+  // rejects. Both the early incoming snapshot and the old owner must survive.
+  for(unsigned mode=0;mode<3;++mode) {
+    Input in;Capture cap;ar::ConsumingAuroraRenderSink c;setup(c,in,cap);
+    CHECK(c.submit_packet(state(3,ar::RenderStateKind::CpArrayBase,1,0x1200)));
+    CHECK(c.submit_packet(state(4,ar::RenderStateKind::CpArrayStride,1,12)));
+    auto av=payload(4),bv=payload(5,12);auto a=span(6,av);auto b=a;b.sequence=7;b.resource.index=1;
+    CHECK(c.submit_packet(draw(5,0x98,av)));CHECK(c.submit_packet(a));CHECK(c.submit_packet(b));
+    auto prior=c.draws().back();c.fuse_next_draw(1024);CHECK(c.submit_packet(draw(8,0xa0,bv)));
+    auto early=span(9,bv);CHECK(c.submit_packet(early));const auto early_owner=c.draws().back().arrays[0].owned_data;
+    if(mode==0)in.bytes[0x201]^=0x40;
+    if(mode==1)in.available=false;
+    auto late=span(10,bv);late.resource.index=1;if(mode==2)late.resource.element_size=8;
+    CHECK(c.submit_packet(late));CHECK(c.failure_reason()==nullptr);CHECK(c.fused_draws()==0);
+    c.flush_assembly();CHECK(cap.draws.size()==2);
+    CHECK(cap.draws[0].array_input_count==2);CHECK(cap.draws[1].array_input_count==2);
+    CHECK(cap.draws[0].arrays[0].owned_data==prior.arrays[0].owned_data);
+    CHECK(cap.draws[0].arrays[0].span_size==a.resource.size);
+    CHECK(cap.draws[1].arrays[0].owned_data==early_owner);
+    CHECK(cap.draws[1].arrays[0].span_size==early.resource.size);
+    CHECK(cap.draws[1].arrays[1].resolved==(mode!=1));
+    CHECK(c.resolved_array_inputs()==(mode==1?3u:4u));CHECK(c.unresolved_array_inputs()==(mode==1?1u:0u));
+  }
+  // Repeated span metadata must upsert bounded current-primitive inputs,
+  // not overflow the 16-attribute undo snapshot.
+  {
+    Input in;Capture cap;ar::ConsumingAuroraRenderSink c;setup(c,in,cap);
+    auto av=payload(4),bv=payload(5,12);CHECK(c.submit_packet(draw(3,0x98,av)));CHECK(c.submit_packet(span(4,av)));
+    c.fuse_next_draw(1024);CHECK(c.submit_packet(draw(5,0xa0,bv)));
+    for(unsigned i=0;i<40;++i)CHECK(c.submit_packet(span(6+i,bv)));
+    in.bytes[1]^=1;CHECK(c.submit_packet(span(46,bv)));c.flush_assembly();
+    CHECK(c.failure_reason()==nullptr);CHECK(cap.draws.size()==2);CHECK(cap.draws[1].array_input_count==1);
+    CHECK(c.resolved_array_inputs()==2);CHECK(c.unresolved_array_inputs()==0);
+  }
+  // A new read attribute must also be retained before a later old one rejects.
+  {
+    Input in;Capture cap;ar::ConsumingAuroraRenderSink c;setup(c,in,cap);
+    CHECK(c.submit_packet(state(3,ar::RenderStateKind::CpArrayBase,1,0x1200)));
+    CHECK(c.submit_packet(state(4,ar::RenderStateKind::CpArrayStride,1,12)));
+    auto av=payload(4),bv=payload(5,12);CHECK(c.submit_packet(draw(5,0x98,av)));CHECK(c.submit_packet(span(6,av)));
+    c.fuse_next_draw(1024);CHECK(c.submit_packet(draw(7,0xa0,bv)));
+    auto extra=span(8,bv);extra.resource.index=1;CHECK(c.submit_packet(extra));in.bytes[1]^=1;
+    CHECK(c.submit_packet(span(9,bv)));c.flush_assembly();CHECK(cap.draws.size()==2);
+    CHECK(cap.draws[0].array_input_count==1);CHECK(cap.draws[1].array_input_count==2);CHECK(c.failure_reason()==nullptr);
+  }
+}
+int main(){topology();boundaries();core_boundaries();late_array_fallback();std::printf("gxcore_fusion_tests: %u checks, %u failures\n",checks,failures);return failures?1:0;}

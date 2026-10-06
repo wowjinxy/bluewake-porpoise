@@ -1,0 +1,127 @@
+{
+  "status": "INACTIVE_INCREMENTAL_REPAIR_CPU_AND_ROOT_OUTSET_NATIVE_IMAGE_PARITY_PASSED_TIMING_UNQUALIFIED",
+  "item": 1,
+  "ancestor_patch_sha256": "c50dea0aced1686238cba2d0296fa698174febede6839a7416b796f4715f2f5c",
+  "donor": {
+    "commit": "d687c6983a404156c540aca9f535c775217852e0",
+    "author": "elliotttate",
+    "email": "elliotttate@gmail.com",
+    "subject": "GX front end: a display list's primitives fused into one draw"
+  },
+  "human_attribution_preserved": true,
+  "patch": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\early-primitive-fusion-array-fallback.patch",
+    "bytes": 19492,
+    "sha256": "a9645ae473d35b27d76ca80a523d99dddc617edfdfd5a8751664ce37d22ec941"
+  },
+  "notes": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\early-primitive-fusion-array-fallback.md",
+    "bytes": 3527,
+    "sha256": "02c83825054f488029800ea67d2207e751d4bbf8decffc05b3077f356eb8af3d"
+  },
+  "semantic_result": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-01-fusion-array-fallback-v2-20261006\\candidate-result.json",
+    "bytes": 3311,
+    "sha256": "ba0cb0e9e1281a9a941750f3caadca465a18cfeec5132abb65b8d1c5f0b3f975"
+  },
+  "semantic_checks_each": 1552,
+  "original_native_negative": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-combined-renderer-20261006\\fusion-native-3300-attempt1\\result.json",
+    "bytes": 1605,
+    "sha256": "603bcf0c0e83dec5bc64853b8b3e896cfb7fc10b063d43a2e677418cd970789b"
+  },
+  "production_receipt": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-fusion-array-fallback-production-20261006\\production-receipt.json",
+    "bytes": 22426,
+    "sha256": "38f5ba8084a453f7ddd386b8ee66cb1ce7d81b1cd96589a5a1d15c2ce5105ed0"
+  },
+  "fixture": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\tests\\early_primitive_fusion_test.cpp",
+    "bytes": 17643,
+    "sha256": "ff5a9541bd1d15b1acc8094e89a5859f2c04f62b2bbc75801ff632271adcab24"
+  },
+  "changed_source_files": [
+    {
+      "relative": "graphics\\frontend\\include\\gxruntime\\aurora_recomp\\render_sink.hpp",
+      "before": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-combined-renderer-20261006\\sdk\\GXRuntime\\graphics\\frontend\\include\\gxruntime\\aurora_recomp\\render_sink.hpp",
+        "bytes": 25695,
+        "sha256": "1376eb10915be8bfee3e80514bd24e5b272a439b10198f9092ef86133ee90b71"
+      },
+      "isolated_preimage": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-01-primitive-fusion-20261006\\candidate\\GXRuntime\\graphics\\frontend\\include\\gxruntime\\aurora_recomp\\render_sink.hpp",
+        "bytes": 25136,
+        "sha256": "349c3d17485030d1356cdec8f24eb901d6c45d83c917f9d2d62a5a1728e50356"
+      },
+      "after": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-fusion-array-fallback-production-20261006\\sdk\\GXRuntime\\graphics\\frontend\\include\\gxruntime\\aurora_recomp\\render_sink.hpp",
+        "bytes": 26044,
+        "sha256": "260fb6615fe49bc3d28b3d5e359e8966b4a94a6efa9677636eab5326baa27ff3"
+      },
+      "preimage_diff_only_CRLF": true
+    },
+    {
+      "relative": "graphics\\frontend\\src\\render_sink.cpp",
+      "before": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-combined-renderer-20261006\\sdk\\GXRuntime\\graphics\\frontend\\src\\render_sink.cpp",
+        "bytes": 37767,
+        "sha256": "3e1583c8660f77ef9b9cfbc9cabce14446567a6bfd6f026e4793b98bc6623c6a"
+      },
+      "isolated_preimage": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-01-primitive-fusion-20261006\\candidate\\GXRuntime\\graphics\\frontend\\src\\render_sink.cpp",
+        "bytes": 36822,
+        "sha256": "216d6a2f23e7727e68df4b2051eeb84500a7645b954c624d20f98aeba8ddc3da"
+      },
+      "after": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-fusion-array-fallback-production-20261006\\sdk\\GXRuntime\\graphics\\frontend\\src\\render_sink.cpp",
+        "bytes": 41636,
+        "sha256": "c277ea60b112ea6b36beb106cde9e1e942c860e5cc81519955400bbefd506b90"
+      },
+      "preimage_diff_only_CRLF": true
+    },
+    {
+      "relative": "graphics\\gxcore\\tests\\gxcore_fusion_test.cpp",
+      "before": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-combined-renderer-20261006\\sdk\\GXRuntime\\graphics\\gxcore\\tests\\gxcore_fusion_test.cpp",
+        "bytes": 11051,
+        "sha256": "59796e466bead0b6e65e5a4cd88df52d3c371c47338ae324685b63d1c4ebe011"
+      },
+      "isolated_preimage": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-01-primitive-fusion-20261006\\candidate\\GXRuntime\\graphics\\gxcore\\tests\\gxcore_fusion_test.cpp",
+        "bytes": 10907,
+        "sha256": "ab77fdc40260f23d115123a917f9e0af804356099f20cdc6c9f9c36ff920b345"
+      },
+      "after": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-fusion-array-fallback-production-20261006\\sdk\\GXRuntime\\graphics\\gxcore\\tests\\gxcore_fusion_test.cpp",
+        "bytes": 17643,
+        "sha256": "ff5a9541bd1d15b1acc8094e89a5859f2c04f62b2bbc75801ff632271adcab24"
+      },
+      "preimage_diff_only_CRLF": true
+    }
+  ],
+  "root_separate_default_OFF_gate": "DOL_GX_FUSE=1",
+  "live_SDK_or_manifest_edited": false,
+  "prior_compile_only_metadata": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-fusion-array-fallback-production-20261006\\draft-before-root-native-proof.json",
+    "bytes": 5681,
+    "sha256": "36b7ef8b1db24483aac20c192fca5f2fe9233ac679c6c1a6ce1a42bd63c76319"
+  },
+  "root_owned_native_addendum": {
+    "actual_result": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-fusion-array-fallback-production-20261006\\fusion-native-3300-attempt1\\result.json",
+      "bytes": 1605,
+      "sha256": "39e1e4bd1bdb1cbd81f00aba53f1dd4385f9f3726d525a4e08e918c359b37c00"
+    },
+    "status": "PASS_NATIVE_HIDDEN_GPU",
+    "exact_control_PPM_sha256": "c0417e4fdef09c40554c89a2fdc7fddd8ec50333fe3e70fcf3dd4da73ab2d288",
+    "ROOT_reported_shutdown": {
+      "submitted": 1728110,
+      "rejected": 0,
+      "failed": 0,
+      "fused": 15457306
+    },
+    "scope": "One hidden 3300-VI Outset route, exact captured image parity; no timing or broad gameplay qualification"
+  },
+  "ROOT_repaired_Outset_native_image_qualification": true,
+  "timing_or_performance_qualification": false
+}

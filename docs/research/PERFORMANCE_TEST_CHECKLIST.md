@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 5:48 p.m. CDT**. Implementation started from
+Updated **October 6, 2026, 5:56 p.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -14,16 +14,17 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |
-| 01 | Isolated fusion candidate passed 948 O3/ASan checks and the real GPU oracle. Native Outset then stopped the renderer on `fused array changed during packet submission`; the game exited cleanly but produced no capture. | Keep disabled. Repair safe draw splitting for changed arrays and add the native-derived regression before further image/timing qualification. |
+| 01 | Repaired late-array append fallback passed 1,552 O3/ASan checks each. Eight affected production consumers rebuilt. Native Outset now matches the control image exactly, with rejected=0 and failed=0. The original failed capture remains preserved. | Keep off pending more scenes and serialized timing. Fusion reduced submitted draws in the tested route; this is not an FPS result. |
 | 02 | Opt-in 60-byte vertices passed 49,878 field/layout checks and 108 interpolation-capture checks in each of O3/ASan. Actual GPU checks at three scales and native Outset/Dragon Roost captures match the controls exactly. | More scene/interpolation and timing qualification. Broad interpolation ASan first-blend failure also occurs in canonical 11 + 01; cause unresolved. |
 | 03 | Exact opt-in decoder passed 399,918 O3/ASan checks, including exceptional floats, malformed indexed inputs and all decoder controls. The full production build and three-scale actual GPU oracle pass. | Native gameplay images and decode cost; default remains interpreted. |
 | 04 | Completed-image upload-shadow candidate passed O3/ASan: 69,063 checks and 35,760 complete-buffer comparisons each. Serial identical frames reduced uploads by 99.17%, but continuous two-frame overlap saved no bytes because reservations declined. | Retain inactive. Find a useful real nonoverlap workload before paying for GPU/native integration. |
-| 05 | Sparse constants passed 16,191,052 O3/ASan checks and 4,096 shader shapes. Repaired v3 fixes the leaked GXCore dependency and private-limit reference; the full production graph now compiles and links. Original failures remain preserved. | GPU binding/shader execution, native images and timing. Default remains full constants. |
+| 05 | Sparse constants passed CPU checks and production compile, but native control caught an unbound light-bank WGSL name in the TEV early return. A new actual GPU lighting fixture reproduces it. V4 repairs finalization and passes 16,225,362 O3/ASan checks each, including 384 lit TEV cases. | Repaired production/GPU/native comparison and timing. Keep off; preserve v3 native failure and earlier production negatives. |
 | 07 | Enabled as active patch 0163. O3/ASan each passed 420,637 checks. Native Outset, Dragon Roost, Fortress sea and Hyrule captures match. Dragon Roost control/candidate/candidate/control repeated CI uploads 3,276 → 68 and total uploads 3,483 → 275 with exact images. | Combined renderer checks and serialized frame-time measurements. Forest Haven qualifies arrival-dialogue images only; no gameplay FPS or complete guest-RAM parity claim. |
 | 08 | Bounded command-vector reuse passed 11,239,116 checks in each of O3/ASan; authored storage allocations fell from 16,000 to 8. Full production, three-scale GPU and native Outset image comparison pass. | Real allocation counts, more native scenes and timing. No total-heap/FPS claim. |
-| 10–11 | Isolated opt-in transforms passed 5,460,525 full CPU/budget/deadline comparisons in each of O3 and ASan. Existing computed-goto entry dispatch is preserved. On the actual 487-case irregular map, compiled prefix comparisons fell from 11 to 2 with slots, or 3 combined. Regular-stride maps already optimized equally; ranges alone added a comparison. | Builder integration and matching-profile native gameplay A/B. Preserve the assembly negatives; no blanket speedup claim. |
+| 10–11 | Isolated opt-in transforms passed 5,460,525 full CPU/budget/deadline comparisons in each of O3 and ASan. Existing computed-goto entry dispatch is preserved. On the actual 487-case irregular map, compiled prefix comparisons fell from 11 to 2 with slots, or 3 combined. Regular-stride maps already optimized equally; ranges alone added a comparison. | Explicit preparer CLI and 64 public parser checks are available; normal builder integration and matching-profile native A/B remain. Preserve the assembly negatives; no blanket speedup claim. |
 | 12 | `--f32-hw-widen` is available, off by default, with required gather/inline-FP checks and preparation/training/provenance identities. All 2³² float patterns passed in each of four rounding modes; special-value, FP-environment and ASan checks passed. Public-header machine code matches the exhaustive test. | Complete translated-module/native gameplay comparison and load-heavy timing before enabling by default. |
 | 14 | Narrow certified-helper lookup reuse passed 80,042 complete CPU/4 MiB RAM comparisons and 1,693 declines in each of O3/ASan. Each warmed translated-reference run passed 60,000 cases, including 38,747 accepted hits and 21,253 unchanged declines. | Build integration and native actor-heavy timing. The outer translated walk and per-call watch/observer predicates remain; current watched actor-ID policy still declines. |
+| 29 | Callback-preserving dispatcher removes the runtime trampoline while retaining FIFO drain, fresh callback and NULL exception behavior. O3/ASan each passed 32,000 full-state comparisons; nine public preparer tests pass. | Explicit preparer only; normal builder/module/native qualification remains. Donor callback elision stays declined. |
 | 35 | Implemented full SHA-256 profile snapshots with compiler/tool-specific readability. 13 cache tests and 12 training tests passed. Real Clang/Ninja rebuilt affected C/C++ objects for same-name/size/mtime changed profiles, reused unrelated objects, and handled invalid-profile fallback. | Complete for build correctness; no gameplay FPS claim. |
 | 37 | `--module-thinlto` is available, off by default. Seven integrated builder tests, fourteen training tests and real CMake option checks pass. Actual Clang/Ninja OFF/ON/repeat-ON/OFF builds retained nine exports and passed 400,000 cross-TU comparisons. | Full translated module, matching training/profile and native gameplay comparison. Mini DLL size is no game performance prediction. |
 
@@ -89,8 +90,12 @@ The native fusion failure is preserved in
 Compact and command reuse separately passed the native Outset route with exact
 control images. Compact also matched the Dragon Roost control image exactly.
 The authored GPU fixture did not expose the real-game fusion array transition.
-The added transaction-rollback regression passes O3/ASan; production replay of
-the repaired fusion candidate remains pending.
+The added transaction-rollback regression passes 1,552 checks in each O3/ASan
+run. Repaired native Outset passed with the same control image and shutdown
+submitted=1,728,110, rejected=0, failed=0; 15,457,306 draws were fused.
+Native receipt: `build/performance-fusion-array-fallback-production-20261006/fusion-native-3300-attempt1/result.json`,
+SHA-256 `39e1e4bd1bdb1cbd81f00aba53f1dd4385f9f3726d525a4e08e918c359b37c00`.
+This is correctness and submission-count evidence, not a serialized timing result.
 Repaired sparse-uniform/decoder production receipt:
 `build/performance-renderer-wave2-repair-20261006/attempt1/result.json`, SHA-256
 `88d47b13de1197e01d944a0ded3d19785fb5f53809a2199f7cfa4df8629cd797`.
@@ -100,6 +105,14 @@ Private combined compilation receipt:
 `build/performance-combined-renderer-20261006/attempt4/result.json`, SHA-256
 `ef555d651fdcca060b31423eec3710cf9dab70fe7ad05b141adc4d07239a89e2`.
 Earlier output-path, missing Windows header and preparation failures are retained.
+
+The native sparse-uniform v3 control failure is preserved under
+`build/performance-renderer-wave2-repair-20261006/control-native-3300-attempt1/`.
+A TEV early return bypassed full-binding finalization. The new authored
+`tests/renderer_lighting_pixels_test.cpp` checks all eight light slots and four
+attenuation modes, plus the earlier EFB pixels. It passes on the control at all
+three scales and reproduces the candidate's unbound `vsl` error before repair.
+Receipts remain under `build/renderer-lighting-oracle-20261006/`.
 
 The game host's explicit `BLUEWAKE_RENDERER=aurora-noninteractive` route passed
 unattended native GPU correctness tests. It requires explicit disposable
@@ -306,7 +319,7 @@ remain opt-in locally. Set 7's cached quiet-host helper needs adaptation.
   helper-mutated registers and full state parity, then actor-heavy gameplay.
 
 - [ ] **29. [Remove truly unnecessary cache-instruction callbacks](https://github.com/elliotttate/Wind-Waker-Recomp/blob/944a1f3c2b130a8086295428a0847938a777a2d7/scripts/windows/cache_ops.py).**
-  **Blocked until adapted:** the donor PC-store rewrite skips our FIFO drain.
+  **Adaptation:** the explicit preparer retains the FIFO drain and current callback; only the runtime trampoline is removed. The donor PC-only rewrite stays declined.
   **Test:** pending FIFO bytes, each opcode, custom callbacks and exact PC/cycles;
   time only after the observable drain/observer behavior is preserved.
 
@@ -354,7 +367,7 @@ remain opt-in locally. Set 7's cached quiet-host helper needs adaptation.
   The normal profiled app build already uses ThinLTO; the game-module compile
   path does not.
   **Preparation:** add `-flto=thin` to both C compilation and DLL linking in an
-  isolated build. There is no current module LTO switch. Preserve the prepared
+  isolated build. Use explicit `--module-thinlto` (default off). Preserve the prepared
   C backend, exact FP flags, CPU/RAM options and exported runtime hooks.
   **Test:** change only game-module LTO with matching source, profile and compiler.
   Record build time, peak memory, module size and rendered gameplay. Smaller

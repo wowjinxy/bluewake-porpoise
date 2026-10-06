@@ -1,0 +1,346 @@
+diff --git a/GXRuntime/graphics/frontend/include/gxruntime/aurora_recomp/render_sink.hpp b/GXRuntime/graphics/frontend/include/gxruntime/aurora_recomp/render_sink.hpp
+--- a/GXRuntime/graphics/frontend/include/gxruntime/aurora_recomp/render_sink.hpp
++++ b/GXRuntime/graphics/frontend/include/gxruntime/aurora_recomp/render_sink.hpp
+@@ -429,11 +429,29 @@
+ 
+   bool resolve_array_input(ConsumedArrayInput& input);
+   bool arrays_unchanged(const ConsumedDraw& draw) const;
++  // Draw packets precede their array-span packets. A tentative append must
++  // remain reversible until those spans prove their owned bytes compatible.
++  void clear_pending_fusion();
++  void remember_pending_array(const ConsumedArrayInput& input);
++  void split_pending_fusion();
++  struct PendingFusion {
++    bool active = false;
++    std::uint64_t sequence = 0;
++    std::uint32_t primitive = 0, vertex_count = 0;
++    std::uint32_t previous_vertices = 0, previous_payload = 0, previous_segments = 0;
++    std::uint32_t previous_flags = 0, previous_pn_mask = 0;
++    std::uint32_t current_flags = 0, current_pn_mask = 0;
++    std::uint32_t previous_array_count = 0, current_array_count = 0;
++    ConsumedArrayInput previous_arrays[ConsumedDraw::kMaxArrays]{};
++    ConsumedArrayInput current_arrays[ConsumedDraw::kMaxArrays]{};
++  } pending_fusion_;
++
+   void tally_array_input(bool resolved);
+   void untally_array_input(bool resolved);
+   // Assemble `draw` (if its trailing spans are in) and fold the result into the
+   // cumulative counters, guarded by back_assembled_ so a draw is counted once.
+-  void accumulate_assembly(const ConsumedDraw& draw);
++  void accumulate_assembly(const ConsumedDraw& draw,
++                           unsigned long long completed_draw = 0);
+ 
+   const DolGuestAddressResolver* resolver_ = nullptr;
+   bool streaming_ = false;
+diff --git a/GXRuntime/graphics/frontend/src/render_sink.cpp b/GXRuntime/graphics/frontend/src/render_sink.cpp
+--- a/GXRuntime/graphics/frontend/src/render_sink.cpp
++++ b/GXRuntime/graphics/frontend/src/render_sink.cpp
+@@ -60,6 +60,7 @@
+   storage_bytes_ = 0;
+   back_assembled_ = false;
+   fuse_max_ = 0;
++  clear_pending_fusion();
+   resource_since_draw_ = false;
+   fused_draws_ = 0;
+   last_sequence_ = 0;
+@@ -128,21 +129,33 @@
+           for (std::uint32_t i = 0; i < draw.array_input_count; ++i)
+             if (draw.arrays[i].attr == packet.resource.index)
+               fused = &draw.arrays[i];
+-        if (fused != nullptr) {
+-          if (fused->base != binding.base || fused->stride != binding.stride ||
+-              fused->vertex_offset != packet.resource.vertex_offset ||
+-              fused->index_size != packet.resource.index_size ||
+-              fused->element_size != packet.resource.element_size)
+-            return fail("incompatible fused array layout", packet);
+-          ConsumedArrayInput incoming = *fused;
++        if (fused != nullptr && pending_fusion_.active) {
++          ConsumedArrayInput incoming{};
++          incoming.attr = packet.resource.index;
++          incoming.base = binding.base;
++          incoming.stride = binding.stride;
++          incoming.indexed = true;
+           incoming.span_size = packet.resource.size;
+-          if (!resolve_array_input(incoming) || !incoming.owned_data || !fused->owned_data ||
++          incoming.vertex_offset = packet.resource.vertex_offset;
++          incoming.index_size = packet.resource.index_size;
++          incoming.element_size = packet.resource.element_size;
++          resolve_array_input(incoming);
++          remember_pending_array(incoming);
++          const bool compatible = fused->base == incoming.base && fused->stride == incoming.stride &&
++              fused->vertex_offset == incoming.vertex_offset && fused->index_size == incoming.index_size &&
++              fused->element_size == incoming.element_size && incoming.resolved &&
++              incoming.owned_data && fused->owned_data &&
+               std::memcmp(incoming.host_data, fused->host_data,
+-                          std::min(incoming.span_size, fused->span_size)) != 0)
+-            return fail("fused array changed during packet submission", packet);
++                          std::min(incoming.span_size, fused->span_size)) == 0;
++          if (!compatible) {
++            // A normal producer can change guest arrays between Draw and its
++            // following span. Flush the prior immutable draw, then keep this
++            // primitive and every span already received as a separate draw.
++            split_pending_fusion();
++            return true;
++          }
+           if (packet.resource.size > fused->span_size) {
+             untally_array_input(fused->resolved);
+-            fused->span_size = packet.resource.size;
+             *fused = std::move(incoming);
+             tally_array_input(fused->resolved);
+           }
+@@ -157,6 +170,8 @@
+           input.index_size = packet.resource.index_size;
+           input.element_size = packet.resource.element_size;
+           tally_array_input(resolve_array_input(input));
++          if (pending_fusion_.active)
++            remember_pending_array(input);
+         }
+       }
+       break;
+@@ -226,6 +241,7 @@
+     }
+     return true;
+   case RenderPacketKind::Draw: {
++    clear_pending_fusion(); // all trailing spans of the previous Draw arrived
+     if (packet.draw.vertex_count == 0u || packet.draw.vertex_size == 0u)
+       return fail("empty draw packet", packet);
+     const std::uint32_t fuse_max = fuse_max_;
+@@ -259,6 +275,20 @@
+           packet.draw.vertex_payload != nullptr &&
+           packet.draw.vertex_payload_size == bytes &&
+           draw.vertex_payload.size() == static_cast<std::size_t>(draw.vertex_count) * draw.vertex_size) {
++        pending_fusion_.active = true;
++        pending_fusion_.sequence = packet.sequence;
++        pending_fusion_.primitive = packet.draw.primitive;
++        pending_fusion_.vertex_count = packet.draw.vertex_count;
++        pending_fusion_.previous_vertices = draw.vertex_count;
++        pending_fusion_.previous_payload = static_cast<std::uint32_t>(draw.vertex_payload.size());
++        pending_fusion_.previous_segments = static_cast<std::uint32_t>(draw.segments.size());
++        pending_fusion_.previous_flags = draw.transform_flags;
++        pending_fusion_.previous_pn_mask = draw.payload_pn_matrix_mask;
++        pending_fusion_.current_flags = packet.draw.transform_flags;
++        pending_fusion_.current_pn_mask = packet.draw.payload_pn_matrix_mask;
++        pending_fusion_.previous_array_count = draw.array_input_count;
++        for (std::uint32_t i = 0; i < draw.array_input_count; ++i)
++          pending_fusion_.previous_arrays[i] = draw.arrays[i];
+         if (draw.segments.empty())
+           draw.segments.push_back((draw.primitive << 16) | draw.vertex_count);
+         draw.segments.push_back((packet.draw.primitive << 16) | packet.draw.vertex_count);
+@@ -439,6 +469,64 @@
+   return input.resolved;
+ }
+ 
++void ConsumingAuroraRenderSink::remember_pending_array(const ConsumedArrayInput& input) {
++  for (std::uint32_t i = 0; i < pending_fusion_.current_array_count; ++i) {
++    if (pending_fusion_.current_arrays[i].attr == input.attr) {
++      pending_fusion_.current_arrays[i] = input;
++      return;
++    }
++  }
++  if (pending_fusion_.current_array_count < ConsumedDraw::kMaxArrays)
++    pending_fusion_.current_arrays[pending_fusion_.current_array_count++] = input;
++}
++
++void ConsumingAuroraRenderSink::clear_pending_fusion() {
++  for (std::uint32_t i = 0; i < pending_fusion_.previous_array_count; ++i)
++    pending_fusion_.previous_arrays[i] = {};
++  for (std::uint32_t i = 0; i < pending_fusion_.current_array_count; ++i)
++    pending_fusion_.current_arrays[i] = {};
++  pending_fusion_.active = false;
++  pending_fusion_.previous_array_count = pending_fusion_.current_array_count = 0;
++}
++
++void ConsumingAuroraRenderSink::split_pending_fusion() {
++  ConsumedDraw& previous = draws_.back();
++  // This copy occurs only on rejected fusion. It keeps the exact common
++  // transform/texture snapshot and owns the latest primitive's payload.
++  ConsumedDraw current = previous;
++  current.sequence = pending_fusion_.sequence;
++  current.primitive = pending_fusion_.primitive;
++  current.vertex_count = pending_fusion_.vertex_count;
++  current.vertex_payload.erase(current.vertex_payload.begin(),
++      current.vertex_payload.begin() + pending_fusion_.previous_payload);
++  current.segments.clear();
++  current.transform_flags = pending_fusion_.current_flags;
++  current.payload_pn_matrix_mask = pending_fusion_.current_pn_mask;
++  current.array_input_count = pending_fusion_.current_array_count;
++  for (std::uint32_t i = 0; i < ConsumedDraw::kMaxArrays; ++i)
++    current.arrays[i] = i < current.array_input_count ? pending_fusion_.current_arrays[i] : ConsumedArrayInput{};
++
++  for (std::uint32_t i = 0; i < previous.array_input_count; ++i)
++    untally_array_input(previous.arrays[i].resolved);
++  previous.vertex_count = pending_fusion_.previous_vertices;
++  previous.vertex_payload.resize(pending_fusion_.previous_payload);
++  previous.segments.resize(pending_fusion_.previous_segments);
++  previous.transform_flags = pending_fusion_.previous_flags;
++  previous.payload_pn_matrix_mask = pending_fusion_.previous_pn_mask;
++  previous.array_input_count = pending_fusion_.previous_array_count;
++  for (std::uint32_t i = 0; i < ConsumedDraw::kMaxArrays; ++i)
++    previous.arrays[i] = i < previous.array_input_count ? pending_fusion_.previous_arrays[i] : ConsumedArrayInput{};
++  for (std::uint32_t i = 0; i < previous.array_input_count; ++i)
++    tally_array_input(previous.arrays[i].resolved);
++  accumulate_assembly(previous, total_draws_ - 1u);
++  previous = std::move(current);
++  back_assembled_ = false;
++  for (std::uint32_t i = 0; i < previous.array_input_count; ++i)
++    tally_array_input(previous.arrays[i].resolved);
++  --fused_draws_;
++  clear_pending_fusion();
++}
++
+ bool ConsumingAuroraRenderSink::arrays_unchanged(const ConsumedDraw& draw) const {
+   for (std::uint32_t i = 0; i < draw.array_input_count; ++i) {
+     const ConsumedArrayInput& input = draw.arrays[i];
+@@ -454,7 +542,10 @@
+   return true;
+ }
+ 
+-void ConsumingAuroraRenderSink::accumulate_assembly(const ConsumedDraw& draw) {
++void ConsumingAuroraRenderSink::accumulate_assembly(const ConsumedDraw& draw,
++                                                    unsigned long long completed_draw) {
++  if (completed_draw == 0u)
++    completed_draw = total_draws_;
+   if (back_assembled_)
+     return;
+   // The gxcore renderer's consumer reports none of the totals below; the
+@@ -463,7 +554,7 @@
+   // translation worker at 14,000 draws a frame.
+   if (!assembly_totals_) {
+     if (draw_observer_ != nullptr)
+-      draw_observer_(draw, total_draws_, draw_observer_user_);
++      draw_observer_(draw, completed_draw, draw_observer_user_);
+     back_assembled_ = true;
+     return;
+   }
+@@ -497,11 +588,12 @@
+   if (!stats.ok)
+     ++assemble_failed_draws_;
+   if (draw_observer_ != nullptr)
+-    draw_observer_(draw, total_draws_, draw_observer_user_);
++    draw_observer_(draw, completed_draw, draw_observer_user_);
+   back_assembled_ = true;
+ }
+ 
+ void ConsumingAuroraRenderSink::flush_assembly() {
++  clear_pending_fusion();
+   if (!draws_.empty())
+     accumulate_assembly(draws_.back());
+ }
+diff --git a/GXRuntime/graphics/gxcore/tests/gxcore_fusion_test.cpp b/GXRuntime/graphics/gxcore/tests/gxcore_fusion_test.cpp
+--- a/GXRuntime/graphics/gxcore/tests/gxcore_fusion_test.cpp
++++ b/GXRuntime/graphics/gxcore/tests/gxcore_fusion_test.cpp
+@@ -31,7 +31,8 @@
+ struct Capture {
+   std::vector<ar::ConsumedDraw> draws;
+   std::vector<gxc::DrawPlan> plans;
+-  static void draw(const ar::ConsumedDraw& d,unsigned long long,void* u) { static_cast<Capture*>(u)->draws.push_back(d); }
++  std::vector<unsigned long long> ordinals;
++  static void draw(const ar::ConsumedDraw& d,unsigned long long n,void* u) { auto& c=*static_cast<Capture*>(u);c.draws.push_back(d);c.ordinals.push_back(n); }
+   static void plan(const gxc::DrawPlan& p,void* u) { static_cast<Capture*>(u)->plans.push_back(p); }
+ };
+ static ar::RenderPacket state(std::uint64_t seq,ar::RenderStateKind kind,unsigned index,unsigned value,unsigned aux=0) {
+@@ -141,4 +142,103 @@
+     if(mode==3){CHECK(captured.plans[0].draw_scope==77);CHECK(captured.plans[1].draw_scope==77);CHECK(captured.plans[1].draw_scope_part==2);}
+   }
+ }
+-int main(){topology();boundaries();core_boundaries();std::printf("gxcore_fusion_tests: %u checks, %u failures\n",checks,failures);return failures?1:0;}
++
++// Regression: guest arrays can change after can-append's Draw-time proof and
++// before one of that Draw's trailing spans. The latest append must split,
++// retaining exact old owners and every current span already delivered.
++static void late_array_fallback() {
++  for (unsigned prefix=1;prefix<=3;++prefix) for(unsigned mode=0;mode<5;++mode) {
++    Input in; Capture cap; ar::ConsumingAuroraRenderSink c; setup(c,in,cap);
++    std::uint64_t seq=3;
++    auto av=payload(4),bv=payload(5,12),cv=payload(5,24);
++    CHECK(c.submit_packet(draw(seq++,0x98,av))); CHECK(c.submit_packet(span(seq++,av)));
++    for(unsigned i=1;i<prefix;++i) {
++      c.fuse_next_draw(1024); CHECK(c.submit_packet(draw(seq++,0xa0,bv)));
++      CHECK(c.submit_packet(span(seq++,bv)));
++    }
++    const auto prior=c.draws().back();
++    c.fuse_next_draw(1024); auto d=draw(seq++,0x98,cv);
++    d.draw.payload_pn_matrix_mask=4;
++    d.draw.transform_flags|=ar::kDrawTransformPayloadPnMatrixValid;
++    CHECK(c.submit_packet(d)); CHECK(c.fused_draws()==prefix);
++    if(mode==0)in.bytes[1]^=0x80;
++    if(mode==1)in.available=false;
++    auto sp=span(seq++,cv);
++    if(mode==2)sp.resource.element_size=8; // incompatible layout is unfused
++    if(mode==3)sp.resource.index_size=2;
++    if(mode==4){sp.resource.vertex_offset=1;sp.resource.element_size=8;}
++    CHECK(c.submit_packet(sp));
++    CHECK(c.failure_reason()==nullptr); CHECK(c.fused_draws()==prefix-1);
++    CHECK(cap.draws.size()==1); CHECK(cap.ordinals[0]==prefix); CHECK(cap.draws[0].vertex_payload==prior.vertex_payload);
++    CHECK(cap.draws[0].segments==prior.segments); CHECK(cap.draws[0].vertex_count==prior.vertex_count);
++    CHECK(cap.draws[0].payload_pn_matrix_mask==prior.payload_pn_matrix_mask);
++    CHECK(cap.draws[0].arrays[0].owned_data==prior.arrays[0].owned_data);
++    CHECK(c.draws().back().vertex_payload==cv); CHECK(c.draws().back().segments.empty());
++    CHECK(c.draws().back().payload_pn_matrix_mask==4); CHECK(c.draws().back().primitive==0x98);
++    CHECK(c.draws().back().arrays[0].resolved==(mode!=1));
++    if(mode==0)CHECK(std::memcmp(c.draws().back().arrays[0].host_data,in.bytes.data(),sp.resource.size)==0);
++    c.flush_assembly(); CHECK(cap.draws.size()==2); CHECK(cap.ordinals[1]==prefix+1); CHECK(c.failure_reason()==nullptr);
++    CHECK(c.draw_packets()==prefix+1); CHECK(c.vertex_inputs()==4+prefix*5);
++    CHECK(c.payload_bytes()==4+prefix*5);
++    if(mode==0) {
++      gxc::GapCounters gaps{};auto ps=plan_state();
++      auto old=ps.build_draw_plan(cap.draws[0],gaps),old_ref=ps.build_draw_plan(prior,gaps);
++      CHECK(old.ok&&old_ref.ok); CHECK(old.vertices==old_ref.vertices); CHECK(old.indices==old_ref.indices);
++      auto now=ps.build_draw_plan(cap.draws[1],gaps);
++      Input fresh;fresh.bytes=in.bytes;Capture refcap;ar::ConsumingAuroraRenderSink ref;setup(ref,fresh,refcap);
++      CHECK(ref.submit_packet(draw(3,0x98,cv)));CHECK(ref.submit_packet(span(4,cv)));ref.flush_assembly();
++      auto separate=ps.build_draw_plan(refcap.draws[0],gaps);
++      CHECK(now.ok&&separate.ok); CHECK(now.vertices==separate.vertices); CHECK(now.indices==separate.indices);
++      // Subsequent guest mutation and reset cannot alter either captured owner.
++      in.bytes.assign(in.bytes.size(),0x55);c.reset();
++      auto old_after=ps.build_draw_plan(cap.draws[0],gaps),new_after=ps.build_draw_plan(cap.draws[1],gaps);
++      CHECK(old_after.vertices==old.vertices);CHECK(new_after.vertices==now.vertices);
++    }
++  }
++  // Roll back an already extended first attribute when a later attribute
++  // rejects. Both the early incoming snapshot and the old owner must survive.
++  for(unsigned mode=0;mode<3;++mode) {
++    Input in;Capture cap;ar::ConsumingAuroraRenderSink c;setup(c,in,cap);
++    CHECK(c.submit_packet(state(3,ar::RenderStateKind::CpArrayBase,1,0x1200)));
++    CHECK(c.submit_packet(state(4,ar::RenderStateKind::CpArrayStride,1,12)));
++    auto av=payload(4),bv=payload(5,12);auto a=span(6,av);auto b=a;b.sequence=7;b.resource.index=1;
++    CHECK(c.submit_packet(draw(5,0x98,av)));CHECK(c.submit_packet(a));CHECK(c.submit_packet(b));
++    auto prior=c.draws().back();c.fuse_next_draw(1024);CHECK(c.submit_packet(draw(8,0xa0,bv)));
++    auto early=span(9,bv);CHECK(c.submit_packet(early));const auto early_owner=c.draws().back().arrays[0].owned_data;
++    if(mode==0)in.bytes[0x201]^=0x40;
++    if(mode==1)in.available=false;
++    auto late=span(10,bv);late.resource.index=1;if(mode==2)late.resource.element_size=8;
++    CHECK(c.submit_packet(late));CHECK(c.failure_reason()==nullptr);CHECK(c.fused_draws()==0);
++    c.flush_assembly();CHECK(cap.draws.size()==2);
++    CHECK(cap.draws[0].array_input_count==2);CHECK(cap.draws[1].array_input_count==2);
++    CHECK(cap.draws[0].arrays[0].owned_data==prior.arrays[0].owned_data);
++    CHECK(cap.draws[0].arrays[0].span_size==a.resource.size);
++    CHECK(cap.draws[1].arrays[0].owned_data==early_owner);
++    CHECK(cap.draws[1].arrays[0].span_size==early.resource.size);
++    CHECK(cap.draws[1].arrays[1].resolved==(mode!=1));
++    CHECK(c.resolved_array_inputs()==(mode==1?3u:4u));CHECK(c.unresolved_array_inputs()==(mode==1?1u:0u));
++  }
++  // Repeated span metadata must upsert bounded current-primitive inputs,
++  // not overflow the 16-attribute undo snapshot.
++  {
++    Input in;Capture cap;ar::ConsumingAuroraRenderSink c;setup(c,in,cap);
++    auto av=payload(4),bv=payload(5,12);CHECK(c.submit_packet(draw(3,0x98,av)));CHECK(c.submit_packet(span(4,av)));
++    c.fuse_next_draw(1024);CHECK(c.submit_packet(draw(5,0xa0,bv)));
++    for(unsigned i=0;i<40;++i)CHECK(c.submit_packet(span(6+i,bv)));
++    in.bytes[1]^=1;CHECK(c.submit_packet(span(46,bv)));c.flush_assembly();
++    CHECK(c.failure_reason()==nullptr);CHECK(cap.draws.size()==2);CHECK(cap.draws[1].array_input_count==1);
++    CHECK(c.resolved_array_inputs()==2);CHECK(c.unresolved_array_inputs()==0);
++  }
++  // A new read attribute must also be retained before a later old one rejects.
++  {
++    Input in;Capture cap;ar::ConsumingAuroraRenderSink c;setup(c,in,cap);
++    CHECK(c.submit_packet(state(3,ar::RenderStateKind::CpArrayBase,1,0x1200)));
++    CHECK(c.submit_packet(state(4,ar::RenderStateKind::CpArrayStride,1,12)));
++    auto av=payload(4),bv=payload(5,12);CHECK(c.submit_packet(draw(5,0x98,av)));CHECK(c.submit_packet(span(6,av)));
++    c.fuse_next_draw(1024);CHECK(c.submit_packet(draw(7,0xa0,bv)));
++    auto extra=span(8,bv);extra.resource.index=1;CHECK(c.submit_packet(extra));in.bytes[1]^=1;
++    CHECK(c.submit_packet(span(9,bv)));c.flush_assembly();CHECK(cap.draws.size()==2);
++    CHECK(cap.draws[0].array_input_count==1);CHECK(cap.draws[1].array_input_count==2);CHECK(c.failure_reason()==nullptr);
++  }
++}
++int main(){topology();boundaries();core_boundaries();late_array_fallback();std::printf("gxcore_fusion_tests: %u checks, %u failures\n",checks,failures);return failures?1:0;}
