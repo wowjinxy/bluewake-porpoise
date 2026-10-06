@@ -389,9 +389,8 @@ def assemble(args):
         if sha256(stage / MODULE) != provenance["module_sha256"]:
             raise ValueError("module changed while release inputs were being staged")
         verify_dlls(stage)
-        (stage / "dsp").mkdir()
-        for name in ("dsp_rom.bin", "dsp_coef.bin"):
-            shutil.copyfile(regular_file(args.runtime / "Data/Sys/GC" / name), stage / "dsp" / name)
+        # Windows defaults to HLE audio, which initializes before any ROM read.
+        # Personal DSP ROM/coefficient files must never enter a release ZIP.
         shutil.copyfile(regular_file(ROOT / "windows/resources/initial_pipeline_cache.db"), stage / "initial_pipeline_cache.db")
         shutil.copyfile(regular_file(ROOT / "config/dependencies.lock.json"), stage / "dependencies.lock.json")
         (stage / "licenses").mkdir()

@@ -326,12 +326,11 @@ class WindowsPackageTest(unittest.TestCase):
         self.check.assert_called_once()
         with zipfile.ZipFile(result) as archive:
             names = set(archive.namelist())
-            for private in ("game", "nodtool", "settings", "texture", "states", "unexpected", "debug", "other.exe", "profdata"):
+            for private in ("game", "nodtool", "settings", "texture", "states", "unexpected", "debug", "other.exe", "profdata", "/dsp/"):
                 self.assertFalse(any(private in name for name in names), private)
             for name in PACKAGE.REQUIRED_BINARIES:
                 self.assertIn("BlueWake/" + name, names)
             self.assertEqual(archive.read("BlueWake/initial_pipeline_cache.db"), b"versioned pipeline seed")
-            self.assertEqual(archive.read("BlueWake/dsp/dsp_rom.bin"), (self.args.runtime / "Data/Sys/GC/dsp_rom.bin").read_bytes())
             build = json.loads(archive.read("BlueWake/BUILD.json"))
             self.assertEqual(build["builder"]["source_commit"], SOURCE_SHA)
             self.assertNotIn("disc", build["builder"])

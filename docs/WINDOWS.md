@@ -420,7 +420,8 @@ example `BLUEWAKE_MOUSE_SENSITIVITY` and `BLUEWAKE_MOUSE_INVERT_Y`.
 separate output directory. It copies a fixed binary/resource list, audits normal
 and delay-loaded DLL dependencies, records source and dependency pins, and
 requires complete license notices. It preserves the personal build and excludes
-disc images, extracted game assets, cards, states, settings and texture packs.
+disc images, extracted game assets, DSP ROMs, cards, states, settings and texture packs.
+Packaged builds use the default HLE audio backend, which requires no DSP ROM files.
 It also excludes `nodtool`; a staged candidate therefore imports ISO/GCM images.
 
 ```powershell
