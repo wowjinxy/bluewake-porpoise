@@ -47,12 +47,30 @@ reviewed tool-path mentions. The four main compile cases close 800 dependency
 mentions across 254 distinct inputs; the enabled objects use the Windows thread
 provider and disabled objects reference no cutscene-wait API. All 58 existing
 generated and log files remain unchanged. The original compiler and verifier
-failures stay preserved. These checks accept only the completed compile and
-configure prefix; no ownership fixture or full host has passed yet. The remaining
-five roles will use a separately reviewed output folder.
+failures stay preserved. Those checks accepted only the completed compile and
+configure prefix; the remaining five roles used a separately reviewed output
+folder.
 
-Next are the real-runtime ownership fixtures and complete host links, followed
-by genuine OFF/ON rescue runs covering the six timer returns, original rewards,
+Both real-runtime ownership fixtures now pass: 2,396 authored checks and 282
+dispatches each in optimized and AddressSanitizer builds. The fixtures exercise
+the actual runtime and event dispatcher with synthetic owner, code and CARD
+inputs, including a real worker thread; they do not establish native game
+ownership. Independent file-only reviews verified all 80 compiled objects and
+their dependencies, both 34-member runtime archives, the ordered link inputs,
+embedded manifests and matching adjacent runtimes. The sanitizer fixture
+reported no errors.
+
+The optimized build returned success but emitted a retained 406-byte CMake
+cache-location diagnostic: a lowercase drive spelling left the historical
+creation-directory marker unchanged during the reviewed path copy. All actual
+compile and link outputs used the new owned folder, no optimized reconfigure
+occurred, and all 37 original, staged and installed cache files kept their
+hashes and modification timestamps. This accepts the fixture evidence with
+that recipe diagnostic; it does not qualify the copied recipe as diagnostic
+free. No target was rerun or artifact corrected.
+
+Next are complete host links and genuine OFF/ON rescue runs covering the six
+timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
 graphical-session ownership remains unqualified. The menu and ownership
 candidates remain private, the public main is unchanged, and the existing tester
