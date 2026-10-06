@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.20)
+project(module_lto_authored C)
+set(CMAKE_C_STANDARD 11)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/composite/module_thinlto.cmake")
+add_library(probe SHARED module_a.c module_b.c)
+set_target_properties(probe PROPERTIES PREFIX "" C_VISIBILITY_PRESET hidden)
+target_compile_options(probe PRIVATE -O2 -ffp-contract=off)
+foreach(symbol ppc_set_mem_write_journal ppc_guest_alias_clear ppc_guest_alias_add
+    ppc_guest_alias_add_shared ppc_guest_alias_get_storage ppc_guest_alias_remove ppc_guest_alias_resolve)
+  target_link_options(probe PRIVATE "LINKER:/EXPORT:${symbol}")
+endforeach()
+bluewake_enable_module_thinlto(probe ${SYNTHETIC_EXTERNAL_OBJECTS})
+bluewake_enable_module_thinlto(probe ${SYNTHETIC_EXTERNAL_OBJECTS})
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/properties.txt"
+  CONTENT "$<TARGET_PROPERTY:probe,COMPILE_OPTIONS>\n$<TARGET_PROPERTY:probe,LINK_OPTIONS>\n")
+add_executable(fixture fixture.c)
+target_link_libraries(fixture PRIVATE probe)

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(bluewake_composite C)
+include("${CMAKE_CURRENT_LIST_DIR}/module_thinlto.cmake")
 
 set(CMAKE_C_STANDARD 11)
 if(NOT CMAKE_BUILD_TYPE)
@@ -300,6 +301,7 @@ else()
   target_link_libraries(${MODULE_NAME} PRIVATE m)
 endif()
 target_compile_options(${MODULE_NAME} PRIVATE -O${COMPOSITE_OPTIMIZATION_LEVEL} -ffp-contract=off)
+bluewake_enable_module_thinlto(${MODULE_NAME} ${DOL_CHUNK_OBJECTS})
 
 # The builder's --tiered: chunks the optimization training never ran, one
 # composite-relative path a line, compiled at -O1 without GVN's memory

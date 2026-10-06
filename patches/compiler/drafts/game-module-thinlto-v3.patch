@@ -1,0 +1,122 @@
+--- a/scripts/windows/build.py
++++ b/scripts/windows/build.py
+@@ -634,7 +634,8 @@
+                        f"{int(getattr(self.args, 'defer_pc', False))}\n"
+                        f"{int(getattr(self.args, 'indirect_tails', False))}\n"
+                        f"{int(getattr(self.args, 'libporpoise', False))}\n"
+-                       f"{int(getattr(self.args, 'f32_hw_widen', False))}\n").encode())
++                       f"{int(getattr(self.args, 'f32_hw_widen', False))}\n"
++                       f"{int(getattr(self.args, 'module_thinlto', False))}\n").encode())
+         inputs.update(json.dumps(self.libporpoise_inputs(), sort_keys=True).encode())
+         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
+                   + [ROOT / "mods/betterww/options.txt", ROOT / "scripts/windows/fast_blocks.py",
+@@ -658,7 +659,7 @@
+                      ROOT / "cmake/composite/native_search.h", ROOT / "scripts/windows/lean_memory.py",
+                      ROOT / "scripts/windows/defer_pc.py",
+                      ROOT / "scripts/windows/indirect_tails.py", ROOT / "cmake/composite/indirect_tails.h",
+-                     ROOT / "cmake/composite/module_export.c",
++                     ROOT / "cmake/composite/module_export.c", ROOT / "cmake/composite/module_thinlto.cmake",
+                      ROOT / "cmake/composite/porpoise_mtx.h", ROOT / "cmake/libporpoise/CMakeLists.txt",
+                      ROOT / "scripts/dependencies/prepare_libporpoise_math.py",
+                      ROOT / "scripts/windows/inline_save_restore_gpr.py", Path(__file__)]):
+@@ -691,7 +692,7 @@
+                     prepared = {}
+                 selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
+                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
+-                              "native_entries", "lean_memory", "defer_pc", "indirect_tails", "libporpoise", "f32_hw_widen")
++                              "native_entries", "lean_memory", "defer_pc", "indirect_tails", "libporpoise", "f32_hw_widen", "module_thinlto")
+                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
+                                             prepared.get("final_digest") == saved and
+                                             prepared.get("enabled") == self.args.prepared_blocks and
+@@ -834,6 +835,7 @@
+                    "fixed_mem1": self.args.fixed_mem1,
+                    "inline_fp": self.args.inline_fp,
+                    "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
++                   "module_thinlto": getattr(self.args, "module_thinlto", False),
+                    "gather_pipe": self.args.gather_pipe,
+                    "direct_calls": self.args.direct_calls,
+                    "inline_gpr": self.args.inline_gpr,
+@@ -950,6 +952,7 @@
+             f"-DBLUEWAKE_GATHER_PIPE={'ON' if self.args.gather_pipe else 'OFF'}",
+             f"-DBLUEWAKE_INLINE_FP={'ON' if self.args.inline_fp else 'OFF'}",
+             f"-DBLUEWAKE_F32_HW_WIDEN={'ON' if getattr(self.args, 'f32_hw_widen', False) else 'OFF'}",
++            f"-DBLUEWAKE_MODULE_THINLTO={'ON' if getattr(self.args, 'module_thinlto', False) else 'OFF'}",
+             f"-DBLUEWAKE_FIXED_MEM1={'ON' if self.args.fixed_mem1 else 'OFF'}",
+             f"-DCOMPOSITE_OPTIMIZATION_LEVEL={opt_level}", f"-DCOMPOSITE_DIR={self.out / 'composite-src'}",
+             f"-DGXRUNTIME_DIR={rc / 'GXRuntime'}", f"-DABI_DIR={rc / 'Source/Core/Core/PowerPC/StaticRecomp'}",
+@@ -1045,7 +1048,7 @@
+                                            ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp",
+                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
+                                             "native_vec", "native_math", "native_skin", "native_game_math",
+-                                            "native_entries", "lean_memory", "defer_pc", "indirect_tails", "libporpoise", "f32_hw_widen")},
++                                            "native_entries", "lean_memory", "defer_pc", "indirect_tails", "libporpoise", "f32_hw_widen", "module_thinlto")},
+                                "libporpoise": self.libporpoise_inputs(),
+                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
+                                 "runtime_patches": self.runtime_patch_receipt,
+@@ -1247,6 +1250,7 @@
+             "fixed_mem1": self.args.fixed_mem1,
+             "inline_fp": self.args.inline_fp,
+             "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
++            "module_thinlto": getattr(self.args, "module_thinlto", False),
+             "gather_pipe": self.args.gather_pipe,
+             "direct_calls": self.args.direct_calls,
+             "inline_gpr": self.args.inline_gpr,
+@@ -1397,6 +1401,8 @@
+                         help="CPU level for the game module (default x86-64-v3: AVX2, FMA, BMI2 and MOVBE, "
+                              "any Intel Haswell or AMD Zen or newer; lowered automatically on older CPUs)")
+     parser.add_argument("--opt-level", choices=("1", "2"), default="2", help="game module optimization level")
++    parser.add_argument("--module-thinlto", action=argparse.BooleanOptionalAction, default=False,
++                        help="use experimental ThinLTO for the Windows C game module (off by default; link jobs capped at one)")
+     parser.add_argument("--no-tiered", action="store_true",
+                         help="compile every chunk at -O2, not only those the optimization training ran "
+                              "(a build about 25 minutes longer)")
+--- a/cmake/composite/CMakeLists.txt
++++ b/cmake/composite/CMakeLists.txt
+@@ -1,5 +1,6 @@
+ cmake_minimum_required(VERSION 3.16)
+ project(bluewake_composite C)
++include("${CMAKE_CURRENT_LIST_DIR}/module_thinlto.cmake")
+ 
+ set(CMAKE_C_STANDARD 11)
+ if(NOT CMAKE_BUILD_TYPE)
+@@ -300,6 +301,7 @@
+   target_link_libraries(${MODULE_NAME} PRIVATE m)
+ endif()
+ target_compile_options(${MODULE_NAME} PRIVATE -O${COMPOSITE_OPTIMIZATION_LEVEL} -ffp-contract=off)
++bluewake_enable_module_thinlto(${MODULE_NAME} ${DOL_CHUNK_OBJECTS})
+ 
+ # The builder's --tiered: chunks the optimization training never ran, one
+ # composite-relative path a line, compiled at -O1 without GVN's memory
+--- /dev/null
++++ b/cmake/composite/module_thinlto.cmake
+@@ -0,0 +1,30 @@
++# Experimental module ThinLTO, adapted from Douglas Whittingham's work at
++# DolRecomp 1ef0fcd60a491ba9b191dcaf94fd9419009c93c1. Prepared C stays the backend.
++include_guard(GLOBAL)
++option(BLUEWAKE_MODULE_THINLTO "Use experimental ThinLTO for the Windows C game module" OFF)
++
++function(bluewake_enable_module_thinlto target)
++  if(NOT BLUEWAKE_MODULE_THINLTO)
++    return()
++  endif()
++  if(NOT WIN32 OR NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
++    message(FATAL_ERROR "Module ThinLTO requires Windows Clang and lld-link")
++  endif()
++  if(NOT TARGET "${target}")
++    message(FATAL_ERROR "Module ThinLTO target does not exist: ${target}")
++  endif()
++  get_target_property(kind "${target}" TYPE)
++  if(NOT kind STREQUAL "SHARED_LIBRARY")
++    message(FATAL_ERROR "Module ThinLTO requires a shared game-module target")
++  endif()
++  if(ARGN)
++    message(FATAL_ERROR "Module ThinLTO requires the prepared C backend, without external native objects")
++  endif()
++  get_target_property(applied "${target}" BLUEWAKE_MODULE_THINLTO_APPLIED)
++  if(applied)
++    return()
++  endif()
++  target_compile_options("${target}" PRIVATE -flto=thin)
++  target_link_options("${target}" PRIVATE -flto=thin -fuse-ld=lld "LINKER:/OPT:LLDLTOJOBS=1")
++  set_property(TARGET "${target}" PROPERTY BLUEWAKE_MODULE_THINLTO_APPLIED TRUE)
++endfunction()

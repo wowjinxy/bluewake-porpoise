@@ -632,7 +632,8 @@ int main(void) {
                        f"{int(self.args.fixed_cpu)}\n{int(self.args.fixed_mem1)}\n{int(self.args.inline_fp)}\n{int(self.args.gather_pipe)}\n{int(self.args.direct_calls)}\n{int(self.args.inline_gpr)}\n{int(self.args.native_j3d)}\n{int(self.args.native_vec)}\n{int(self.args.native_math)}\n{int(self.args.native_skin)}\n{int(self.args.native_game_math)}\n"
                        f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n"
                        f"{int(getattr(self.args, 'libporpoise', False))}\n"
-                       f"{int(getattr(self.args, 'f32_hw_widen', False))}\n").encode())
+                       f"{int(getattr(self.args, 'f32_hw_widen', False))}\n"
+                       f"{int(getattr(self.args, 'module_thinlto', False))}\n").encode())
         inputs.update(json.dumps(self.libporpoise_inputs(), sort_keys=True).encode())
         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", ROOT / "scripts/windows/fast_blocks.py",
@@ -654,6 +655,7 @@ int main(void) {
                      ROOT / "cmake/composite/native_bg.h", ROOT / "cmake/composite/native_mtxcalc.c",
                      ROOT / "cmake/composite/native_mtxcalc.h", ROOT / "cmake/composite/native_search.c",
                      ROOT / "cmake/composite/native_search.h", ROOT / "scripts/windows/lean_memory.py",
+                     ROOT / "cmake/composite/module_thinlto.cmake",
                      ROOT / "cmake/composite/porpoise_mtx.h", ROOT / "cmake/libporpoise/CMakeLists.txt",
                      ROOT / "scripts/dependencies/prepare_libporpoise_math.py",
                      ROOT / "scripts/windows/inline_save_restore_gpr.py", Path(__file__)]):
@@ -686,7 +688,7 @@ int main(void) {
                     prepared = {}
                 selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
-                              "native_entries", "lean_memory", "libporpoise", "f32_hw_widen")
+                              "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto")
                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
                                             prepared.get("final_digest") == saved and
                                             prepared.get("enabled") == self.args.prepared_blocks and
@@ -825,6 +827,7 @@ int main(void) {
                    "fixed_mem1": self.args.fixed_mem1,
                    "inline_fp": self.args.inline_fp,
                    "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
+                   "module_thinlto": getattr(self.args, "module_thinlto", False),
                    "gather_pipe": self.args.gather_pipe,
                    "direct_calls": self.args.direct_calls,
                    "inline_gpr": self.args.inline_gpr,
@@ -933,6 +936,7 @@ int main(void) {
             f"-DBLUEWAKE_GATHER_PIPE={'ON' if self.args.gather_pipe else 'OFF'}",
             f"-DBLUEWAKE_INLINE_FP={'ON' if self.args.inline_fp else 'OFF'}",
             f"-DBLUEWAKE_F32_HW_WIDEN={'ON' if getattr(self.args, 'f32_hw_widen', False) else 'OFF'}",
+            f"-DBLUEWAKE_MODULE_THINLTO={'ON' if getattr(self.args, 'module_thinlto', False) else 'OFF'}",
             f"-DBLUEWAKE_FIXED_MEM1={'ON' if self.args.fixed_mem1 else 'OFF'}",
             f"-DCOMPOSITE_OPTIMIZATION_LEVEL={opt_level}", f"-DCOMPOSITE_DIR={self.out / 'composite-src'}",
             f"-DGXRUNTIME_DIR={rc / 'GXRuntime'}", f"-DABI_DIR={rc / 'Source/Core/Core/PowerPC/StaticRecomp'}",
@@ -1028,7 +1032,7 @@ int main(void) {
                                            ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp",
                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
                                             "native_vec", "native_math", "native_skin", "native_game_math",
-                                            "native_entries", "lean_memory", "libporpoise", "f32_hw_widen")},
+                                            "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto")},
                                "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
                                 "runtime_patches": self.runtime_patch_receipt,
@@ -1230,6 +1234,7 @@ int main(void) {
             "fixed_mem1": self.args.fixed_mem1,
             "inline_fp": self.args.inline_fp,
             "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
+            "module_thinlto": getattr(self.args, "module_thinlto", False),
             "gather_pipe": self.args.gather_pipe,
             "direct_calls": self.args.direct_calls,
             "inline_gpr": self.args.inline_gpr,
@@ -1378,6 +1383,8 @@ def main():
                         help="CPU level for the game module (default x86-64-v3: AVX2, FMA, BMI2 and MOVBE, "
                              "any Intel Haswell or AMD Zen or newer; lowered automatically on older CPUs)")
     parser.add_argument("--opt-level", choices=("1", "2"), default="2", help="game module optimization level")
+    parser.add_argument("--module-thinlto", action=argparse.BooleanOptionalAction, default=False,
+                        help="use experimental ThinLTO for the Windows C game module (off by default; link jobs capped at one)")
     parser.add_argument("--no-tiered", action="store_true",
                         help="compile every chunk at -O2, not only those the optimization training ran "
                              "(a build about 25 minutes longer)")
