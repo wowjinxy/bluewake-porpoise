@@ -1,0 +1,148 @@
+--- /dev/null
++++ b/cmake/composite/cache_fallback.h
+@@ -0,0 +1,25 @@
++#ifndef BLUEWAKE_COMPOSITE_CACHE_FALLBACK_H
++#define BLUEWAKE_COMPOSITE_CACHE_FALLBACK_H
++
++/* Cache-site dispatch adaptation of Elliott Tate's cache_ops.py, app
++ * 944a1f3c2b130a8086295428a0847938a777a2d7. This deliberately does not use
++ * its PC-only replacement: the FIFO and current callback are observable.
++ * Only cache_callbacks.py's four exact emitter templates call this helper.
++ * No identifier may be ctx (prepared chunks can define it as a macro). */
++#include "gather_pipe.h"
++
++static inline __attribute__((always_inline)) void bw_cache_fallback_instruction(
++    CPUState* cpu, u32 raw, u32 cia) {
++    /* A flush can itself replace the callback. Read it only afterwards. */
++    bw_gather_pipe_drain();
++    const PPCInstructionFallback fallback = cpu->instruction_fallback;
++    if (fallback != NULL) {
++        fallback(cpu, raw, cia);
++        return;
++    }
++    /* Exact NULL branch from the pinned runtime trampoline. Do not re-enter
++     * the gather wrapper: its first flush may have queued new FIFO bytes. */
++    ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
++}
++
++#endif
+--- /dev/null
++++ b/scripts/windows/cache_callbacks.py
+@@ -0,0 +1,117 @@
++#!/usr/bin/env python3
++"""Opt-in four-cache-site dispatch inlining, retaining FIFO and callbacks.
++
++Adapted from Elliott Tate, app 944a1f3c2b130a8086295428a0847938a777a2d7.
++Run on a private prepared source copy, before final source/provenance hashes.
++No builder integration is active. --enable is required to change any bytes.
++"""
++import argparse
++import hashlib
++from pathlib import Path
++import re
++
++GATHER_SHA = "2edf3c973723acb4735d9aa245a76013ae6207147018fcbcf147c85d515388e5"
++CPU_SHA = "6f6f0251355bcf4e7f4beb45487e504fe6b4148e33719f928756f291068b106b"
++CACHE_XO = frozenset((54, 86, 470, 982))
++SITE = re.compile(r"^    (ppc_fallback_instruction|bw_cache_fallback_instruction)"
++                  r"\(ctx, 0x([0-9A-F]{8})u, 0x([0-9A-F]{8})u\);\n"
++                  r"    return;$", re.M)
++CALL = re.compile(r"(?:ppc_fallback_instruction|bw_cache_fallback_instruction)"
++                  r"\(ctx, 0x([0-9A-F]{8})u, 0x([0-9A-F]{8})u\);")
++INCLUDE = '#include "../generated.h"\n'
++HELPER_INCLUDE = '#include "../cache_fallback.h"\n'
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def is_cache(raw):
++    return raw >> 26 == 31 and (raw >> 1) & 1023 in CACHE_XO
++
++
++def convert(text):
++    """All checks precede publication. Preserve every byte outside call names."""
++    if "\r" in text:
++        raise ValueError("cache callbacks require generated LF source")
++    if re.search(r"^\s*#\s*(?:define|undef)\s+(?:ppc_fallback_instruction|ppc_program_exception|bw_fallback_instruction|bw_gather_pipe_drain)\b", text, re.M):
++        raise ValueError("cache callbacks decline source overrides of the observed helper contract")
++    sites = list(SITE.finditer(text))
++    exact = {(m.start(), m.end()) for m in sites}
++    for call in CALL.finditer(text):
++        if is_cache(int(call[1], 16)):
++            if not any(start <= call.start() < end for start, end in exact):
++                raise ValueError("unrecognized cache fallback/return template")
++    if text.count("bw_cache_fallback_instruction") != sum(
++            m[1] == "bw_cache_fallback_instruction" for m in sites):
++        raise ValueError("unrecognized prepared cache helper")
++    cache_sites = [m for m in sites if is_cache(int(m[2], 16))]
++    for m in sites:
++        if m[1] == "bw_cache_fallback_instruction" and not is_cache(int(m[2], 16)):
++            raise ValueError("prepared helper may only name the four cache operations")
++    if not cache_sites:
++        return text, 0
++    if text.count(INCLUDE) != 1 or text.count(HELPER_INCLUDE) > 1:
++        raise ValueError("cache callbacks require one original generated include")
++    changed = sum(m[1] == "ppc_fallback_instruction" for m in cache_sites)
++    def replace(match):
++        if not is_cache(int(match[2], 16)):
++            return match[0]
++        return match[0].replace(match[1], "bw_cache_fallback_instruction", 1)
++    converted = SITE.sub(replace, text)
++    if HELPER_INCLUDE not in converted:
++        converted = converted.replace(INCLUDE, INCLUDE + HELPER_INCLUDE, 1)
++    return converted, changed
++
++
++def prepare(root, cpu_source, helper, enable=False):
++    if not enable:
++        return 0, 0
++    root = Path(root)
++    if sha((root / "gather_pipe.h").read_bytes()) != GATHER_SHA:
++        raise ValueError("unrecognized gather-pipe wrapper contract")
++    if sha(Path(cpu_source).read_bytes()) != CPU_SHA:
++        raise ValueError("unrecognized CPU fallback contract")
++    paths = sorted(root.glob("chunks_*/*.c"))
++    if not paths:
++        raise ValueError("no generated chunks")
++    proposals = []
++    total = 0
++    used = False
++    for path in paths:
++        original = path.read_bytes()
++        converted, count = convert(original.decode("utf-8"))
++        encoded = converted.encode("utf-8")
++        used |= "bw_cache_fallback_instruction" in converted
++        total += count
++        if original != encoded:
++            proposals.append((path, encoded))
++    helper = Path(helper).read_bytes()
++    destination = root / "cache_fallback.h"
++    if destination.exists() and destination.read_bytes() != helper:
++        raise ValueError("prepared cache helper differs; regenerate source")
++    # Inputs were fully checked before any writes. These are owned private
++    # preparation outputs, never a native capability or callback registration.
++    if used and not destination.exists():
++        destination.write_bytes(helper)
++    for path, data in proposals:
++        temporary = path.with_suffix(".c.cache-tmp")
++        with temporary.open("xb") as stream:
++            stream.write(data)
++        temporary.replace(path)
++    return total, len(proposals)
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("source", type=Path)
++    parser.add_argument("--cpu-source", type=Path, required=True)
++    parser.add_argument("--helper", type=Path, default=Path(__file__).resolve().parents[2] / "cmake/composite/cache_fallback.h")
++    parser.add_argument("--enable", action="store_true")
++    args = parser.parse_args()
++    sites, files = prepare(args.source, args.cpu_source, args.helper, args.enable)
++    print(f"cache callback dispatch: {sites} sites in {files} chunks; FIFO/callback retained")
++
++
++if __name__ == "__main__":
++    main()
