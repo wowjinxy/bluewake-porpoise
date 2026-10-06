@@ -26,3 +26,10 @@ The production Windows build also compiles and links successfully. Only the
 controls-menu and settings objects change; the other 167 audited linker inputs
 are retained. Imports and the application manifest match the preceding tester.
 This build keeps the diagnostic inventory collector disabled.
+
+The updated precompiled tester passes a hidden, job-bound 3,300-VI native launch
+and reloads a genuine isolated CARD with unchanged inventory and source inputs.
+It uses HLE audio without DSP ROM inputs. All 14 startup checks pass, along with
+archive CRC, DLL closure and the recovered upstream content release gate. This
+qualifies native CARD startup; graphical presentation, physical controllers and
+audio devices remain outside this check.
