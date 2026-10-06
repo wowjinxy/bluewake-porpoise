@@ -1,0 +1,106 @@
+--- a/cmake/composite/native_search.c
++++ b/cmake/composite/native_search.c
+@@ -818,6 +818,94 @@
+     return true;
+ }
+ 
++/* Item 14: bounded, content-revalidated reuse within certified individual
++ * JudgeFilter calls. Based on Elliott Tate's donor 944a1f3c; the donor's
++ * unversioned host walk remains omitted. No observation answer is cached. */
++#if defined(BLUEWAKE_SEARCH_NAME_REUSE) && BLUEWAKE_SEARCH_NAME_REUSE
++#include "native_entries.h"
++#include <string.h>
++enum { REUSE_TABLE_BYTES = SEARCH_ENTRIES * SEARCH_ENTRY_BYTES, REUSE_NAME_BYTES = 1024, REUSE_MAX_HITS = 16 };
++typedef struct SearchReuse {
++    const CPUState* cpu;
++    const u8* ram;
++    u32 size, name, alias_generation, key[9], table_bytes, name_bytes, hits;
++    SearchName result;
++    u8 table[REUSE_TABLE_BYTES], text[REUSE_NAME_BYTES];
++    bool valid;
++} SearchReuse;
++static _Thread_local SearchReuse s_name_reuse;
++static _Thread_local unsigned long long s_reuse_lookups, s_reuse_hits, s_reuse_checked_bytes;
++
++static void reuse_key(const CPUState* cpu, u32 key[9]) {
++    // These potentially preserved strcmp registers remain an explicit key.
++    // r3/r30/r31 are overwritten by the search and must not key actor nodes.
++    key[0] = cpu->gpr[0]; key[1] = cpu->gpr[6]; key[2] = cpu->gpr[7]; key[3] = cpu->gpr[8];
++    key[4] = cpu->ctr; key[5] = cpu->xer; key[6] = cpu->cr;
++    key[7] = cpu->lr; key[8] = cpu->cycle_observation_suffix;
++}
++static const u8* reuse_name_span(CPUState* cpu, u32 name, u32 bytes) {
++    if (bytes == 0u || bytes > REUSE_NAME_BYTES || (u64)name + bytes > 0x100000000ull ||
++        ((name & 0x40000000u) && (name & 0xF8000000u) == 0xC8000000u))
++        return NULL;
++    const u8* p = get_ram_ptr(cpu, name, bytes, NULL);
++    if (p == NULL) return NULL;
++    const uintptr_t start = (uintptr_t)cpu->ram, at = (uintptr_t)p;
++    const u32 offset = (name & ~0x40000000u) - GC_RAM_BASE;
++    if (at >= start && at - start < cpu->ram_size &&
++        (bytes > cpu->ram_size || offset > cpu->ram_size - bytes || at - start != offset))
++        return NULL;
++    return p;
++}
++
++static bool judge_name_reuse(CPUState* cpu, u32 so, u32 limit, u32 name,
++                             u32 lo, u32 hi, SearchName* result) {
++    SearchReuse* cache = &s_name_reuse;
++    u32 key[9]; reuse_key(cpu, key);
++    // The real v1 callback is invoked anew for every attempted reuse. A missing
++    // handshake leaves the certified uncached routine fully available.
++    const bool admitted = bluewake_native_entries_ready(cpu, BLUEWAKE_SEARCH_JUDGE_FILTER);
++    if (admitted && cache->valid && cache->cpu == cpu && cache->ram == cpu->ram &&
++        cache->size == cpu->ram_size && cache->name == name &&
++        cache->alias_generation == g_ppc_guest_alias_generation && cache->hits < REUSE_MAX_HITS &&
++        memcmp(cache->key, key, sizeof key) == 0 && cache->result.cycles <= limit &&
++        search_apart(SEARCH_TABLE, SEARCH_TABLE + cache->table_bytes, lo, hi) &&
++        search_apart(name, name + cache->name_bytes, lo, hi)) {
++        const u8* text = reuse_name_span(cpu, name, cache->name_bytes);
++        if (text != NULL && memcmp(cpu->ram + SEARCH_TABLE - GC_RAM_BASE, cache->table, cache->table_bytes) == 0 &&
++            memcmp(text, cache->text, cache->name_bytes) == 0) {
++            *result = cache->result;
++            ++cache->hits; ++s_reuse_hits;
++            s_reuse_checked_bytes += cache->table_bytes + cache->name_bytes;
++            return true;
++        }
++    }
++    cache->valid = false;
++    ++s_reuse_lookups;
++    if (!search_name_run(cpu, so, limit, name, result)) return false;
++    // A bounded read-set snapshot, never a guest pointer retained across calls.
++    // Node/list/actor/filter state is deliberately absent and always read again.
++    const u32 table_bytes = result->end3 - SEARCH_TABLE, name_bytes = result->end4 - name;
++    if (!admitted || table_bytes == 0u || table_bytes > REUSE_TABLE_BYTES || name_bytes == 0u ||
++        name_bytes > REUSE_NAME_BYTES || !search_apart(SEARCH_TABLE, result->end3, lo, hi) ||
++        !search_apart(name, result->end4, lo, hi)) return true;
++    const u8* text = reuse_name_span(cpu, name, name_bytes);
++    if (text == NULL) return true;
++    cache->cpu = cpu; cache->ram = cpu->ram; cache->size = cpu->ram_size; cache->name = name;
++    cache->alias_generation = g_ppc_guest_alias_generation; cache->hits = 0;
++    memcpy(cache->key, key, sizeof key); cache->table_bytes = table_bytes; cache->name_bytes = name_bytes;
++    cache->result = *result;
++    memcpy(cache->table, cpu->ram + SEARCH_TABLE - GC_RAM_BASE, table_bytes);
++    memcpy(cache->text, text, name_bytes); cache->valid = true;
++    return true;
++}
++#else
++static bool judge_name_reuse(CPUState* cpu, u32 so, u32 limit, u32 name,
++                             u32 lo, u32 hi, SearchName* result) {
++    (void)lo; (void)hi;
++    return search_name_run(cpu, so, limit, name, result);
++}
++#endif
++
+ /* The registers dStage_searchName leaves (all but r0, r1, r3, r11, r29 to
+  * r31, LR, CR0 and the suffix, which its caller sets as it leaves them). */
+ SEARCH_INLINE void search_name_registers(CPUState* cpu, const SearchName* n) {
+@@ -1142,7 +1230,7 @@
+      * either form. */
+     if (s->name == s_judge_hint_name && limit <= s_judge_hint_limit)
+         return false;
+-    if (!search_name_run(cpu, cpu->xer >> 31, limit, s->name, &s->n)) {
++    if (!judge_name_reuse(cpu, cpu->xer >> 31, limit, s->name, s->lo, s->hi, &s->n)) {
+         s_judge_hint_name = s->name;
+         s_judge_hint_limit = limit;
+         return false;

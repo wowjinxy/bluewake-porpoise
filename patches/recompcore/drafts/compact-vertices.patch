@@ -1,0 +1,973 @@
+diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
+--- a/GXRuntime/backends/aurora/aurora_graphics.cpp
++++ b/GXRuntime/backends/aurora/aurora_graphics.cpp
+@@ -112,7 +112,7 @@
+         for (unsigned j = 0; j < 4u; ++j)
+             std::fprintf(stderr, " %u/%u/%u", k.litchan[j].matsource, k.litchan[j].ambsource, k.litchan[j].enablelighting);
+         {
+-            const unsigned stride = gxruntime::gxcore::kVertexFloats;
++            const unsigned stride = plan.vertex_floats;
+             for (unsigned v = 0; v < plan.vertex_count && v < 4u; ++v) {
+                 const float* p = plan.vertices.data() + v * stride;
+                 std::fprintf(stderr, "[plan-tex]   v%u pos=%.1f,%.1f,%.1f col0=%.3f,%.3f,%.3f,%.3f\n", v, p[0], p[1], p[2], p[4], p[5], p[6], p[7]);
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
+@@ -1353,7 +1353,11 @@
+   // shape is not the same points from one frame to the next (the boat's
+   // shadow is cast on the sea's triangles under it, a different list as it
+   // moves), and blending one list toward the other drew the shadow torn.
+-  const size_t decoded = plan.vertices.size() / gxc::kVertexFloats;
++  if ((plan.vertex_floats != gxc::kCompactVertexFloats && plan.vertex_floats != gxc::kFullVertexFloats) ||
++      plan.vertices.size() % plan.vertex_floats != 0 ||
++      plan.vertices.size() / plan.vertex_floats != plan.vertex_count)
++    return;
++  const size_t decoded = plan.vertices.size() / plan.vertex_floats;
+   // A cloth's strip (a scope over draws that index their positions): the
+   // game moves its vertices each frame, so they are blended one by one, as a
+   // particle's are.
+@@ -1363,7 +1367,7 @@
+       out.positions.resize(decoded * 3u);
+       for (size_t i = 0; i < decoded; ++i)
+         std::memcpy(out.positions.data() + i * 3u,
+-                    plan.vertices.data() + i * gxc::kVertexFloats + gxc::kVertexPosOffset / sizeof(float),
++                    plan.vertices.data() + i * plan.vertex_floats + gxc::kVertexPosOffset / sizeof(float),
+                     sizeof(float) * 3);
+       out.age = plan.draw_scope_part != 0 ? 0u : plan.draw_tag_age;
+     }
+@@ -1373,11 +1377,11 @@
+   // position matrix takes them from), for blend_draw() to see whether the
+   // game moved them itself (see vertex_motion()).
+   const uint32_t count = plan.vertex_count;
+-  if (count >= 3 && plan.vertices.size() >= static_cast<size_t>(count) * gxc::kVertexFloats) {
++  if (count >= 3 && plan.vertices.size() >= static_cast<size_t>(count) * plan.vertex_floats) {
+     const uint32_t picks[3] = {0, count / 2, count - 1};
+     for (int i = 0; i < 3; ++i)
+       std::memcpy(&out.samples[i * 3],
+-                  plan.vertices.data() + static_cast<size_t>(picks[i]) * gxc::kVertexFloats +
++                  plan.vertices.data() + static_cast<size_t>(picks[i]) * plan.vertex_floats +
+                       gxc::kVertexPosOffset / sizeof(float),
+                   sizeof(float) * 3);
+     out.haveSamples = true;
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+@@ -414,10 +414,14 @@
+   };
+   const auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
+ 
+-  // Fixed decoded-vertex layout (gxruntime/gxcore/shader.hpp). The normal
+-  // (location 8) is only declared by the lit shader, so add it to the pipeline
+-  // only when the key is lit — WGSL requires the vertex layout to satisfy every
+-  // shader input.
++  // The decoded-vertex layouts (gxruntime/gxcore/shader.hpp): the key decides
++  // compact or full. A compact draw's pipeline reads the full layout's other
++  // inputs (color1, uv2-4, the tex-matrix indices, binormal, tangent) from a
++  // second stream, one element of their defaults (vertex_extra_defaults()),
++  // stepped per instance. Conditional inputs (normal, location 8, and the
++  // rest below) are only added when the shader declares them: WGSL requires
++  // the vertex layout to satisfy every shader input.
++  const bool fullLayout = gxc::vertex_layout_full(key.shader);
+   std::vector<wgpu::VertexAttribute> attributes{
+       wgpu::VertexAttribute{
+           .format = wgpu::VertexFormat::Float32x3,
+@@ -435,31 +439,28 @@
+           .shaderLocation = 2,
+       },
+       wgpu::VertexAttribute{
+-          .format = wgpu::VertexFormat::Float32x4,
+-          .offset = gxc::kVertexColor1Offset,
+-          .shaderLocation = 3,
+-      },
+-      wgpu::VertexAttribute{
+           .format = wgpu::VertexFormat::Float32x2,
+-          .offset = gxc::kVertexUvOffset,
++          .offset = gxc::vertex_uv_offset(0),
+           .shaderLocation = 4,
+       },
+       wgpu::VertexAttribute{
+           .format = wgpu::VertexFormat::Float32x2,
+-          .offset = gxc::kVertexUvOffset + 8,
++          .offset = gxc::vertex_uv_offset(1),
+           .shaderLocation = 5,
+       },
+-      wgpu::VertexAttribute{
+-          .format = wgpu::VertexFormat::Float32x2,
+-          .offset = gxc::kVertexUvOffset + 16,
+-          .shaderLocation = 6,
+-      },
+-      wgpu::VertexAttribute{
+-          .format = wgpu::VertexFormat::Float32x2,
+-          .offset = gxc::kVertexUvOffset + 24,
+-          .shaderLocation = 7,
+-      },
+   };
++  std::vector<wgpu::VertexAttribute> extraAttributes;
++  // An input of the full layout's own part: from the vertices, or the defaults.
++  const auto addExtra = [&](wgpu::VertexFormat format, uint32_t offset, uint32_t location) {
++    if (fullLayout)
++      attributes.push_back(wgpu::VertexAttribute{.format = format, .offset = offset, .shaderLocation = location});
++    else
++      extraAttributes.push_back(wgpu::VertexAttribute{
++          .format = format, .offset = offset - gxc::kCompactVertexStrideBytes, .shaderLocation = location});
++  };
++  addExtra(wgpu::VertexFormat::Float32x4, gxc::kVertexColor1Offset, 3);
++  addExtra(wgpu::VertexFormat::Float32x2, gxc::vertex_uv_offset(2), 6);
++  addExtra(wgpu::VertexFormat::Float32x2, gxc::vertex_uv_offset(3), 7);
+   // Item-5 texgen inputs must mirror the generator's VertexIn: emboss needs the
+   // NBT normal/binormal/tangent + light dir; a Color1/emboss key that is unlit
+   // still declares the normal (location 8). Detect emboss demand from the key.
+@@ -487,47 +488,30 @@
+         .shaderLocation = 8,
+     });
+   }
+-  if (uber || key.shader.has_tex_mtx_idx != 0) {
+-    attributes.push_back(wgpu::VertexAttribute{
+-        .format = wgpu::VertexFormat::Uint32,
+-        .offset = gxc::kVertexTexMtxIdxOffset,
+-        .shaderLocation = 9,
+-    });
+-  }
+-  if (uber || (has_emboss && key.shader.has_vertex_binormal != 0)) {
+-    attributes.push_back(wgpu::VertexAttribute{
+-        .format = wgpu::VertexFormat::Float32x3,
+-        .offset = gxc::kVertexBinormalOffset,
+-        .shaderLocation = 10,
+-    });
+-  }
+-  if (uber || (has_emboss && key.shader.has_vertex_tangent != 0)) {
+-    attributes.push_back(wgpu::VertexAttribute{
+-        .format = wgpu::VertexFormat::Float32x3,
+-        .offset = gxc::kVertexTangentOffset,
+-        .shaderLocation = 11,
+-    });
+-  }
+-  if (uber || (key.shader.uv_mask & (1u << 4u)) != 0u) {
+-    attributes.push_back(wgpu::VertexAttribute{
+-        .format = wgpu::VertexFormat::Float32x2,
+-        .offset = gxc::kVertexUvOffset + 32u,
+-        .shaderLocation = 12,
+-    });
+-  }
++  if (uber || key.shader.has_tex_mtx_idx != 0)
++    addExtra(wgpu::VertexFormat::Uint32, gxc::kVertexTexMtxIdxOffset, 9);
++  if (uber || (has_emboss && key.shader.has_vertex_binormal != 0))
++    addExtra(wgpu::VertexFormat::Float32x3, gxc::kVertexBinormalOffset, 10);
++  if (uber || (has_emboss && key.shader.has_vertex_tangent != 0))
++    addExtra(wgpu::VertexFormat::Float32x3, gxc::kVertexTangentOffset, 11);
++  if (uber || (key.shader.uv_mask & (1u << 4u)) != 0u)
++    addExtra(wgpu::VertexFormat::Float32x2, gxc::vertex_uv_offset(4), 12);
+   if (uber || (key.shader.has_tex_mtx_idx != 0 &&
+-                (key.shader.tex_mtx_idx_mask & 0xF0u) != 0u)) {
+-    attributes.push_back(wgpu::VertexAttribute{
+-        .format = wgpu::VertexFormat::Uint32,
+-        .offset = gxc::kVertexTexMtxIdxHiOffset,
+-        .shaderLocation = 13,
+-    });
+-  }
+-  const wgpu::VertexBufferLayout vertexLayout{
+-      .arrayStride = gxc::kVertexStrideBytes,
+-      .stepMode = wgpu::VertexStepMode::Vertex,
+-      .attributeCount = attributes.size(),
+-      .attributes = attributes.data(),
++                (key.shader.tex_mtx_idx_mask & 0xF0u) != 0u))
++    addExtra(wgpu::VertexFormat::Uint32, gxc::kVertexTexMtxIdxHiOffset, 13);
++  const std::array<wgpu::VertexBufferLayout, 2> vertexLayouts{
++      wgpu::VertexBufferLayout{
++          .arrayStride = fullLayout ? gxc::kFullVertexStrideBytes : gxc::kCompactVertexStrideBytes,
++          .stepMode = wgpu::VertexStepMode::Vertex,
++          .attributeCount = attributes.size(),
++          .attributes = attributes.data(),
++      },
++      wgpu::VertexBufferLayout{
++          .arrayStride = gxc::kVertexExtraBytes,
++          .stepMode = wgpu::VertexStepMode::Instance,
++          .attributeCount = extraAttributes.size(),
++          .attributes = extraAttributes.data(),
++      },
+   };
+ 
+   // The ubershader draws without early-depth emulation (a frame or two).
+@@ -634,8 +618,8 @@
+           wgpu::VertexState{
+               .module = module,
+               .entryPoint = "vs_main",
+-              .bufferCount = 1,
+-              .buffers = &vertexLayout,
++              .bufferCount = extraAttributes.empty() ? 1u : 2u,
++              .buffers = vertexLayouts.data(),
+           },
+       .primitive =
+           wgpu::PrimitiveState{
+@@ -677,6 +661,7 @@
+ struct PassState {
+   WGPUBuffer vertexBuffer = nullptr; // bound whole, or a particle's range
+   uint64_t vertexOffset = 0;
++  bool extraBound = false; // the default stream at slot 1
+   bool indexBound = false;
+   PipelineRef pipeline = 0;
+   WGPUBindGroup group1 = nullptr;
+@@ -689,6 +674,32 @@
+ } // namespace
+ 
+ void reset_pass_state() { g_pass = PassState{}; }
++
++// The compact layout's second stream: one element of the full layout's own
++// inputs at their defaults (color1 white, uv2-4, the tex-matrix indices,
++// binormal and tangent zero), which a full draw's decoder writes where its
++// format lacks them (gxcore.cpp). Made at first use, kept for the device's life.
++const wgpu::Buffer& vertex_extra_defaults() {
++  static wgpu::Buffer buffer;
++  static wgpu::Device owner;
++  if (!buffer || owner.Get() != g_device.Get()) {
++    buffer = nullptr;
++    owner = g_device;
++    const wgpu::BufferDescriptor descriptor{
++        .label = "GXCore Vertex Defaults",
++        .usage = wgpu::BufferUsage::Vertex,
++        .size = gxc::kVertexExtraBytes,
++        .mappedAtCreation = true,
++    };
++    buffer = g_device.CreateBuffer(&descriptor);
++    auto* data = static_cast<float*>(buffer.GetMappedRange(0, gxc::kVertexExtraBytes));
++    std::memset(data, 0, gxc::kVertexExtraBytes);
++    for (int c = 0; c < 4; ++c)
++      data[(gxc::kVertexColor1Offset - gxc::kCompactVertexStrideBytes) / 4u + c] = 1.f;
++    buffer.Unmap();
++  }
++  return buffer;
++}
+ 
+ // What a draw, or one of a batch's (submit_draw_plan) draws, is encoded with:
+ // its constants and a particle's in-between vertices (empty: the frame's
+@@ -753,6 +764,11 @@
+     }
+   };
+   const uint32_t firstIndex = data.idxRange.offset / sizeof(uint16_t);
++  const uint32_t vertexStride = data.fullVertices ? gxc::kFullVertexStrideBytes : gxc::kCompactVertexStrideBytes;
++  if (!data.fullVertices && !g_pass.extraBound) {
++    pass.SetVertexBuffer(1, vertex_extra_defaults());
++    g_pass.extraBound = true;
++  }
+   // One draw, or a batch as one; a batch whose draws' in-between blocks (or a
+   // particle's vertices, laid out apart from the batch's) differ, one by one.
+   static std::vector<DrawPart> parts;
+@@ -769,7 +785,7 @@
+               pixel.offset == whole.pixel.offset && pixel.size == whole.pixel.size &&
+               (whole.verts.size == 0 ? verts.size == 0
+                                      : verts.size != 0 && verts.offset == whole.verts.offset +
+-                                                                              first * gxc::kVertexStrideBytes);
++                                                                              first * vertexStride);
+     }
+     if (!asOne) {
+       uint32_t index = firstIndex;
+@@ -800,7 +816,7 @@
+   // bound where the part's first index (counted from the batch's first
+   // vertex) finds them.
+   const auto setVertices = [&](const DrawPart& part) -> int32_t {
+-    const uint64_t back = uint64_t{part.firstVertex} * gxc::kVertexStrideBytes;
++    const uint64_t back = uint64_t{part.firstVertex} * vertexStride;
+     if (part.verts.size != 0 && part.verts.offset >= back) {
+       const uint64_t offset = part.verts.offset - back;
+       if (g_pass.vertexBuffer != g_interpVertexBuffer.Get() || g_pass.vertexOffset != offset) {
+@@ -810,13 +826,13 @@
+       }
+       return 0;
+     }
+-    if (data.vertRange.offset % gxc::kVertexStrideBytes == 0) {
++    if (data.vertRange.offset % vertexStride == 0) {
+       if (g_pass.vertexBuffer != g_vertexBuffer.Get() || g_pass.vertexOffset != 0) {
+         pass.SetVertexBuffer(0, g_vertexBuffer);
+         g_pass.vertexBuffer = g_vertexBuffer.Get();
+         g_pass.vertexOffset = 0;
+       }
+-      return static_cast<int32_t>(data.vertRange.offset / gxc::kVertexStrideBytes);
++      return static_cast<int32_t>(data.vertRange.offset / vertexStride);
+     }
+     pass.SetVertexBuffer(0, g_vertexBuffer, data.vertRange.offset, data.vertRange.size);
+     g_pass.vertexBuffer = g_vertexBuffer.Get();
+@@ -1152,6 +1168,7 @@
+ struct InterpJob {
+   frame_interp::DrawInput input; // its key, samples and a particle's positions
+   std::vector<float> vertices;   // a particle's decoded vertices, for its blended copy
++  uint32_t vertexFloats = gxc::kCompactVertexFloats; // and their layout's
+   uint64_t frameId;
+   size_t slot;
+   bool repeatsLastDraw; // the constants are the draw before's (repeats_cached)
+@@ -1169,12 +1186,15 @@
+ 
+ // A particle's in-between vertices: its own, with the blended positions, in
+ // the in-between vertex area of `slot`.
+-Range push_blended_vertices(size_t slot, const std::vector<float>& vertices, const float* positions,
++Range push_blended_vertices(size_t slot, const std::vector<float>& vertices, uint32_t vertexFloats, const float* positions,
+                             std::vector<float>& scratch) {
+   scratch.assign(vertices.begin(), vertices.end());
+-  const size_t count = scratch.size() / gxc::kVertexFloats;
++  if ((vertexFloats != gxc::kCompactVertexFloats && vertexFloats != gxc::kFullVertexFloats) ||
++      scratch.size() % vertexFloats != 0 || positions == nullptr)
++    return {};
++  const size_t count = scratch.size() / vertexFloats;
+   for (size_t i = 0; i < count; ++i)
+-    std::memcpy(scratch.data() + i * gxc::kVertexFloats + gxc::kVertexPosOffset / sizeof(float), positions + i * 3u,
++    std::memcpy(scratch.data() + i * vertexFloats + gxc::kVertexPosOffset / sizeof(float), positions + i * 3u,
+                 sizeof(float) * 3u);
+   return push_interp_vertices(slot, reinterpret_cast<const uint8_t*>(scratch.data()), scratch.size() * sizeof(float));
+ }
+@@ -1258,7 +1278,7 @@
+     }
+     for (int step = 0; step < steps; ++step) {
+       if (const float* positions = frame_interp::blended_positions(step))
+-        ranges.verts[step] = push_blended_vertices(job.slot, job.vertices, positions, h->vertices);
++        ranges.verts[step] = push_blended_vertices(job.slot, job.vertices, job.vertexFloats, positions, h->vertices);
+       if (const gxc::PixelShaderConstants* pixel = frame_interp::blended_pixel(step))
+         ranges.pixel[step] = push_interp_uniform_dedup(h->pixelCache[step], job.frameId, job.slot,
+                                                        reinterpret_cast<const uint8_t*>(pixel), sizeof(*pixel), false);
+@@ -1290,6 +1310,7 @@
+     job.vertices.clear();
+   else
+     job.vertices.assign(plan.vertices.begin(), plan.vertices.end());
++  job.vertexFloats = plan.vertex_floats;
+   job.frameId = frameId;
+   job.slot = recording_frame_slot();
+   job.repeatsLastDraw = repeatsLastDraw;
+@@ -1437,6 +1458,11 @@
+ }
+ 
+ bool submit_draw_plan(const gxc::DrawPlan& plan) {
++  if ((plan.vertex_floats != gxc::kCompactVertexFloats && plan.vertex_floats != gxc::kFullVertexFloats) ||
++      plan.vertices.size() % plan.vertex_floats != 0 ||
++      plan.vertices.size() / plan.vertex_floats != plan.vertex_count ||
++      (plan.vertex_floats == gxc::kFullVertexFloats) != gxc::vertex_layout_full(plan.pipeline.shader))
++    return false;
+   if (!plan.ok || plan.vertex_count == 0 || plan.indices.empty()) {
+     return false;
+   }
+@@ -1841,7 +1867,7 @@
+   const float* tracedPositions = matchHere ? frame_interp::blended_positions() : nullptr;
+   const Range interpVertRange =
+       tracedPositions != nullptr
+-          ? push_blended_vertices(recording_frame_slot(), plan.vertices, tracedPositions, tracedVertices)
++          ? push_blended_vertices(recording_frame_slot(), plan.vertices, plan.vertex_floats, tracedPositions, tracedVertices)
+           : Range{};
+   if (frame_interp::tracing()) {
+     const auto& m = plan.constants.posnormalmatrix;
+@@ -1866,9 +1892,11 @@
+   }
+   // (Room too for a pixel block of the ubershader's, should the draw need one.)
+   const size_t pixelRoom = pixelUniformBytes + sizeof(gxc::UberPixelConstants);
+-  if (!staging_has_capacity(vertBytes + gxc::kVertexStrideBytes, indexBytes, sizeof(plan.constants), pixelRoom)) {
++  if (!staging_has_capacity(vertBytes + gxc::kFullVertexStrideBytes, indexBytes, sizeof(plan.constants),
++                            pixelRoom)) {
+     if (!segment_frame() ||
+-        !staging_has_capacity(vertBytes + gxc::kVertexStrideBytes, indexBytes, sizeof(plan.constants), pixelRoom)) {
++        !staging_has_capacity(vertBytes + gxc::kFullVertexStrideBytes, indexBytes, sizeof(plan.constants),
++                              pixelRoom)) {
+       Log.error("GXCore draw exceeds an empty Aurora staging segment");
+       return false;
+     }
+@@ -1973,6 +2001,9 @@
+       PipelineConfig uberConfig = colorConfig;
+       uberConfig.key.shader = gxc::ShaderKey{};
+       uberConfig.key.shader.use_dst_alpha = plan.pipeline.shader.use_dst_alpha;
++      // The ubershader's own key carries the draw's vertex layout (its WGSL does
++      // not depend on it): has_color1 marks the full one.
++      uberConfig.key.shader.has_color1 = gxc::vertex_layout_full(plan.pipeline.shader) ? 1u : 0u;
+       uberConfig.depthOnly = 2u;
+       uberPipeline = pipeline_ref(uberConfig);
+       static gxc::UberPixelConstants block; // one recording thread at a time
+@@ -1996,7 +2027,9 @@
+     const char* env = std::getenv("DOL_AURORA_GXCORE_BATCH");
+     return env == nullptr || env[0] != '0';
+   }();
+-  const size_t vertexOffset = next_vertex_offset(gxc::kVertexStrideBytes);
++  const bool fullVertices = plan.vertex_floats == gxc::kFullVertexFloats;
++  const uint32_t vertexStride = plan.vertex_floats * sizeof(float);
++  const size_t vertexOffset = next_vertex_offset(vertexStride);
+   DrawData* batch = nullptr;
+   uint32_t firstVertex = 0;
+   if (batching && !matchHere) {
+@@ -2009,10 +2042,10 @@
+         last->interpUniformRange.size == 0 && last->interpVertRange.size == 0 &&
+         (interpolating ? last->interpJob != UINT32_MAX && last->interpJob + last->batchSize == next_interp_job()
+                        : last->interpJob == UINT32_MAX) &&
+-        last->vertRange.offset % gxc::kVertexStrideBytes == 0 &&
++        last->fullVertices == fullVertices && last->vertRange.offset % vertexStride == 0 &&
+         last->vertRange.offset + last->vertRange.size == vertexOffset &&
+         last->idxRange.offset + last->idxRange.size == next_index_offset()) {
+-      const size_t first = (vertexOffset - last->vertRange.offset) / gxc::kVertexStrideBytes;
++      const size_t first = (vertexOffset - last->vertRange.offset) / vertexStride;
+       if (first + plan.vertex_count <= 65536u) {
+         batch = last;
+         firstVertex = static_cast<uint32_t>(first);
+@@ -2023,7 +2056,7 @@
+   // On a whole vertex: render() draws it at a base vertex of the whole buffer.
+   const auto vertRange = push_verts_strided(
+       reinterpret_cast<const uint8_t*>(plan.vertices.data()),
+-      vertBytes, gxc::kVertexStrideBytes);
++      vertBytes, vertexStride);
+   Range idxRange;
+   if (batch != nullptr) {
+     static std::vector<uint16_t> rebased;
+@@ -2069,6 +2102,7 @@
+       .textureBindGroup = textureBindGroup,
+       .tev = tev,
+       .ownVertices = ownVertices,
++      .fullVertices = fullVertices,
+       .uberPipeline = uberPipeline,
+       .uberPixelRange = uberPixelRange,
+       .uberTextureBindGroup = uberTextureBindGroup,
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+@@ -50,6 +50,10 @@
+   bool tev = false; // TEV path: PS uniform at group 2, texture at group 3
+   // A tagged particle's, whose in-between vertices are its own (interpVertRange).
+   bool ownVertices = false;
++  // Its vertices are in the full layout (gxruntime/gxcore/shader.hpp); the
++  // compact one otherwise, with the full layout's other inputs read from
++  // the default stream.
++  bool fullVertices = false;
+   // The ubershader's pipeline for this draw's fixed-function state, its
+   // pixel block (the pixel constants and the shader key) and a bind group with
+   // all eight texmaps, when the draw's own pipeline was still compiling as it
+diff --git a/GXRuntime/graphics/aurora/tests/frame_interp_layout_test.cpp b/GXRuntime/graphics/aurora/tests/frame_interp_layout_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/tests/frame_interp_layout_test.cpp
+@@ -0,0 +1,30 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Actual frame-interpolation capture with compact/full layouts. No renderer.
++#include "../lib/gfx/frame_interp.hpp"
++#include <cstdio>
++#include <cstring>
++#include <vector>
++namespace fi=aurora::gfx::frame_interp;
++namespace gx=gxruntime::gxcore;
++static unsigned checks=0,failures=0;
++#define CHECK(c) do{++checks;if(!(c)){++failures;std::fprintf(stderr,"FAIL %d %s\n",__LINE__,#c);}}while(0)
++int main(){
++ for(unsigned stride:{gx::kCompactVertexFloats,gx::kFullVertexFloats}){
++  gx::DrawPlan p{};p.ok=true;p.vertex_count=6;p.vertex_floats=stride;p.draw_tag=123;p.draw_tag_age=7;p.match_direct_position=true;
++  std::vector<unsigned char> payload(6*12,0xA5);p.match_payload=payload.data();p.match_payload_size=payload.size();p.match_vertex_stride=12;
++  p.vertices.resize(6*stride);
++  for(unsigned i=0;i<p.vertices.size();++i)p.vertices[i]=float(i)+.125f;
++  auto retained=p.vertices;fi::DrawInput out{};fi::capture_draw(p,out);
++  CHECK(out.key!=0);CHECK(out.positions.size()==18);CHECK(out.age==7);
++  for(unsigned v=0;v<6;++v)for(unsigned c=0;c<3;++c)CHECK(out.positions[3*v+c]==p.vertices[v*stride+c]);
++  CHECK(p.vertices==retained);
++  p.match_direct_position=false;p.draw_tag=0;fi::capture_draw(p,out);CHECK(out.positions.empty());CHECK(out.haveSamples);
++  for(unsigned i=0;i<3;++i)for(unsigned c=0;c<3;++c)CHECK(out.samples[3*i+c]==p.vertices[(i==0?0:i==1?3:5)*stride+c]);
++  p.draw_scope_part=17;fi::capture_draw(p,out);CHECK(out.positions.size()==18);CHECK(out.age==0);
++  const auto saved=out.positions;p.vertices.clear();CHECK(out.positions==saved); // copied capture is independent
++  p.vertices=retained;p.vertices.pop_back();fi::capture_draw(p,out);CHECK(out.positions.empty());CHECK(!out.haveSamples);
++  p.vertices=retained;p.vertex_count=7;fi::capture_draw(p,out);CHECK(out.positions.empty());CHECK(!out.haveSamples);
++  for(unsigned invalid:{0u,1u,14u,16u,32u,34u,0xffffffffu}){p.vertex_floats=invalid;fi::capture_draw(p,out);CHECK(out.positions.empty());CHECK(!out.haveSamples);}
++ }
++ std::printf("interp_layout: %u checks, %u failures\n",checks,failures);return failures?1:0;
++}
+diff --git a/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp b/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp
+--- a/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp
++++ b/GXRuntime/graphics/aurora/tests/frame_interp_test.cpp
+@@ -577,18 +577,18 @@
+       plan.match_primitive = 0x98;
+       plan.match_vertex_stride = 2;
+       plan.vertex_count = 6;
+-      plan.vertices.assign(6 * gxc::kVertexFloats, 0.f);
++      plan.vertices.assign(6 * plan.vertex_floats, 0.f);
+       for (int v = 0; v < 6; ++v)
+-        world(frame, v, &plan.vertices[v * gxc::kVertexFloats]);
++        world(frame, v, &plan.vertices[v * plan.vertex_floats]);
+       const auto view = seen(c.yaw, c.x, c.z, 0.f, 0.f, 0.f);
+       for (int v = 0; v < 6; ++v)
+-        seen_at(view.posnormalmatrix, &plan.vertices[v * gxc::kVertexFloats], drawn[frame][v]);
++        seen_at(view.posnormalmatrix, &plan.vertices[v * plan.vertex_floats], drawn[frame][v]);
+       const auto* got = blend_plan(plan, view);
+       if (frame == 2) {
+         hullHalfway = got != nullptr;
+         for (int v = 0; hullHalfway && v < 6; ++v) {
+           float at[3];
+-          seen_at(got->posnormalmatrix, &plan.vertices[v * gxc::kVertexFloats], at);
++          seen_at(got->posnormalmatrix, &plan.vertices[v * plan.vertex_floats], at);
+           for (int r = 0; r < 3; ++r)
+             hullHalfway = hullHalfway && std::fabs(at[r] - (drawn[1][v][r] + drawn[2][v][r]) / 2.f) < 1.f;
+         }
+@@ -663,10 +663,10 @@
+       plan.draw_tag = tag;
+       plan.draw_tag_age = age;
+       plan.tex_address = 0x1234;
+-      plan.vertices.assign(4 * gxc::kVertexFloats, 0.f);
++      plan.vertices.assign(4 * gxc::kCompactVertexFloats, 0.f);
+       const float corners[4][2] = {{-5, 5}, {5, 5}, {5, -5}, {-5, -5}};
+       for (int i = 0; i < 4; ++i) {
+-        float* v = plan.vertices.data() + i * gxc::kVertexFloats + gxc::kVertexPosOffset / sizeof(float);
++        float* v = plan.vertices.data() + i * gxc::kCompactVertexFloats + gxc::kVertexPosOffset / sizeof(float);
+         v[0] = x + corners[i][0];
+         v[1] = y + corners[i][1];
+         v[2] = -400.f;
+@@ -717,7 +717,7 @@
+       const auto at = seen(yaw, 0, 0, 100.f, 20.f, -600.f);
+       auto spark = particle(300, 0, at.posnormalmatrix[0][3], at.posnormalmatrix[1][3]);
+       for (int i = 0; i < 4; ++i)
+-        spark.vertices[i * gxc::kVertexFloats + 2] = at.posnormalmatrix[2][3];
++        spark.vertices[i * gxc::kCompactVertexFloats + 2] = at.posnormalmatrix[2][3];
+       return spark;
+     };
+     fi::end_game_frame();
+@@ -751,7 +751,7 @@
+       plan.match_direct_position = true;
+       plan.vertex_count = triangles * 3u;
+       plan.tex_address = 0x5678;
+-      plan.vertices.assign(plan.vertex_count * gxc::kVertexFloats, 0.f);
++      plan.vertices.assign(plan.vertex_count * gxc::kCompactVertexFloats, 0.f);
+       return plan;
+     };
+     const char* outcomes[8] = {};
+@@ -840,9 +840,9 @@
+       plan.vertex_count = 6;
+       plan.draw_scope = 0x4321;
+       plan.draw_scope_part = part;
+-      plan.vertices.assign(6 * gxc::kVertexFloats, 0.f);
++      plan.vertices.assign(6 * gxc::kCompactVertexFloats, 0.f);
+       for (int i = 0; i < 6; ++i) {
+-        float* v = plan.vertices.data() + i * gxc::kVertexFloats;
++        float* v = plan.vertices.data() + i * gxc::kCompactVertexFloats;
+         v[0] = (i % 3) * 10.f - 10.f;
+         v[2] = boatZ + 60.f * (part - 1 + i / 3); // a row every 60 units behind the boat
+       }
+@@ -876,9 +876,9 @@
+       plan.vertex_count = 4;
+       plan.draw_scope = 0x5151;
+       plan.draw_scope_part = part;
+-      plan.vertices.assign(4 * gxc::kVertexFloats, 0.f);
++      plan.vertices.assign(4 * gxc::kCompactVertexFloats, 0.f);
+       for (int i = 0; i < 4; ++i) {
+-        float* v = plan.vertices.data() + i * gxc::kVertexFloats;
++        float* v = plan.vertices.data() + i * gxc::kCompactVertexFloats;
+         v[0] = (i & 1) * 20.f + sway * (i >> 1); // the free edge sways
+         v[1] = (i >> 1) * 30.f;
+       }
+@@ -964,10 +964,10 @@
+       plan.match_direct_position = true;
+       plan.vertex_count = 4;
+       plan.draw_tag = 0x777;
+-      plan.vertices.assign(4 * gxc::kVertexFloats, 0.f);
++      plan.vertices.assign(4 * gxc::kCompactVertexFloats, 0.f);
+       for (int i = 0; i < 4; ++i) {
+-        plan.vertices[i * gxc::kVertexFloats] = x + (i & 1) * 5.f;
+-        plan.vertices[i * gxc::kVertexFloats + 2] = -400.f;
++        plan.vertices[i * gxc::kCompactVertexFloats] = x + (i & 1) * 5.f;
++        plan.vertices[i * gxc::kCompactVertexFloats + 2] = -400.f;
+       }
+       return plan;
+     };
+diff --git a/GXRuntime/graphics/gxcore/CMakeLists.txt b/GXRuntime/graphics/gxcore/CMakeLists.txt
+--- a/GXRuntime/graphics/gxcore/CMakeLists.txt
++++ b/GXRuntime/graphics/gxcore/CMakeLists.txt
+@@ -38,3 +38,12 @@
+     target_link_libraries(gxcore_texture_decode_tests PRIVATE GXRuntime::gxcore)
+     add_test(NAME gxcore_texture_decode_tests COMMAND gxcore_texture_decode_tests)
+ endif()
++
++if(BUILD_TESTING)
++# CPU decoded-field regression; the full-layout control is the default.
++add_executable(gxcore_vertex_layout_test tests/gxcore_vertex_layout_test.cpp)
++target_link_libraries(gxcore_vertex_layout_test PRIVATE GXRuntime::gxcore)
++add_test(NAME gxcore_vertex_layout_full COMMAND gxcore_vertex_layout_test)
++add_test(NAME gxcore_vertex_layout_compact COMMAND gxcore_vertex_layout_test)
++set_tests_properties(gxcore_vertex_layout_compact PROPERTIES ENVIRONMENT "DOL_GX_COMPACT_VERTICES=1")
++endif()
+diff --git a/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp b/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
+--- a/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
++++ b/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
+@@ -13,6 +13,8 @@
+ // include this file.
+ 
+ #include <cstdint>
++#include <cstdlib>
++#include <cstring>
+ #include <string>
+ #include <type_traits>
+ #include <vector>
+@@ -363,32 +365,64 @@
+ static_assert(sizeof(PixelShaderConstants) ==
+               (4 + 4 + 1 + 1 + 1 + 1 + 3 + 1 + 8 + 6 + 1) * 16);
+ 
+-// --- Fixed decoded-vertex layout (slice) ------------------------------------
++// --- Decoded-vertex layouts --------------------------------------------------
+ //
+-// The CPU vertex decoder (Dolphin VertexLoader semantics) normalizes every
+-// draw to this one interleaved layout so the pipeline vertex state is
+-// constant: pos vec3f | posmtx u32 (matrix ROW index) | color0 vec4f |
+-// color1 vec4f | uv0..4 vec2f | normal vec3f | texmtxidx low/high u32 |
+-// binormal vec3f | tangent vec3f. Input locations preserve the established
+-// uv0..3/NBT ABI; uv4 and the high matrix-index word use locations 12/13.
+-// normal (S15, @location 8), then the item-5 texgen block — per-vertex tex-matrix
+-// indices packed one byte per texgen (@location 9), and the NBT binormal/tangent
+-// emboss needs in view space (@location 10/11).
+-inline constexpr std::uint32_t kVertexFloats =
+-    3 + 1 + 4 + 4 + 2 * kMaxTexGens + 3 + 2 + 3 + 3;
+-inline constexpr std::uint32_t kVertexStrideBytes = kVertexFloats * 4;
++// The CPU vertex decoder (Dolphin VertexLoader semantics) writes each draw in
++// one of two interleaved layouts, which the pipeline key decides
++// (vertex_layout_full), so a pipeline's vertex state follows from its key:
++// - compact (most draws), 60 bytes: pos vec3f | posmtx u32 (matrix ROW index)
++//   | color0 vec4f | uv0 vec2f | uv1 vec2f | normal vec3f;
++// - full, 132 bytes: the compact layout, then color1 vec4f | uv2..4 vec2f |
++//   texmtxidx low/high u32 | binormal vec3f | tangent vec3f. A draw whose
++//   format carries color1, tex2-4, a TEXMTXIDX or N/B/T is full.
++// Both put the attributes they share at the same offsets. A compact draw's
++// pipeline reads the full layout's other inputs from a one-element stream of
++// their defaults (color1 white, the rest zero), as the decoder writes them for
++// a full draw whose format lacks them. Input locations: pos 0, posmtx 1,
++// color0 2, color1 3, uv0..3 4-7, normal 8 (S15), the per-vertex tex-matrix
++// indices packed one byte per texgen 9 (item 5), the NBT binormal/tangent
++// emboss needs 10/11, uv4 12 and the high matrix-index word 13.
+ inline constexpr std::uint32_t kVertexPosOffset = 0;
+ inline constexpr std::uint32_t kVertexPosMtxOffset = 12;
+ inline constexpr std::uint32_t kVertexColor0Offset = 16;
+-inline constexpr std::uint32_t kVertexColor1Offset = 32;
+-inline constexpr std::uint32_t kVertexUvOffset = 48; // + 8*i
+-inline constexpr std::uint32_t kVertexNormalOffset = 48 + 8 * kMaxTexGens;
+-inline constexpr std::uint32_t kVertexTexMtxIdxOffset = kVertexNormalOffset + 12;
+-inline constexpr std::uint32_t kVertexTexMtxIdxHiOffset =
+-    kVertexTexMtxIdxOffset + 4;
+-inline constexpr std::uint32_t kVertexBinormalOffset =
+-    kVertexTexMtxIdxHiOffset + 4;
++inline constexpr std::uint32_t kVertexUv0Offset = 32; // uv1 at +8
++inline constexpr std::uint32_t kVertexNormalOffset = 48;
++inline constexpr std::uint32_t kCompactVertexFloats = 15;
++inline constexpr std::uint32_t kCompactVertexStrideBytes = kCompactVertexFloats * 4;
++inline constexpr std::uint32_t kVertexColor1Offset = kCompactVertexStrideBytes;
++inline constexpr std::uint32_t kVertexUv2Offset = kVertexColor1Offset + 16; // uv3 +8, uv4 +16
++inline constexpr std::uint32_t kVertexTexMtxIdxOffset = kVertexUv2Offset + 24;
++inline constexpr std::uint32_t kVertexTexMtxIdxHiOffset = kVertexTexMtxIdxOffset + 4;
++inline constexpr std::uint32_t kVertexBinormalOffset = kVertexTexMtxIdxHiOffset + 4;
+ inline constexpr std::uint32_t kVertexTangentOffset = kVertexBinormalOffset + 12;
++inline constexpr std::uint32_t kFullVertexFloats = (kVertexTangentOffset + 12) / 4;
++inline constexpr std::uint32_t kFullVertexStrideBytes = kFullVertexFloats * 4;
++// The full layout's own part, the default stream's one element.
++inline constexpr std::uint32_t kVertexExtraBytes = kFullVertexStrideBytes - kCompactVertexStrideBytes;
++static_assert(kFullVertexStrideBytes == 132 && kVertexExtraBytes == 72);
++
++// Where uv slot `slot` (0..kMaxTexGens-1) is in either layout.
++constexpr std::uint32_t vertex_uv_offset(std::uint32_t slot) {
++  return slot < 2u ? kVertexUv0Offset + 8u * slot : kVertexUv2Offset + 8u * (slot - 2u);
++}
++
++// Whether a draw with this key is decoded in the full layout (and its
++// pipeline reads every input from the draw's vertices).
++inline bool compact_vertices_enabled() {
++  // Fixed for this process: pipeline layout and decoding must agree. Retain
++  // the full layout unless the experiment was explicitly selected at startup.
++  static const bool enabled = [] {
++    const char* value = std::getenv("DOL_GX_COMPACT_VERTICES");
++    return value != nullptr && std::strcmp(value, "1") == 0;
++  }();
++  return enabled;
++}
++
++inline bool vertex_layout_full(const ShaderKey& key) {
++  return !compact_vertices_enabled() || key.has_color1 != 0 || (key.uv_mask & 0x1Cu) != 0 || key.has_tex_mtx_idx != 0 ||
++         key.has_vertex_binormal != 0 || key.has_vertex_tangent != 0;
++}
++
+ 
+ // --- Draw plan ---------------------------------------------------------------
+ 
+@@ -556,7 +590,10 @@
+   // comparing them.
+   ConstantsInputs constants_inputs{};
+   std::uint64_t constants_id = 0;
+-  std::vector<float> vertices; // kVertexFloats per vertex
++  // Decoded vertices: vertex_floats per vertex (kCompactVertexFloats, or
++  // kFullVertexFloats when vertex_layout_full(pipeline.shader)).
++  std::uint32_t vertex_floats = kCompactVertexFloats;
++  std::vector<float> vertices;
+   std::vector<std::uint16_t> indices;
+ };
+ 
+diff --git a/GXRuntime/graphics/gxcore/src/gxcore.cpp b/GXRuntime/graphics/gxcore/src/gxcore.cpp
+--- a/GXRuntime/graphics/gxcore/src/gxcore.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore.cpp
+@@ -1344,10 +1344,15 @@
+     return skip("unsupported or empty primitive");
+   }
+ 
+-  // Vertex decode to the fixed layout.
++  // Vertex decode, in the compact or the full layout (shader.hpp): the key
++  // made from this draw's format decides, as it decides the pipeline's vertex
++  // state.
++  const bool full_layout = vertex_layout_full(plan.pipeline.shader);
++  const std::uint32_t vertex_floats = full_layout ? kFullVertexFloats : kCompactVertexFloats;
+   plan.vertex_count = draw.vertex_count;
++  plan.vertex_floats = vertex_floats;
+   plan.vertices.assign(
+-      static_cast<std::size_t>(draw.vertex_count) * kVertexFloats, 0.f);
++      static_cast<std::size_t>(draw.vertex_count) * vertex_floats, 0.f);
+   const std::uint8_t* payload = draw.vertex_payload.data();
+   const std::size_t payload_size = draw.vertex_payload.size();
+   // Each indexed entry's array, found once for the draw (it was looked up
+@@ -1364,10 +1369,15 @@
+   }
+   for (std::uint32_t v = 0; v < draw.vertex_count; ++v) {
+     float* out_vertex = plan.vertices.data() +
+-                        static_cast<std::size_t>(v) * kVertexFloats;
++                        static_cast<std::size_t>(v) * vertex_floats;
+     // Defaults: color0/1 white, uv 0, posmtx = current matrix's first row.
+-    out_vertex[4] = out_vertex[5] = out_vertex[6] = out_vertex[7] = 1.f;
+-    out_vertex[8] = out_vertex[9] = out_vertex[10] = out_vertex[11] = 1.f;
++    // (A compact draw's pipeline reads color1's white from the default stream.)
++    float* const color0 = out_vertex + kVertexColor0Offset / 4u;
++    color0[0] = color0[1] = color0[2] = color0[3] = 1.f;
++    if (full_layout) {
++      float* const color1 = out_vertex + kVertexColor1Offset / 4u;
++      color1[0] = color1[1] = color1[2] = color1[3] = 1.f;
++    }
+     // NBT part ordinal for index3 (three separate normal/binormal/tangent
+     // entries); a single 9-component entry decodes all three at once.
+     std::uint32_t normal_part = 0;
+@@ -1446,16 +1456,20 @@
+       case WalkEntry::kColor: {
+         float rgba[4];
+         decode_color(element, entry.format, rgba);
+-        float* dst = out_vertex + (entry.out_slot == 0u ? 4u : 8u);
+-        for (int c = 0; c < 4; ++c)
+-          dst[c] = rgba[c];
++        // color1 is only in the full layout, which a format with it gets.
++        if (entry.out_slot == 0u || full_layout) {
++          float* dst = out_vertex + (entry.out_slot == 0u ? kVertexColor0Offset : kVertexColor1Offset) / 4u;
++          for (int c = 0; c < 4; ++c)
++            dst[c] = rgba[c];
++        }
+         break;
+       }
+       case WalkEntry::kTex: {
+-        if (entry.out_slot < kMaxTexGens) {
++        // uv2-4 are only in the full layout, which a format with them gets.
++        if (entry.out_slot < kMaxTexGens && (entry.out_slot < 2u || full_layout)) {
+           std::uint32_t scalar = 0;
+           component_scalar_size(entry.format, &scalar);
+-          float* dst = out_vertex + 12u + 2u * entry.out_slot;
++          float* dst = out_vertex + vertex_uv_offset(entry.out_slot) / 4u;
+           const float scale = entry_scales[e];
+           dst[0] = decode_scaled(element, entry.format, scale);
+           dst[1] = entry.count == 2u
+@@ -1472,6 +1486,10 @@
+         component_scalar_size(entry.format, &scalar);
+         const float scale = entry_scales[e];
+         auto decode3 = [&](const std::uint8_t* src, std::uint32_t dst_off) {
++          // Binormal and tangent are in the full layout only (N/B/T makes a
++          // draw full).
++          if (dst_off >= kCompactVertexStrideBytes && !full_layout)
++            return;
+           float* dst = out_vertex + dst_off / 4u;
+           for (std::uint32_t c = 0; c < 3u; ++c)
+             dst[c] = decode_scaled(src + c * scalar, entry.format, scale);
+@@ -1497,11 +1515,15 @@
+         break;
+       }
+     }
+-    std::memcpy(out_vertex + 3, &posmtx_row, sizeof posmtx_row);
+-    std::memcpy(out_vertex + kVertexTexMtxIdxOffset / 4u, &texmtxidx_packed,
+-                sizeof texmtxidx_packed);
+-    std::memcpy(out_vertex + kVertexTexMtxIdxHiOffset / 4u,
+-                &texmtxidx_packed_hi, sizeof texmtxidx_packed_hi);
++    std::memcpy(out_vertex + kVertexPosMtxOffset / 4u, &posmtx_row, sizeof posmtx_row);
++    // The tex-matrix indices (zero without a TEXMTXIDX, which makes a draw
++    // full) are in the full layout only.
++    if (full_layout) {
++      std::memcpy(out_vertex + kVertexTexMtxIdxOffset / 4u, &texmtxidx_packed,
++                  sizeof texmtxidx_packed);
++      std::memcpy(out_vertex + kVertexTexMtxIdxHiOffset / 4u,
++                  &texmtxidx_packed_hi, sizeof texmtxidx_packed_hi);
++    }
+   }
+ 
+   // Uniforms. Most draws are made with the transform state of the draw
+@@ -1977,7 +1999,7 @@
+     if (plan.vertex_count > 0u) {
+       const float* last =
+           plan.vertices.data() +
+-          static_cast<std::size_t>(plan.vertex_count - 1u) * kVertexFloats;
++          static_cast<std::size_t>(plan.vertex_count - 1u) * plan.vertex_floats;
+       if (walk.has_normal)
+         for (std::uint32_t k = 0; k < 3u; ++k)
+           cached->normal[k] = last[kVertexNormalOffset / 4u + k];
+diff --git a/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp b/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
+--- a/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
+@@ -908,7 +908,7 @@
+     }
+   }
+ 
+-  // Fixed vertex input layout (kVertexStrideBytes); unused inputs are ignored.
++  // Vertex inputs: the compact or full layout (shader.hpp); unused inputs are ignored.
+   emit(out, "struct VertexIn {\n"
+             "    @location(0) rawpos: vec3f,\n"
+             "    @location(1) posmtx: u32,\n"
+diff --git a/GXRuntime/graphics/gxcore/tests/gxcore_vertex_layout_test.cpp b/GXRuntime/graphics/gxcore/tests/gxcore_vertex_layout_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/gxcore/tests/gxcore_vertex_layout_test.cpp
+@@ -0,0 +1,107 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// CPU decoder differential fixture. The same source also runs against the
++// preceding full-layout implementation; it does not open a renderer/device.
++#include "gxruntime/gxcore/gxcore.hpp"
++#include <array>
++#include <bit>
++#include <cmath>
++#include <cstdio>
++#include <cstring>
++#include <memory>
++#include <vector>
++namespace ar = gxruntime::aurora_recomp;
++namespace gx = gxruntime::gxcore;
++static unsigned checks=0, failures=0, cases=0;
++static std::uint64_t digest=1469598103934665603ull;
++#define CHECK(x) do { ++checks; if (!(x)) { ++failures; std::fprintf(stderr,"FAIL %d %s\n",__LINE__,#x); } } while(0)
++static void hash(const void* p,std::size_t n) { const auto*b=static_cast<const unsigned char*>(p); for(std::size_t i=0;i<n;++i) digest=(digest^b[i])*1099511628211ull; }
++static void be(std::vector<unsigned char>& b,unsigned x,unsigned n) { for(unsigned i=n;i;--i)b.push_back(x>>(8*(i-1))); }
++static unsigned size(unsigned fmt) { return fmt<2?1:fmt<4?2:4; }
++struct Attr { unsigned kind,slot,type,fmt,count,frac; }; // kind: pos, normal, color, tex
++struct Made { gx::GxCoreState state; ar::ConsumedDraw draw; std::array<std::array<float,33>,3> expected; bool full=false; };
++static void scalar(std::vector<unsigned char>& b,unsigned fmt,unsigned seed,float& out,unsigned frac) {
++ const int n=(seed&1)?-int(17+seed):int(17+seed);
++ if(fmt==4) { const unsigned bits=seed==90?0x7fc12345u:seed==91?0x7f800000u:std::bit_cast<unsigned>(float(n)*.25f);be(b,bits,4);out=std::bit_cast<float>(bits); }
++ else { const unsigned width=size(fmt);be(b,unsigned(n),width);const int v=fmt==0?int((unsigned)n&255):fmt==1?int(static_cast<signed char>(n)):fmt==2?int((unsigned)n&65535):int(static_cast<short>(n));out=float(v)/float(1u<<frac); }
++}
++static void color(std::vector<unsigned char>&b,unsigned fmt,unsigned seed,float*out) {
++ const unsigned r=(seed*19+37)&255,g=(seed*31+83)&255,bl=(seed*7+151)&255,a=(seed*43+17)&255;
++ switch(fmt) {
++ case 0: { const unsigned v=(r>>3)<<11|(g>>2)<<5|(bl>>3);be(b,v,2);out[0]=float(((v>>11)&31)*8+((v>>13)&7))/255.f;out[1]=float(((v>>5)&63)*4+((v>>9)&3))/255.f;out[2]=float((v&31)*8+((v>>2)&7))/255.f;out[3]=1.f;break; }
++ case 1:case 2: b.insert(b.end(),{(unsigned char)r,(unsigned char)g,(unsigned char)bl});if(fmt==2)b.push_back(0xA5);out[0]=r/255.f;out[1]=g/255.f;out[2]=bl/255.f;out[3]=1.f;break;
++ case 3: { const unsigned v=(r>>4)<<12|(g>>4)<<8|(bl>>4)<<4|(a>>4);be(b,v,2);for(unsigned i=0;i<4;++i)out[i]=float((v>>(12-4*i))&15)/15.f;break; }
++ case 4: { const unsigned v=(r>>2)<<18|(g>>2)<<12|(bl>>2)<<6|(a>>2);be(b,v,3);for(unsigned i=0;i<4;++i)out[i]=float((((v>>(18-6*i))&63)<<2)|(((v>>(18-6*i))&63)>>4))/255.f;break; }
++ default: b.insert(b.end(),{(unsigned char)r,(unsigned char)g,(unsigned char)bl,(unsigned char)a});out[0]=r/255.f;out[1]=g/255.f;out[2]=bl/255.f;out[3]=a/255.f; }
++}
++static Made make(const std::vector<Attr>&attrs,unsigned matrices=0,bool nbt3=false,unsigned special=0) {
++ Made m{};m.state.reset();m.draw.primitive=0x90;m.draw.vertex_count=3;m.draw.current_pn_matrix=2;m.draw.sequence=7;m.draw.transform_flags=ar::kDrawTransformProjectionValid;m.draw.projection_type=1;m.draw.projection[0]=m.draw.projection[2]=1.f;m.draw.projection[4]=-1.f;m.draw.position_matrix_valid_mask=0x3ff;
++ unsigned lo=matrices,hi=0,vat[3]={};
++ for(auto&a:attrs) {
++  if(a.kind==0){lo|=a.type<<9;vat[0]|=(a.count==3)|(a.fmt<<1)|(a.frac<<4);}
++  else if(a.kind==1){lo|=a.type<<11;vat[0]|=(a.count==9)<<9|(a.fmt<<10)|(unsigned(nbt3)<<31);m.full|=a.count==9;}
++  else if(a.kind==2){lo|=a.type<<(13+2*a.slot);vat[0]|=1u<<(13+4*a.slot)|(a.fmt<<(14+4*a.slot));m.full|=a.slot==1;}
++  else {hi|=a.type<<(2*a.slot);m.full|=a.slot>=2&&a.slot<5;const unsigned eb[]={21,0,9,18,27,5,14,23},fb[]={22,1,10,19,28,6,15,24},fr[]={25,4,13,22,0,9,18,27};const unsigned group=a.slot==0?0:a.slot<5?1:2;vat[group]|=(unsigned(a.count==2)<<eb[a.slot])|(a.fmt<<fb[a.slot]);vat[a.slot==4?2:group]|=a.frac<<fr[a.slot];}
++ }
++ m.full|=(matrices&0x1fe)!=0;
++ m.state.apply({.kind=ar::RenderStateKind::CpVcd,.index=0,.value=lo});m.state.apply({.kind=ar::RenderStateKind::CpVcd,.index=1,.value=hi});
++ for(unsigned i=0;i<3;++i)m.state.apply({.kind=ar::RenderStateKind::CpVat,.index=0,.value=vat[i],.aux0=i});
++ std::array<std::vector<unsigned char>,16> arrays;
++ for(unsigned v=0;v<3;++v) {
++  auto&ex=m.expected[v];ex.fill(0);for(unsigned c=0;c<8;++c)ex[4+c]=1.f;
++  unsigned pn=6,tx[2]={};if(matrices&1){pn=3+3*v;m.draw.vertex_payload.push_back(pn);}ex[3]=std::bit_cast<float>(pn);
++  for(unsigned t=0;t<8;++t)if(matrices&(2u<<t)){const unsigned val=30+t*3+v;m.draw.vertex_payload.push_back(val);tx[t/4]|=val<<(8*(t%4));}
++  ex[25]=std::bit_cast<float>(tx[0]);ex[26]=std::bit_cast<float>(tx[1]);
++  for(auto&a:attrs) {
++   std::vector<unsigned char> bytes;float ignored[16]{};float*out=a.kind==0?ex.data():a.kind==1?ex.data()+22:a.kind==2?ex.data()+4+4*a.slot:ex.data()+12+2*a.slot; if(a.kind==3&&a.slot>=5)out=ignored;
++   if(a.kind==2)color(bytes,a.fmt,v+3,out);
++   else for(unsigned c=0;c<a.count;++c){unsigned dst=a.kind==1&&c>=3?c+2:c;scalar(bytes,a.fmt,special?special:3+v*11+c,out[dst],a.kind==1?(a.fmt==1?6:a.fmt==3?14:0):a.frac);}
++   const unsigned attr=a.kind==0?0:a.kind==1?1:a.kind==2?2+a.slot:4+a.slot;
++   if(a.type==1)m.draw.vertex_payload.insert(m.draw.vertex_payload.end(),bytes.begin(),bytes.end());
++   else {
++    if(a.kind==1&&nbt3&&a.count==9){const unsigned part=3*size(a.fmt);for(unsigned n=0;n<3;++n){be(m.draw.vertex_payload,v*3+n,a.type==2?1:2);arrays[attr].insert(arrays[attr].end(),bytes.begin()+n*part,bytes.begin()+(n+1)*part);}}
++    else {be(m.draw.vertex_payload,v,a.type==2?1:2);arrays[attr].insert(arrays[attr].end(),bytes.begin(),bytes.end());}
++   }
++  }
++ }
++ m.draw.vertex_size=m.draw.vertex_payload.size()/3;
++ for(unsigned a=0;a<16;++a)if(!arrays[a].empty()) {auto&r=m.draw.arrays[m.draw.array_input_count++];r.attr=a;r.owned_data=std::make_shared<const std::vector<unsigned char>>(arrays[a]);r.host_data=r.owned_data->data();r.host_available=r.owned_data->size();r.stride=r.host_available/(a==1&&nbt3?9:3);r.resolved=true;r.indexed=true;}
++ return m;
++}
++static std::array<float,33> semantic(const gx::DrawPlan&p,unsigned v) {
++ std::array<float,33> r{};
++#ifdef COMPACT_TEST_REFERENCE
++ std::memcpy(r.data(),p.vertices.data()+v*gx::kVertexFloats,132);
++#else
++ const float*b=p.vertices.data()+v*p.vertex_floats;
++ std::memcpy(r.data(),b,32);for(unsigned c=0;c<4;++c)r[8+c]=p.vertex_floats==gx::kFullVertexFloats?b[gx::kVertexColor1Offset/4+c]:1.f;
++ for(unsigned t=0;t<5;++t)if(t<2||p.vertex_floats==gx::kFullVertexFloats)std::memcpy(r.data()+12+2*t,b+gx::vertex_uv_offset(t)/4,8);
++ std::memcpy(r.data()+22,b+gx::kVertexNormalOffset/4,12);
++ if(p.vertex_floats==gx::kFullVertexFloats)std::memcpy(r.data()+25,b+gx::kVertexTexMtxIdxOffset/4,32);
++#endif
++ return r;
++}
++static void run(Made m) {
++ ++cases;const char* flag=std::getenv("DOL_GX_COMPACT_VERTICES");m.full|=flag==nullptr||std::strcmp(flag,"1")!=0;ar::ConsumedDraw copy=m.draw;m.draw={};gx::GapCounters gaps{};auto p=m.state.build_draw_plan(copy,gaps);CHECK(p.ok);if(!p.ok)return;
++#ifndef COMPACT_TEST_REFERENCE
++ CHECK(p.vertex_floats==(m.full?33u:15u));CHECK(p.vertices.size()==3*p.vertex_floats);CHECK(gx::vertex_layout_full(p.pipeline.shader)==m.full);
++#else
++ CHECK(p.vertices.size()==3*33u);CHECK(true);CHECK(true);
++#endif
++ CHECK(p.vertex_count==3);CHECK(p.indices==std::vector<std::uint16_t>({0,1,2}));
++ for(unsigned v=0;v<3;++v){auto s=semantic(p,v);for(unsigned k=0;k<33;++k)CHECK(std::bit_cast<unsigned>(s[k])==std::bit_cast<unsigned>(m.expected[v][k]));hash(s.data(),132);}
++ hash(&p.pipeline,sizeof(p.pipeline));hash(&p.constants,sizeof(p.constants));hash(&p.pixel_constants,sizeof(p.pixel_constants));auto shader=gx::generate_wgsl(p.pipeline.shader);hash(shader.data(),shader.size());
++ // Every incomplete FIFO prefix must refuse safely, including index16 tails.
++ for(std::size_t n=0;n<copy.vertex_payload.size();++n){auto bad=copy;bad.vertex_payload.resize(n);gx::GapCounters g;CHECK(!m.state.build_draw_plan(bad,g).ok);hash(&g.vertex_payload_overrun,sizeof(g.vertex_payload_overrun));}
++ for(unsigned a=0;a<copy.array_input_count;++a){auto bad=copy;bad.arrays[a].host_available=0;gx::GapCounters g;CHECK(!m.state.build_draw_plan(bad,g).ok);bad=copy;bad.arrays[a].resolved=false;CHECK(!m.state.build_draw_plan(bad,g).ok);}
++}
++int main() {
++ for(unsigned fmt=0;fmt<5;++fmt)for(unsigned type=1;type<=3;++type)for(unsigned count=2;count<=3;++count)run(make({{0,0,type,fmt,count,fmt==4?0u:3u}}));
++ for(unsigned fmt=0;fmt<6;++fmt)for(unsigned type=1;type<=3;++type)for(unsigned slot=0;slot<2;++slot)run(make({{0,0,1,4,3,0},{2,slot,type,fmt,4,0}}));
++ for(unsigned slot=0;slot<8;++slot)for(unsigned fmt=0;fmt<5;++fmt)for(unsigned type=1;type<=3;++type)for(unsigned count=1;count<=2;++count)run(make({{0,0,1,4,3,0},{3,slot,type,fmt,count,fmt==4?0u:2u}}));
++ for(unsigned fmt:{1u,3u,4u})for(unsigned type=1;type<=3;++type)for(unsigned count:{3u,9u})run(make({{0,0,1,4,3,0},{1,0,type,fmt,count,0}}));
++ for(unsigned type:{2u,3u})for(unsigned fmt:{1u,3u,4u})run(make({{0,0,1,4,3,0},{1,0,type,fmt,9,0}},0,true));
++ for(unsigned t=0;t<8;++t)run(make({{0,0,1,4,3,0}},1u|(2u<<t)));
++ for(unsigned special:{90u,91u})run(make({{0,0,1,4,3,0},{3,1,1,4,2,0}},0,false,special));
++ run(make({{0,0,3,3,3,5},{1,0,3,3,9,0},{2,0,3,5,4,0},{2,1,3,3,4,0},{3,0,3,3,2,3},{3,1,3,2,2,2},{3,2,3,4,2,0},{3,3,3,1,1,1},{3,4,3,0,2,0}},0x3fu));
++ std::printf("vertex_layout: %u cases, %u checks, %u failures, semantic=%016llx\n",cases,checks,failures,(unsigned long long)digest);return failures?1:0;
++}
+diff --git a/GXRuntime/graphics/gxcore/tests/gxcore_wgsl_test.cpp b/GXRuntime/graphics/gxcore/tests/gxcore_wgsl_test.cpp
+--- a/GXRuntime/graphics/gxcore/tests/gxcore_wgsl_test.cpp
++++ b/GXRuntime/graphics/gxcore/tests/gxcore_wgsl_test.cpp
+@@ -459,11 +459,14 @@
+     CHECK(rgb_plan.pipeline.alpha_update == 0u);
+   }
+ 
+-  // Decoded vertices: fixed 20-float layout.
++  // Decoded vertices: the compact layout (no color1, uv2-4, TEXMTXIDX or N/B/T).
+   CHECK(plan.vertex_count == 4);
+-  CHECK(plan.vertices.size() == 4u * gxc::kVertexFloats);
++  CHECK(plan.vertex_floats == (std::getenv("DOL_GX_COMPACT_VERTICES") != nullptr &&
++        std::strcmp(std::getenv("DOL_GX_COMPACT_VERTICES"), "1") == 0 ?
++        gxc::kCompactVertexFloats : gxc::kFullVertexFloats));
++  CHECK(plan.vertices.size() == 4u * plan.vertex_floats);
+   for (std::uint32_t v = 0; v < 4; ++v) {
+-    const float* dec = plan.vertices.data() + v * gxc::kVertexFloats;
++    const float* dec = plan.vertices.data() + v * plan.vertex_floats;
+     CHECK(dec[0] == quad[v][0]);
+     CHECK(dec[1] == quad[v][1]);
+     CHECK(dec[2] == quad[v][2]);
+@@ -471,8 +474,8 @@
+     std::memcpy(&posmtx, dec + 3, sizeof posmtx);
+     CHECK(posmtx == 0);
+     CHECK(dec[4] == 1.f && dec[7] == 1.f); // default white color0
+-    CHECK(dec[12] == quad[v][3]);
+-    CHECK(dec[13] == quad[v][4]);
++    CHECK(dec[gxc::vertex_uv_offset(0) / 4u] == quad[v][3]);
++    CHECK(dec[gxc::vertex_uv_offset(0) / 4u + 1u] == quad[v][4]);
+   }
+   CHECK(plan.indices.size() == 6);
+ 
+@@ -642,7 +645,8 @@
+   CHECK(key.tex_mtx_idx_mask == 0x1);
+   // Vertex 1 (pos.x == 1): TEXMTXIDX byte round-trips as a u32; binormal.y == 2,
+   // tangent.z == 3.
+-  const float* vtx = plan.vertices.data() + gxc::kVertexFloats; // vertex 1
++  CHECK(plan.vertex_floats == gxc::kFullVertexFloats); // TEXMTXIDX and N/B/T: the full layout
++  const float* vtx = plan.vertices.data() + plan.vertex_floats; // vertex 1
+   std::uint32_t ti = 0;
+   std::memcpy(&ti, vtx + gxc::kVertexTexMtxIdxOffset / 4u, sizeof ti);
+   CHECK(ti == 33u);
+@@ -817,8 +821,9 @@
+   CHECK(plan.constants.texmatrices[13][1] == 3.f);
+   CHECK(plan.constants.texmatrices[14][2] == 4.f);
+   const float* vertex = plan.vertices.data();
+-  CHECK(vertex[(gxc::kVertexUvOffset + 32u) / 4u] == 0.25f);
+-  CHECK(vertex[(gxc::kVertexUvOffset + 36u) / 4u] == 0.5f);
++  CHECK(plan.vertex_floats == gxc::kFullVertexFloats); // uv4: the full layout
++  CHECK(vertex[gxc::vertex_uv_offset(4) / 4u] == 0.25f);
++  CHECK(vertex[gxc::vertex_uv_offset(4) / 4u + 1u] == 0.5f);
+   std::uint32_t texidx_hi = 0u;
+   std::memcpy(&texidx_hi,
+               vertex + gxc::kVertexTexMtxIdxHiOffset / 4u,

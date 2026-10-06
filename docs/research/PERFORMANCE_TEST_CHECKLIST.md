@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 5:28 p.m. CDT**. Implementation started from
+Updated **October 6, 2026, 5:37 p.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -14,11 +14,11 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |
-| 01 | Isolated fusion candidate adds immutable array ownership, complete primitive groups and HUD/state boundaries. Actual O3 and ASan each passed 948 fusion checks; retained shader/plan tests also passed. | Combined renderer GPU/game images, array-copy cost and serialized timing. |
+| 01 | Isolated fusion candidate passed 948 O3/ASan checks and the real GPU oracle. Native Outset then stopped the renderer on `fused array changed during packet submission`; the game exited cleanly but produced no capture. | Keep disabled. Repair safe draw splitting for changed arrays and add the native-derived regression before further image/timing qualification. |
 | 02 | Opt-in 60-byte vertices passed 49,878 field/layout checks and 108 actual interpolation-capture checks in each of O3/ASan. Full fallback, shader fields and instance defaults are retained. | Combined GPU/game images and timing. The broad interpolation ASan first-blend null read also occurs in canonical 11 + 01; its cause remains unresolved. |
 | 03 | Exact opt-in decoder passed 399,918 checks in each of O3/ASan, including all color-byte values, exceptional float words, malformed indexed inputs and full/compact/generic/fast/verify controls. | Combined GPU/game images and decode cost; default remains interpreted. |
 | 04 | Completed-image upload-shadow candidate passed O3/ASan: 69,063 checks and 35,760 complete-buffer comparisons each. Serial identical frames reduced uploads by 99.17%, but continuous two-frame overlap saved no bytes because reservations declined. | Retain inactive. Find a useful real nonoverlap workload before paying for GPU/native integration. |
-| 05 | Sparse vertex constants passed 16,191,052 checks in each of O3/ASan, including 4,096 real shader shapes and a repaired partial-upload/retry hazard. Authored 1,000-draw copied bytes fell from 2,832,000 to 160,000. | Full production compile, GPU binding/shader execution, native images and timing; default remains full constants. Use the corrected v2 patch export. |
+| 05 | Sparse vertex constants passed 16,191,052 O3/ASan checks, including 4,096 shader shapes and a repaired partial-upload/retry hazard. Full production compile exposed a leaked GXCore header dependency and an incorrect private-limit reference; both negatives are retained. | Repair the production interfaces, then GPU binding/shader execution, native images and timing. Default remains full constants. Earlier v2 is CPU-qualified only. |
 | 07 | Enabled as active patch 0163. O3/ASan each passed 420,637 checks. Native Outset, Dragon Roost, Fortress sea and Hyrule captures match. Dragon Roost control/candidate/candidate/control repeated CI uploads 3,276 → 68 and total uploads 3,483 → 275 with exact images. | Combined renderer checks and serialized frame-time measurements. Forest Haven qualifies arrival-dialogue images only; no gameplay FPS or complete guest-RAM parity claim. |
 | 08 | Bounded command-vector reuse passed O3/ASan: 11,239,116 checks each, including queued/replayed last-reader ownership, reset/cancel and retained limits. Authored 1,000-frame workloads used 8 vector-storage allocations versus 16,000; full production common.cpp compiled/linked with 07. | Combined native/GPU comparison, real allocation counts and timing. No total-heap/FPS claim. |
 | 10–11 | Isolated opt-in transforms passed 5,460,525 full CPU/budget/deadline comparisons in each of O3 and ASan. Existing computed-goto entry dispatch is preserved. On the actual 487-case irregular map, compiled prefix comparisons fell from 11 to 2 with slots, or 3 combined. Regular-stride maps already optimized equally; ranges alone added a comparison. | Builder integration and matching-profile native gameplay A/B. Preserve the assembly negatives; no blanket speedup claim. |
@@ -72,8 +72,13 @@ raw-digest assertion failure is preserved alongside the successful receipt.
 
 Combined 01/02/07/08 compiled 82 SDK archive members, seven direct app consumers
 and the authored GPU oracle. All producer libraries were refreshed along with
-renderer consumers. The control mode passed 403 actual GPU pixel/policy checks
-at each of scales 1, 1.5 and 2. Feature-specific GPU and native runs continue.
+renderer consumers. Each of control, fusion, compact, command reuse and all
+combined passed 403 actual GPU pixel/policy checks at scales 1, 1.5 and 2:
+6,045 total. The native control's Outset capture matches the earlier baseline.
+The native fusion failure is preserved in
+`build/performance-combined-renderer-20261006/fusion-native-3300-attempt1/`.
+Feature-specific native runs continue; the authored GPU fixture did not expose
+this real-game array transition.
 Private compilation receipt:
 `build/performance-combined-renderer-20261006/attempt4/result.json`, SHA-256
 `ef555d651fdcca060b31423eec3710cf9dab70fe7ad05b141adc4d07239a89e2`.

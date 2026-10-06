@@ -1,0 +1,42 @@
+{
+  "status": "INACTIVE_DRAFT_NOT_IN_ACTIVE_MANIFEST",
+  "donor": {
+    "commit": "6f52a68d14b4375afe55314ac0a66c490aa6f183",
+    "author": "elliotttate",
+    "email": "elliotttate@gmail.com"
+  },
+  "patch": {
+    "path": "patches/recompcore/drafts/compact-vertices.patch",
+    "bytes": 54431,
+    "sha256": "8f646996a865d22f6d0eaeecc23666729987f4713225869497daae2b6798f658"
+  },
+  "notes": {
+    "path": "patches/recompcore/drafts/compact-vertices.md",
+    "bytes": 2987,
+    "sha256": "2df41de9ae26dc5398df8144206d461282c07e67b6afd5a6fd83974bbe56160b"
+  },
+  "gate": {
+    "name": "DOL_GX_COMPACT_VERTICES",
+    "enabled": "exact1",
+    "default": "baseline",
+    "verify": null
+  },
+  "canonical11": "6297ec48f4da8bda4d25d767e49a1d10b079f1c5",
+  "depends_on_01": "c50dea0aced1686238cba2d0296fa698174febede6839a7416b796f4715f2f5c",
+  "depends_on_02": null,
+  "evidence": {
+    "path": "build/performance-02-compact-vertices-20261006/candidate-result.json",
+    "bytes": 520299,
+    "sha256": "5b58d3ebb66fa3e889f653aa6fb96a9ec9099e7fddea351cef7438cdf9c0ec6a"
+  },
+  "authored_O3_ASAN_checks_each": 49878,
+  "interpolation_baseline_addendum": {
+    "path": "build/performance-02-compact-vertices-20261006/baseline-interpolation-addendum.json",
+    "bytes": 1170,
+    "sha256": "baf647601b28fa3358c0491ba7ebd2fd9471bf90ed448eaec086550f5ed1069f"
+  },
+  "tests": "Authored SDK fixtures and optional CPU CMake declarations included in patch; CMake configure not tested.",
+  "no_gpu_game_or_performance_acceptance": true,
+  "active_manifest_changed": false,
+  "ancestor_01_default": "Fusion ON in the exact inactive ancestor patch; separate exact-1/default-OFF root gate required before promotion."
+}
