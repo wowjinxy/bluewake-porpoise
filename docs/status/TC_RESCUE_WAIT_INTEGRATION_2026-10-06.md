@@ -217,7 +217,20 @@ A separate source prerequisite admission and file-copy decision bind those
 actual reviews. The decision covers only the original 56 copies and four
 settings files, after the final stager source checks. Fresh copied-byte reviews
 and separate bounded native decisions still precede each game case. Runtime
-staging and game replay remain pending.
+staging is complete; game replay remains pending.
+
+The single file-only staging attempt completed with 56 copies and four generated
+settings files across the four isolated replay folders. It reported 60 final
+files and 48 copied executable/runtime metadata records, with all 2956 source
+identities preserved. No game case launched. These are the stager's recorded
+results; independent copied-byte acceptance is still pending.
+
+Before running either independent copy reader, source review caught a missing
+comparison between reported Windows-provider identities and the accepted facts.
+Separate readers now require the complete expected input set, matching hashes,
+available sizes/timestamps and physical paths before and after staging. The
+original readers remain uninvoked and preserved; the completed staging attempt
+and copied artifacts are unchanged.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
