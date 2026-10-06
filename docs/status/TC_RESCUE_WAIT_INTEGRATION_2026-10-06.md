@@ -33,8 +33,23 @@ The subsequent optimized configure command returned success, but its verifier
 stopped because it required compiler paths in CMakeCache.txt. This toolchain
 sets ordinary compiler variables instead. The actual generated C/C++ compiler
 records and FileAPI toolchains record the expected copied Clang 19.1.5 paths.
-The stopped verifier result is preserved; correcting that metadata check does
-not establish a successful ownership fixture or full host build.
+Independent file-only reviews now accept that completed configuration. The
+replacement check requires generated compiler records and FileAPI to agree on
+the pinned paths, compiler IDs, version, frontend, Windows x64 ABI and empty
+implicit search inputs; a conflicting cache entry still fails. It also restores
+the original frozen copied-source records and one already approved Windows shell
+pin that the continuation had omitted. Its three changes have an exact inverse
+to the stopped verifier, with no game source or qualification command change.
+
+The actual configuration contains exactly 34 runtime sources and six fixture
+sources, 192 pinned consumed CMake inputs, six owned generated inputs and 69
+reviewed tool-path mentions. The four main compile cases close 800 dependency
+mentions across 254 distinct inputs; the enabled objects use the Windows thread
+provider and disabled objects reference no cutscene-wait API. All 58 existing
+generated and log files remain unchanged. The original compiler and verifier
+failures stay preserved. These checks accept only the completed compile and
+configure prefix; no ownership fixture or full host has passed yet. The remaining
+five roles will use a separately reviewed output folder.
 
 Next are the real-runtime ownership fixtures and complete host links, followed
 by genuine OFF/ON rescue runs covering the six timer returns, original rewards,
