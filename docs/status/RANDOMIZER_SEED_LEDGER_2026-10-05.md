@@ -43,6 +43,19 @@ last complete pair before the backend opens. Retained pending candidates are
 never replayed. Only a receipt minted by the store after publication, or verified
 load, can confirm the exact proposed CARD/ledger pair.
 
+The source-only session controller now owns that exclusive store and ledger
+for one canonical LinkUG experiment. A new session needs explicit initial
+CARD bytes matching the expected origin; reopening verifies the saved profile,
+module, quest slot and ledger before restoring the working copy. Scoped leases
+reject other sessions, stale callers, wrong threads and reentrant callbacks.
+Cancellation, callback exceptions or publication failure retire the session;
+recovery requires closing the native backend and reopening a verified pair.
+Copied snapshots include the CARD digest and generation from the same last
+confirmed store receipt. A later publication failure keeps that prior tuple
+even if a new complete pair reached disk before acknowledgement was lost.
+The session lease authorizes storage/core access only. It neither reads guest
+state nor establishes a native award or successful save.
+
 These APIs are source foundations, not a shipping native reward adapter. The
 game owner must prove the real entry/return and REL ownership, correlate genuine
 serialization and SaveSync completion, snapshot the same isolated CARD under
@@ -57,6 +70,13 @@ quest mismatch, cancellation quarantine, exact store receipts and fresh-ledger
 reload. The storage fixture also covers real Windows deny-delete file locks,
 interrupted publication, previous-generation recovery, exclusive leases and
 external mutation. Source hashes remain unchanged across the final runs.
+
+The session fixture adds 184 optimized and sanitizer checks each, including
+actual Windows sharing exclusion during publication, lease ownership and
+reopening the last complete pair after an uncommitted working-card change.
+An additional private variant using the storage layer's existing test hook
+passes 218 checks each and covers loss of acknowledgement after publication.
+That hook is excluded from the ordinary session regression target.
 
 Native reward replacement, tracker presentation, full starting-state policy,
 reachability spheres, beatability verification and entrance shuffling remain
