@@ -1,0 +1,25 @@
+# Opaque namespace storage only; no game, assets, SDL, native card backend or
+# network connection. The caller enables testing and chooses its regression guard.
+include_guard(GLOBAL)
+get_filename_component(_bw_seed_store_repo "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+find_package(Threads REQUIRED)
+if(NOT TARGET bluewake_randomizer_store_test)
+  add_executable(bluewake_randomizer_store_test
+    "${_bw_seed_store_repo}/tests/randomizer_store_test.cpp"
+    "${_bw_seed_store_repo}/runtime/host/src/randomizer_store.cpp")
+  target_compile_features(bluewake_randomizer_store_test PRIVATE cxx_std_17)
+  set_target_properties(bluewake_randomizer_store_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES)
+  target_include_directories(bluewake_randomizer_store_test PRIVATE "${_bw_seed_store_repo}/runtime/host/src")
+  target_compile_definitions(bluewake_randomizer_store_test PRIVATE BLUEWAKE_RANDOMIZER_STORE_TEST)
+  target_link_libraries(bluewake_randomizer_store_test PRIVATE Threads::Threads)
+  if(WIN32)
+    target_compile_definitions(bluewake_randomizer_store_test PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
+  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(bluewake_randomizer_store_test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(bluewake_randomizer_store_test PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME bluewake_randomizer_store_test COMMAND bluewake_randomizer_store_test)
+  set_tests_properties(bluewake_randomizer_store_test PROPERTIES TIMEOUT 60 LABELS "source-only;randomizer;storage")
+endif()

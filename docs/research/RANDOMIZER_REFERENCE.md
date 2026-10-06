@@ -64,6 +64,9 @@ Implement in this order:
 4. Seed identity tied to card save/backup/import and co-op room compatibility.
 5. Entrance shuffling and plando with the same verifier.
 
-Seed generation and native reward replacement remain disabled. Reachability in
-the imported logic does not yet establish access or beatability in the native
-port.
+The source-only seed library now generates reproducible placements from an
+explicit reward pool and plando. Canonical profiles, copied-value chest
+transactions and paired CARD/ledger storage are described in
+[the seed and ledger status](../status/RANDOMIZER_SEED_LEDGER_2026-10-05.md).
+Native reward replacement remains disabled. Reachability in the imported logic
+does not yet establish access or beatability in the native port.
