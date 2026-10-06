@@ -69,6 +69,24 @@ hashes and modification timestamps. This accepts the fixture evidence with
 that recipe diagnostic; it does not qualify the copied recipe as diagnostic
 free. No target was rerun or artifact corrected.
 
+The complete host build accepted a separate source graph with 64 ordered objects
+for OFF and 73 for ON. The new Settings layout is consumed by exactly three
+existing objects; all three are rebuilt, along with the settings definitions.
+Independent reviews checked their actual dependency files and x64 objects after
+these first four compiles passed.
+
+The next compile, mouse_camera.c, stopped at the copied Clang inttypes.h check
+for an unsupported MSVC compatibility version. Its 1,038-byte diagnostic and
+failed dependency file remain preserved; no camera object or later host link
+was produced. A separate continuation restores only the camera's
+-fms-compatibility-version=19.44 flag, matching the passing conducting fixture's
+same source and compiler. It borrows the four accepted objects and requires
+its own review and authorization before compiling the remaining sources.
+
+The settings compile also retained a 975-byte nonfatal format-security warning
+for a fixed availability-name string passed to ImGui::TextWrapped. The accepted
+prefix is not diagnostic free. No failed compile was relabeled or rerun.
+
 Next are complete host links and genuine OFF/ON rescue runs covering the six
 timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
