@@ -44,6 +44,10 @@
     {
       "path": "patches/recompcore/0162-noninteractive-gpu-startup.patch",
       "sha256": "f3bec12d89bce188e60ff3af6de8ce72e667deea4c839323ad7da453ae84648f"
+    },
+    {
+      "path": "patches/recompcore/0163-retain-two-texture-identities.patch",
+      "sha256": "1573f10a8aa6189dd56233f7e80fc98deba53fb649656b9f1a1981785ccd18f5"
     }
   ]
 }

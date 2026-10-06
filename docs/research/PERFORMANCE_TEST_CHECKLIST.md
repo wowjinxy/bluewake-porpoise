@@ -1,8 +1,9 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 5:00 p.m. CDT**. Implementation started from
-`7bb4aec`; runtime remains `e280c788` with active patches **0152–0162**.
-Checking a box means locally qualified and recorded, not merely downloaded.
+Updated **October 6, 2026, 5:28 p.m. CDT**. Implementation started from
+`7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
+Checking a box means locally qualified for its stated benefit and recorded,
+not merely downloaded. Gameplay FPS claims require separate timing evidence.
 Donor gains are evidence to investigate, not promised gains on this machine.
 
 ## Implementation progress
@@ -14,11 +15,15 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |
 | 01 | Isolated fusion candidate adds immutable array ownership, complete primitive groups and HUD/state boundaries. Actual O3 and ASan each passed 948 fusion checks; retained shader/plan tests also passed. | Combined renderer GPU/game images, array-copy cost and serialized timing. |
+| 02 | Opt-in 60-byte vertices passed 49,878 field/layout checks and 108 actual interpolation-capture checks in each of O3/ASan. Full fallback, shader fields and instance defaults are retained. | Combined GPU/game images and timing. The broad interpolation ASan first-blend null read also occurs in canonical 11 + 01; its cause remains unresolved. |
+| 03 | Exact opt-in decoder passed 399,918 checks in each of O3/ASan, including all color-byte values, exceptional float words, malformed indexed inputs and full/compact/generic/fast/verify controls. | Combined GPU/game images and decode cost; default remains interpreted. |
 | 04 | Completed-image upload-shadow candidate passed O3/ASan: 69,063 checks and 35,760 complete-buffer comparisons each. Serial identical frames reduced uploads by 99.17%, but continuous two-frame overlap saved no bytes because reservations declined. | Retain inactive. Find a useful real nonoverlap workload before paying for GPU/native integration. |
-| 07 | Two-identity texture cache: O3 and ASan each passed 420,637 checks; authored palette alternation used 2 uploads instead of 1,000 with identical decoded pixels. Full production renderer compiled/linked; native 3,300-retrace Outset capture is byte-identical to the control. | Other native routes, combined renderer changes and serialized timing. Candidate remains unpromoted; no gameplay FPS claim. |
+| 05 | Sparse vertex constants passed 16,191,052 checks in each of O3/ASan, including 4,096 real shader shapes and a repaired partial-upload/retry hazard. Authored 1,000-draw copied bytes fell from 2,832,000 to 160,000. | Full production compile, GPU binding/shader execution, native images and timing; default remains full constants. Use the corrected v2 patch export. |
+| 07 | Enabled as active patch 0163. O3/ASan each passed 420,637 checks. Native Outset, Dragon Roost, Fortress sea and Hyrule captures match. Dragon Roost control/candidate/candidate/control repeated CI uploads 3,276 → 68 and total uploads 3,483 → 275 with exact images. | Combined renderer checks and serialized frame-time measurements. Forest Haven qualifies arrival-dialogue images only; no gameplay FPS or complete guest-RAM parity claim. |
 | 08 | Bounded command-vector reuse passed O3/ASan: 11,239,116 checks each, including queued/replayed last-reader ownership, reset/cancel and retained limits. Authored 1,000-frame workloads used 8 vector-storage allocations versus 16,000; full production common.cpp compiled/linked with 07. | Combined native/GPU comparison, real allocation counts and timing. No total-heap/FPS claim. |
 | 10–11 | Isolated opt-in transforms passed 5,460,525 full CPU/budget/deadline comparisons in each of O3 and ASan. Existing computed-goto entry dispatch is preserved. On the actual 487-case irregular map, compiled prefix comparisons fell from 11 to 2 with slots, or 3 combined. Regular-stride maps already optimized equally; ranges alone added a comparison. | Builder integration and matching-profile native gameplay A/B. Preserve the assembly negatives; no blanket speedup claim. |
 | 12 | `--f32-hw-widen` is available, off by default, with required gather/inline-FP checks and preparation/training/provenance identities. All 2³² float patterns passed in each of four rounding modes; special-value, FP-environment and ASan checks passed. Public-header machine code matches the exhaustive test. | Complete translated-module/native gameplay comparison and load-heavy timing before enabling by default. |
+| 14 | Narrow certified-helper lookup reuse passed 80,042 complete CPU/4 MiB RAM comparisons and 1,693 declines in each of O3/ASan. Each warmed translated-reference run passed 60,000 cases, including 38,747 accepted hits and 21,253 unchanged declines. | Build integration and native actor-heavy timing. The outer translated walk and per-call watch/observer predicates remain; current watched actor-ID policy still declines. |
 | 35 | Implemented full SHA-256 profile snapshots with compiler/tool-specific readability. 13 cache tests and 12 training tests passed. Real Clang/Ninja rebuilt affected C/C++ objects for same-name/size/mtime changed profiles, reused unrelated objects, and handled invalid-profile fallback. | Complete for build correctness; no gameplay FPS claim. |
 
 Item 35 private summary: `build/app-profile-cache-20261006/summary.json`,
@@ -52,6 +57,27 @@ Captured PPM SHA-256: `12b8c56ef94b9039093417efb859a40436b7a665ab0eba49dea4359e7
 Forest Haven's arrival-dialogue captures match too, but both original runs
 failed the expected ready-player check. Preserve those failures; they establish
 cutscene image parity only, not a controllable gameplay or timing route.
+
+Fortress sea and Hyrule Castle control/candidate runs also passed readiness and
+exact captured-image comparison. The complete paired report is
+`build/performance-07-routes-20261006/image-comparisons.json`, SHA-256
+`06729419fbbed904cb0b502f575bf8c2996d5896e2c185c9883f28ea72359d37`.
+Dragon Roost's reverse repeat is recorded in `dragon-reversed-comparison.json`
+in the same directory, SHA-256
+`f2e093ffd4db1741d9c897032d2b1ff0171f100df4c51c83405a343eb3e87933`.
+Active SDK verification produced tree `94057b1820874643196ccd8c8660d6f4c2fdb18e`.
+The checkout's CRLF representation was normalized only for comparison with the
+tested LF source; the exact Git patch tree and manifest/lock agree. The initial
+raw-digest assertion failure is preserved alongside the successful receipt.
+
+Combined 01/02/07/08 compiled 82 SDK archive members, seven direct app consumers
+and the authored GPU oracle. All producer libraries were refreshed along with
+renderer consumers. The control mode passed 403 actual GPU pixel/policy checks
+at each of scales 1, 1.5 and 2. Feature-specific GPU and native runs continue.
+Private compilation receipt:
+`build/performance-combined-renderer-20261006/attempt4/result.json`, SHA-256
+`ef555d651fdcca060b31423eec3710cf9dab70fe7ad05b141adc4d07239a89e2`.
+Earlier output-path, missing Windows header and preparation failures are retained.
 
 The game host's explicit `BLUEWAKE_RENDERER=aurora-noninteractive` route passed
 unattended native GPU correctness tests. It requires explicit disposable
@@ -152,8 +178,10 @@ skip source dependencies. Elliott's full donor sequence is **01 → 02 → 07 �
   backend reset. First repair the missing `hud_multiplier` shader rewrite,
   complete-field coverage, capability lifetime and shader-cache identity.
 
-- [ ] **07. [Remember two texture versions at the same address](https://github.com/elliotttate/RecompCore/commit/180f3896f8738cc2975c58486a66d694b3cbad61).**
+- [x] **07. [Remember two texture versions at the same address](https://github.com/elliotttate/RecompCore/commit/180f3896f8738cc2975c58486a66d694b3cbad61).**
   Stop alternating palettes from repeatedly evicting one another.
+  Accepted for repeated native texture-upload reduction with exact captures;
+  frame-time/FPS measurement remains separate and pending.
   **Test:** use Dragon Roost and a two/three-palette fixture; count texture decodes
   and uploads. Verify ordinary writes, aliases, palette changes and HD replacements.
 
