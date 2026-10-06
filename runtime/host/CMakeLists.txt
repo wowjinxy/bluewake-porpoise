@@ -588,6 +588,19 @@ target_include_directories(bluewake_efb_peek_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME bluewake_efb_peek_test COMMAND bluewake_efb_peek_test)
 
+# Manual, noninteractive GPU oracle: authored FIFO draws reach the host color
+# MMIO bridge before present. It requires a real GPU and keeps devices/window
+# interaction disabled, so it is separate from ordinary CTest unit coverage.
+add_executable(bluewake_efb_color_pixels_test
+    ../../tests/efb_color_pixels_test.cpp
+    src/efb_peek.c)
+target_compile_features(bluewake_efb_color_pixels_test PRIVATE cxx_std_20)
+target_include_directories(bluewake_efb_color_pixels_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${GXRUNTIME_DIR}/graphics/aurora/lib)
+target_link_libraries(bluewake_efb_color_pixels_test PRIVATE
+    GXRuntime::aurora GXRuntime::gxcore)
+
 # Manual GPU oracle: exercises gxcore texture decode, TEV alpha/compare,
 # Aurora blending, and framebuffer readback without private game data.
 add_executable(bluewake_gxcore_alpha_pixels_test

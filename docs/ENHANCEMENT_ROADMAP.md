@@ -86,8 +86,10 @@ photos still need their own gameplay check.
 The Picto Box's native color/alpha EFB read bridge is implemented, with optimized
 and sanitizer host-state and renderer-helper checks. It reads the current pass
 once and reuses that snapshot for unchanged recognition pixels. Production
-source compilation is separate from GPU ordering, ordinary photographed-subject
-recognition and populated-photo save/reload, which remain open. Details are in
+compilation and hidden D3D12 GPU checks now pass: 403 checks each at render scales
+1, 1.5 and 2 verify current-pass pixels, snapshot reuse, preserved drawing and
+nearest sampling. Ordinary photographed-subject recognition and populated-photo
+save/reload remain open. Details are in
 [the Picto implementation status](status/PICTO_EFB_RECOGNITION_2026-10-06.md).
 
 The original Dragon Roost encounter also opened Medli's cage, ran her gift

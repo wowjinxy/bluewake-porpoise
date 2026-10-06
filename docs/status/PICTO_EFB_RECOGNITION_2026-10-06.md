@@ -111,12 +111,53 @@ folders. GPU ordering, ordinary native subject recognition, image capture and
 populated-photo save/reload remain acceptance work. The existing controls tester
 does not include this subsequent graphics change.
 
-The next GPU oracle must use an explicit noninteractive initialization path.
-Current Aurora fixtures show and raise a window and initialize audio/input at
-startup, so they have not been run for this change. Hidden rendering also needs
-to bypass the ordinary paused-window wait. The planned oracle uses authored FIFO
-draws with distinct destination-alpha regions, reads before present, changes a
-region after the first peek and verifies untouched pixels and nearest sampling
-at multiple scales. A null renderer would not establish those results.
+## Real GPU qualification
+
+Patch 0162 adds an explicit, default-false noninteractive startup flag. The
+manual `bluewake_efb_color_pixels_test` target uses this flag with its own cache
+and user paths. It creates a hidden window, suppresses presentation, bypasses
+the paused-window wait and skips audio, controllers and the SDL ImGui input
+backend. Ordinary startup retains the default false value. All consumers of
+the changed SDK configuration headers were refreshed for the fixture: 69 SDK
+translation units and the authored test compiled, seven archives were rebuilt,
+and the standalone executable linked with the production dynamic CRT.
+
+On 2026-10-06, three separate hidden processes passed **403 checks each** on
+the NVIDIA GeForce RTX 3070 through D3D12:
+
+| Render scale | EFB target | Result |
+| --- | --- | --- |
+| 1 | 640 × 480 | 403 checks, zero failures |
+| 1.5 | 960 × 720 | 403 checks, zero failures |
+| 2 | 1280 × 960 | 403 checks, zero failures |
+
+Authored FIFO commands reach the production gather pipe and host color-read
+helper before any present. The checks cover exact RGB and subject alpha IDs,
+the three alpha-read modes, snapshot reuse, invalidation after new FIFO input,
+and preservation of previously drawn regions across captures. Alternating
+single-logical-pixel stripes verify nearest sampling at the fractional scale.
+Each process also checks its hidden, unfocused window, zero shown frames and
+uninitialized SDL audio/gamepad/joystick subsystems before rendering and after
+capture; shutdown retains zero shown frames and uninitialized device subsystems.
+
+The first fixture lacked the identity TEV swap table. Packed-word diagnostics
+confirmed red became white and green/blue became black while destination-alpha
+IDs remained correct. Explicit BP F6/F7 identity selectors repaired that authored
+setup; renderer code did not change for this correction. Both failed GPU runs,
+their executable/source preimages, build recipe failures and verification
+diagnostics are preserved in ignored build folders. The successful GPU result
+is `build/core-efb-gpu-oracle-20261006-final/attempt1/result.json` (SHA256
+`90b17e48b7f45325d8526e1de15e311d84cf74a5d851433431de01fce7836faa`).
+
+The active manifest and dependency lock now agree on all eleven patches, and
+their exact pinned tree verifies. A future ordinary host build must refresh
+configuration-header consumers, including `main.c`; an old host config object
+must not be mixed with the new SDK layout. The existing controls tester ZIP is
+unchanged and does not contain this graphics work.
+
+This qualifies authored current-EFB GPU reads in the tested RGBA6 setup.
+Ordinary photographed-subject recognition, native image capture and populated
+photo CARD save/reload remain open. Other GPU APIs, sample configurations and
+actual device/readback failure recovery have not been qualified by these runs.
 
 The verified basic Picto item award, manual save and fresh reload establish item and CARD/ledger persistence. They do not establish photographed-subject recognition or populated photo storage. The enhancement roadmap already keeps populated-photo gameplay verification open (`docs/ENHANCEMENT_ROADMAP.md:13`, `:82–83`). This core graphics task is independent of the disabled optional Tingle wait-shortening work.

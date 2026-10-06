@@ -1,0 +1,450 @@
+diff --git a/GXRuntime/include/gxruntime/aurora_backend.h b/GXRuntime/include/gxruntime/aurora_backend.h
+--- a/GXRuntime/include/gxruntime/aurora_backend.h
++++ b/GXRuntime/include/gxruntime/aurora_backend.h
+@@ -20,6 +20,10 @@
+     bool info_logging;
+     bool graphics_logging;
+     bool force_untextured;
++    /* Desktop hidden rendering: no input/audio initialization or present.
++     * Requires an explicit DOL_AURORA_CACHE_DIR for isolated preferences.
++     * False preserves ordinary application startup. */
++    bool noninteractive;
+ } AuroraBackendConfig;
+ 
+ bool dol_aurora_initialize(int argc, char** argv,
+diff --git a/GXRuntime/backends/aurora/aurora_backend_private.h b/GXRuntime/backends/aurora/aurora_backend_private.h
+--- a/GXRuntime/backends/aurora/aurora_backend_private.h
++++ b/GXRuntime/backends/aurora/aurora_backend_private.h
+@@ -31,6 +31,7 @@
+ namespace gx_aurora {
+ 
+ extern bool g_initialized;
++extern bool g_noninteractive;
+ extern bool g_frame_open;
+ extern bool g_should_quit;
+ extern bool g_graphics_log;
+diff --git a/GXRuntime/backends/aurora/aurora_backend.cpp b/GXRuntime/backends/aurora/aurora_backend.cpp
+--- a/GXRuntime/backends/aurora/aurora_backend.cpp
++++ b/GXRuntime/backends/aurora/aurora_backend.cpp
+@@ -22,6 +22,7 @@
+ namespace gx_aurora {
+ 
+ bool g_initialized = false;
++bool g_noninteractive = false;
+ DolAuroraGxCorePlanFilterFn g_host_plan_filter=nullptr;
+ void* g_host_plan_filter_user=nullptr;
+ #if GXRUNTIME_HAS_AURORA_RECOMP
+@@ -286,6 +287,7 @@
+         .info_logging = false,
+         .graphics_logging = false,
+         .force_untextured = false,
++        .noninteractive = false,
+     };
+     if (backend_config == nullptr)
+         backend_config = &defaults;
+@@ -295,12 +297,21 @@
+         backend_config->app_name != nullptr ? backend_config->app_name
+                                             : defaults.app_name;
+     config.desiredBackend = BACKEND_AUTO;
++    config.noninteractive = backend_config->noninteractive;
++    gx_aurora::g_noninteractive = config.noninteractive;
+     // DOL_AURORA_CACHE_DIR: where the shader and pipeline caches live
+     // (default: SDL's preference folder for the app name). A host that keeps
+     // several data folders points each at its own, so two copies running at
+     // once never write one SQLite file together.
+     if (const char* cache_dir = std::getenv("DOL_AURORA_CACHE_DIR"); cache_dir != nullptr && cache_dir[0] != '\0')
+         config.cachePath = strdup(cache_dir);
++    if (config.noninteractive) {
++        if (config.cachePath == nullptr) {
++            std::fprintf(stderr, "[aurora] noninteractive startup requires DOL_AURORA_CACHE_DIR\n");
++            return false;
++        }
++        config.userPath = config.cachePath;
++    }
+     config.vsync = backend_config->vsync;
+     config.windowWidth = backend_config->window_width != 0
+                              ? backend_config->window_width
+@@ -327,7 +338,8 @@
+                 config.windowWidth = static_cast<uint32_t>(config.windowHeight * ratio + 0.5f);
+         }
+         const char* fullscreen_env = std::getenv("DOL_AURORA_FULLSCREEN");
+-        config.startFullscreen = fullscreen_env != nullptr && fullscreen_env[0] != '\0' && fullscreen_env[0] != '0';
++        config.startFullscreen = !config.noninteractive && fullscreen_env != nullptr &&
++                                 fullscreen_env[0] != '\0' && fullscreen_env[0] != '0';
+     }
+     config.allowTextureDumps = backend_config->allow_texture_dumps;
+     config.logCallback = gx_aurora::log_callback;
+@@ -543,7 +555,8 @@
+     gx_aurora::g_audio_low_log_push = 0;
+     gx_aurora::g_audio_sample_rate = 32000;
+ 
+-    gx_aurora::retry_audio_open(true);
++    if (!gx_aurora::g_noninteractive)
++        gx_aurora::retry_audio_open(true);
+ 
+     gx_aurora::poll_events();
+     gx_aurora::g_frame_open = !gx_aurora::g_should_quit && aurora_begin_frame();
+diff --git a/GXRuntime/backends/aurora/aurora_audio.cpp b/GXRuntime/backends/aurora/aurora_audio.cpp
+--- a/GXRuntime/backends/aurora/aurora_audio.cpp
++++ b/GXRuntime/backends/aurora/aurora_audio.cpp
+@@ -63,6 +63,7 @@
+     g_sink_capture_rate = 0;
+ }
+ void recover_audio_output() {
++    if (g_noninteractive) return;
+     static Uint64 next_check;
+     bool requested = resume_requested.exchange(false, std::memory_order_relaxed);
+     Uint64 now = SDL_GetTicks();
+@@ -92,6 +93,7 @@
+     }
+ }
+ bool retry_audio_open(bool force) {
++    if (g_noninteractive) return false;
+     if (g_audio_stream != nullptr) return true;
+     static Uint64 next_attempt;
+     Uint64 now = SDL_GetTicks();
+@@ -117,6 +119,7 @@
+ 
+ extern "C" {
+ void dol_aurora_audio_resume(void) {
++    if (gx_aurora::g_noninteractive) return;
+     gx_aurora::resume_requested.store(true, std::memory_order_relaxed);
+ }
+ 
+@@ -143,6 +146,7 @@
+ }
+ 
+ void aurora_backend_audio_push(const s16* samples, u32 frames) {
++    if (gx_aurora::g_noninteractive) return;
+     if (samples == nullptr || frames == 0) return;
+     gx_aurora::recover_audio_output();
+     gx_aurora::g_audio_push_count++;
+diff --git a/GXRuntime/graphics/aurora/include/aurora/aurora.h b/GXRuntime/graphics/aurora/include/aurora/aurora.h
+--- a/GXRuntime/graphics/aurora/include/aurora/aurora.h
++++ b/GXRuntime/graphics/aurora/include/aurora/aurora.h
+@@ -116,6 +116,11 @@
+    * This can be set to 0 to disable allocating this region.
+    */
+   uint32_t mem2Size;
++
++  /* Desktop hidden rendering without input or presentation.
++   * Requires explicit userPath and cachePath; no preference-path fallback.
++   * False preserves ordinary application startup. */
++  bool noninteractive;
+ } AuroraConfig;
+ 
+ typedef struct {
+diff --git a/GXRuntime/graphics/aurora/lib/aurora.cpp b/GXRuntime/graphics/aurora/lib/aurora.cpp
+--- a/GXRuntime/graphics/aurora/lib/aurora.cpp
++++ b/GXRuntime/graphics/aurora/lib/aurora.cpp
+@@ -96,6 +96,12 @@
+ 
+ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexcept {
+   g_config = config;
++  if (g_config.noninteractive &&
++      (g_config.userPath == nullptr || g_config.userPath[0] == '\0' ||
++       g_config.cachePath == nullptr || g_config.cachePath[0] == '\0')) {
++    Log.error("Noninteractive startup requires explicit user and cache paths");
++    return {};
++  }
+   Log.info("Aurora initializing");
+   log_system_information();
+   if (g_config.appName == nullptr) {
+@@ -169,7 +175,9 @@
+   ASSERT(window::create_renderer(), "Failed to initialize SDL renderer: {}", SDL_GetError());
+ #endif
+ 
+-  window::show_window();
++  if (!g_config.noninteractive) {
++    window::show_window();
++  }
+ 
+ #ifdef AURORA_ENABLE_GX
+   gfx::initialize();
+@@ -218,7 +226,9 @@
+   ZoneScoped;
+   if (g_initialFrame) {
+     g_initialFrame = false;
+-    input::initialize();
++    if (!g_config.noninteractive) {
++      input::initialize();
++    }
+   }
+   return window::poll_events();
+ }
+@@ -334,7 +344,7 @@
+     auto surfaceStatus = wgpu::SurfaceGetCurrentTextureStatus::Error;
+     // Read once: a suppressed present takes no texture, and its status (left
+     // at Error) must not be taken for the surface's.
+-    const bool suppressed = g_presentSuppressed.load(std::memory_order_relaxed);
++    const bool suppressed = g_config.noninteractive || g_presentSuppressed.load(std::memory_order_relaxed);
+     // Out of sight, no texture is asked for either (window::is_occluded).
+     const bool occluded = window::is_occluded();
+     {
+diff --git a/GXRuntime/graphics/aurora/lib/window.cpp b/GXRuntime/graphics/aurora/lib/window.cpp
+--- a/GXRuntime/graphics/aurora/lib/window.cpp
++++ b/GXRuntime/graphics/aurora/lib/window.cpp
+@@ -178,11 +178,31 @@
+ extern "C" void PADLatchKeyEvent(int scancode, int down);
+ 
+ void process_event(SDL_Event& event) {
++  if (g_config.noninteractive) {
++    // Service only window/renderer lifecycle; no physical input dispatch.
++    switch (event.type) {
++    case SDL_EVENT_WINDOW_MOVED:
++    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
++    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
++    case SDL_EVENT_QUIT:
++      break;
++    default:
++      if (event.type != g_sdlCustomEventsStart + CustomEvent::FutureResize &&
++          event.type != g_sdlCustomEventsStart + CustomEvent::RefreshSurface) {
++        return;
++      }
++      break;
++    }
++  }
+ #ifdef AURORA_ENABLE_GX
+-  imgui::process_event(event);
++  if (!g_config.noninteractive) {
++    imgui::process_event(event);
++  }
+ #endif
+ #ifdef AURORA_ENABLE_RMLUI
+-  rmlui::handle_event(event);
++  if (!g_config.noninteractive) {
++    rmlui::handle_event(event);
++  }
+ #endif
+ 
+   switch (event.type) {
+@@ -271,8 +291,10 @@
+ 
+   SDL_Event event;
+   // Clear out the previous scroll values to prevent ghost input
+-  input::set_mouse_scroll(0, 0);
+-  if (is_paused()) {
++  if (!g_config.noninteractive) {
++    input::set_mouse_scroll(0, 0);
++  }
++  if (!g_config.noninteractive && is_paused()) {
+     ZoneScopedN("SDL_WaitEvent (paused)");
+     if (SDL_WaitEvent(&event)) {
+       process_event(event);
+@@ -301,10 +323,14 @@
+ bool create_window(AuroraBackend backend) {
+   SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
+ #if TARGET_OS_IOS || TARGET_OS_TV
++  if (g_config.noninteractive) {
++    Log.error("Noninteractive hidden windows require a desktop platform");
++    return false;
++  }
+   flags |= SDL_WINDOW_FULLSCREEN;
+ #else
+   flags |= SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE;
+-  if (g_config.startFullscreen) {
++  if (!g_config.noninteractive && g_config.startFullscreen) {
+     flags |= SDL_WINDOW_FULLSCREEN;
+   }
+ #endif
+@@ -382,6 +408,9 @@
+ }
+ 
+ void show_window() {
++  if (g_config.noninteractive) {
++    return;
++  }
+   if (g_window != nullptr) {
+     TRY_WARN(SDL_ShowWindow(g_window), "Failed to show window: {}", SDL_GetError());
+     // A displayed window is not a key window. SDL only sets SDL_WINDOW_INPUT_FOCUS
+@@ -401,7 +430,9 @@
+   // Keep joystick detection and raw input on SDL's worker thread. Configure
+   // it before the first SDL initialization, and preserve an explicit override.
+   // A higher-priority setting may reject this default without being an error.
+-  SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_THREAD, "1", SDL_HINT_DEFAULT);
++  if (!g_config.noninteractive) {
++    SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_THREAD, "1", SDL_HINT_DEFAULT);
++  }
+ #endif
+   TRY(SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"), "Error setting {}: {}", SDL_HINT_ORIENTATIONS,
+       SDL_GetError());
+@@ -411,23 +442,24 @@
+   TRY(SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0"), "Error setting {}: {}",
+       SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, SDL_GetError());
+ #endif
+-  TRY(SDL_SetHint(SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, g_config.appName), "Error setting {}: {}",
+-      SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, SDL_GetError());
+-  TRY(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE_RUMBLE_BRAKE, "1"), "Error setting {}: {}",
+-      SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE_RUMBLE_BRAKE, SDL_GetError());
+-
+-  TRY(SDL_DisableScreenSaver(), "Error disabling screensaver: {}", SDL_GetError());
+-  if (g_config.allowJoystickBackgroundEvents) {
+-    TRY(SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"), "Error setting {}: {}",
+-        SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, SDL_GetError());
++  if (!g_config.noninteractive) {
++    TRY(SDL_SetHint(SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, g_config.appName), "Error setting {}: {}",
++        SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, SDL_GetError());
++    TRY(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE_RUMBLE_BRAKE, "1"), "Error setting {}: {}",
++        SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE_RUMBLE_BRAKE, SDL_GetError());
++    TRY(SDL_DisableScreenSaver(), "Error disabling screensaver: {}", SDL_GetError());
++    if (g_config.allowJoystickBackgroundEvents) {
++      TRY(SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"), "Error setting {}: {}",
++          SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, SDL_GetError());
++    }
+   }
+ 
+   // SDL 3 does not activate the application when a window is shown or raised
+   // unless these hints ask for it. A game launched from a shell therefore gets a
+   // visible window that is never the key window, and no key press ever arrives.
+-  TRY(SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1"), "Error setting {}: {}",
++  TRY(SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, g_config.noninteractive ? "0" : "1"), "Error setting {}: {}",
+       SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, SDL_GetError());
+-  TRY(SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1"), "Error setting {}: {}",
++  TRY(SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, g_config.noninteractive ? "0" : "1"), "Error setting {}: {}",
+       SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, SDL_GetError());
+ 
+   return true;
+@@ -441,7 +473,9 @@
+ void shutdown() {
+   SDL_RemoveEventWatch(lifecycle_event_watch, nullptr);
+   destroy_window();
+-  TRY_WARN(SDL_EnableScreenSaver(), "Error enabling screensaver: {}", SDL_GetError());
++  if (!g_config.noninteractive) {
++    TRY_WARN(SDL_EnableScreenSaver(), "Error enabling screensaver: {}", SDL_GetError());
++  }
+   SDL_Quit();
+ }
+ 
+@@ -518,6 +552,9 @@
+   if (!is_presentable()) {
+     return true;
+   }
++  if (g_config.noninteractive) {
++    return false; // Hidden GPU work remains active without acquiring input focus.
++  }
+   const auto flags = SDL_GetWindowFlags(g_window);
+   if ((flags & SDL_WINDOW_HIDDEN) != 0u) {
+     return true;
+@@ -561,13 +598,18 @@
+ }
+ 
+ void set_fullscreen(bool fullscreen) {
++  if (g_config.noninteractive) {
++    return;
++  }
+   TRY_WARN(SDL_SetWindowFullscreen(g_window, fullscreen), "Failed to set window fullscreen: {}", SDL_GetError());
+ }
+ 
+ bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
+ 
+ void set_window_size(uint32_t width, uint32_t height) {
+-  TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
++  if (!g_config.noninteractive) {
++    TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
++  }
+   TRY_WARN(SDL_SetWindowSize(g_window, width, height), "Failed to set window size: {}", SDL_GetError());
+ }
+ 
+diff --git a/GXRuntime/graphics/aurora/lib/imgui.cpp b/GXRuntime/graphics/aurora/lib/imgui.cpp
+--- a/GXRuntime/graphics/aurora/lib/imgui.cpp
++++ b/GXRuntime/graphics/aurora/lib/imgui.cpp
+@@ -45,12 +45,18 @@
+   g_imguiLog = std::string{g_config.cachePath} + "/imgui.log";
+   io.IniFilename = g_imguiSettings.c_str();
+   io.LogFilename = g_imguiLog.c_str();
++  if (g_config.noninteractive) {
++    io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
++    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
++  }
+ }
+ 
+ void initialize() noexcept {
+   ZoneScoped;
+   SDL_Renderer* renderer = window::get_sdl_renderer();
+-  ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
++  if (!g_config.noninteractive) {
++    ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
++  }
+   g_useSdlRenderer = renderer != nullptr;
+   if (g_useSdlRenderer) {
+     ImGui_ImplSDLRenderer3_Init(renderer);
+@@ -69,7 +75,9 @@
+   } else {
+     ImGui_ImplWGPU_Shutdown();
+   }
+-  ImGui_ImplSDL3_Shutdown();
++  if (!g_config.noninteractive) {
++    ImGui_ImplSDL3_Shutdown();
++  }
+   ImGui::DestroyContext();
+   for (const auto& texture : g_sdlTextures) {
+     SDL_DestroyTexture(texture);
+@@ -79,6 +87,9 @@
+ }
+ 
+ void process_event(const SDL_Event& event) noexcept {
++  if (g_config.noninteractive) {
++    return;
++  }
+   auto renderEvent = event;
+   if (g_useSdlRenderer) {
+     if (SDL_Renderer* renderer = window::get_sdl_renderer()) {
+@@ -152,9 +163,14 @@
+     }
+     ImGui_ImplWGPU_NewFrame();
+   }
+-  ImGui_ImplSDL3_NewFrame();
++  if (!g_config.noninteractive) {
++    ImGui_ImplSDL3_NewFrame();
++  }
+ 
+   ImGuiIO& io = ImGui::GetIO();
++  if (g_config.noninteractive) {
++    io.DeltaTime = 1.f / 60.f;
++  }
+   io.DisplayFramebufferScale = framebufferScale;
+   ImGui::GetIO().DisplaySize = displaySize;
+   ImGui::NewFrame();
+diff --git a/GXRuntime/graphics/aurora/lib/input.cpp b/GXRuntime/graphics/aurora/lib/input.cpp
+--- a/GXRuntime/graphics/aurora/lib/input.cpp
++++ b/GXRuntime/graphics/aurora/lib/input.cpp
+@@ -371,6 +371,9 @@
+ }
+ 
+ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
++  if (g_config.noninteractive) {
++    return -1;
++  }
+   if (const auto it = g_GameControllers.find(which); it != g_GameControllers.end()) {
+     if (SDL_GamepadConnected(it->second.m_controller)) {
+       return which;
+@@ -502,6 +505,9 @@
+ }
+ 
+ void initialize() noexcept {
++  if (g_config.noninteractive) {
++    return;
++  }
+   /* Make sure we initialize everything input related now, this will automatically add all of the connected controllers
+    * as expected */
+   ASSERT(SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_SENSOR),
+@@ -526,6 +532,9 @@
+ }
+ 
+ void shutdown() noexcept {
++  if (g_config.noninteractive) {
++    return;
++  }
+   // Upon shutdown we want to ensure all controllers are in a default state, so force all rumble supporting controllers
+   // to shut off their rumble motors.
+   for (const auto& controller : g_GameControllers) {
+@@ -539,6 +548,9 @@
+ } // namespace aurora::input
+ 
+ void PADRefreshControllers() {
++  if (aurora::g_config.noninteractive) {
++    return;
++  }
+   if ((SDL_WasInit(SDL_INIT_GAMEPAD) & SDL_INIT_GAMEPAD) == 0) {
+     return;
+   }
