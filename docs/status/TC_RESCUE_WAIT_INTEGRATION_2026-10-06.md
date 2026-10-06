@@ -151,6 +151,29 @@ against the current table and [Wine's loader source](https://github.com/wine-mir
 This investigation does not establish actual Windows loader behavior. No game
 case has launched, and runtime staging remains pending.
 
+The next two static reads exposed separate Windows dependency details. COMDLG32
+delay-imports the explicit `WINSPOOL.DRV` basename; the reader's DLL-only suffix
+check rejected it. Independent byte inspection confirms that descriptor and all
+nine requested named/ordinal exports in the current provider. Microsoft's
+[GetPrinter requirements](https://learn.microsoft.com/en-us/windows/win32/printdocs/getprinter)
+also identify Winspool.drv. The corrected reader then stopped on a different
+COMDLG32 delay import, `QueryWin32SubsystemHost`, whose API-set entry has an empty
+default provider. The failed receipts remain unchanged. File-only preservation
+checks confirm all 2329 and 2352 respective recorded inputs are unchanged.
+
+The empty mapping is retained without inventing a provider. Microsoft's
+[delay-load documentation](https://learn.microsoft.com/en-us/cpp/build/reference/linker-support-for-delay-loaded-dlls?view=msvc-170)
+describes loading when an imported function is called; an import descriptor
+alone establishes neither that call's reachability nor successful recovery.
+The next source proposal distinguishes required ordinary imports from explicitly
+unresolved delay imports. The earlier failures are not promoted to passing runs.
+
+Both source reviewers also accept the repaired hidden replay runner. It checks
+Windows reparse paths before bounded directory traversal and preserves terminal
+failure reports when output inventory is invalid. The four original command
+vectors are byte-identical. This is source qualification; runtime guard behavior,
+Windows loading and native game outcomes still await actual runs.
+
 Next are genuine baseline/reference/OFF/ON rescue runs
 covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
