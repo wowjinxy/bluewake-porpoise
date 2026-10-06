@@ -220,10 +220,12 @@ and separate bounded native decisions still precede each game case. Runtime
 staging is complete; game replay remains pending.
 
 The single file-only staging attempt completed with 56 copies and four generated
-settings files across the four isolated replay folders. It reported 60 final
-files and 48 copied executable/runtime metadata records, with all 2956 source
-identities preserved. No game case launched. These are the stager's recorded
-results; independent copied-byte acceptance is still pending.
+settings files across the four isolated replay folders. Both independent byte
+reviews now accept all 60 files, 48 copied executable/runtime metadata records
+and preservation of all 2956 original source identities. Each replay folder
+contains exactly 15 files and five directories, with empty trace/temp folders.
+All 420 protected resources and 2303 interpreter files were freshly checked
+before and after both reviews. No game case launched.
 
 Before running either independent copy reader, source review caught a missing
 comparison between reported Windows-provider identities and the accepted facts.
@@ -231,6 +233,21 @@ Separate readers now require the complete expected input set, matching hashes,
 available sizes/timestamps and physical paths before and after staging. The
 original readers remain uninvoked and preserved; the completed staging attempt
 and copied artifacts are unchanged.
+
+The accepted copied metadata contains 660 raw descriptors and 9865 imported
+thunks, with no zero-thunk descriptor. Imports and complete exports match the
+original source bytes. Each separately recorded replay layout names its 15 case
+inputs and 29 read-only ordinary Windows providers. These are exact input
+records; conditional availability and actual Windows loading remain unproved.
+
+The baseline log reader has passed source review. It checks the original awards,
+85 periodic logical-state tuples and normal termination, allowing only the
+ordinary cleared-scene reset after the normal-stop line. The unchanged baseline
+does not record quest selection, Tc ownership, rescue/removal or the within-return
+timer comparison; those require the separate diagnostic cases. The original
+overly strict reader and a preparation failure remain preserved. A baseline-only
+bounded decision now awaits independent review and a separate launch allowance;
+the game process is limited to 600 seconds, with a 900-second parent bound.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
