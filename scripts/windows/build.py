@@ -496,19 +496,38 @@ int main(void) {
 
     APP_PROFILE = ROOT / "windows/pgo/app.profdata"
 
-    def app_profile_readable(self):
-        """Probe the profile using llvm-profdata from the selected compiler."""
-        if not hasattr(self, "_app_profile_readable"):
-            profdata = Path(self.clang).with_name("llvm-profdata.exe")
-            readable = profdata.is_file() and subprocess.run(
-                [str(profdata), "show", str(self.APP_PROFILE)], env=self.env,
+    def app_profile_path(self):
+        """Select compatible counts under a content-qualified compiler input path."""
+        if not hasattr(self, "_app_profile_cache"):
+            spec = importlib.util.spec_from_file_location(
+                "bluewake_app_profile", ROOT / "scripts/windows/app_profile.py")
+            helper = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(helper)
+            self._app_profile_cache = helper.AppProfileCache(self.out / "pgo-app")
+            self._app_profile_error = helper.ProfileCacheError
+        profdata = Path(self.clang).with_name("llvm-profdata.exe")
+        try:
+            tool_digest = sha256_file(profdata)
+        except OSError:
+            tool_digest = None
+
+        def readable(path):
+            return tool_digest is not None and subprocess.run(
+                [str(profdata), "show", str(path)], env=self.env,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-            if not readable:
-                print(f"note: {self.clang_version.split(' (')[0]} cannot read the app's optimization "
-                      "profile; building the app without it. Run scripts/windows/train_app_profile.py "
-                      "after building to record a compatible local profile.")
-            self._app_profile_readable = readable
-        return self._app_profile_readable
+
+        try:
+            selected = self._app_profile_cache.select(
+                self.APP_PROFILE,
+                compiler_key=(str(Path(self.clang).resolve()), self.clang_version, tool_digest),
+                readable=readable)
+        except (OSError, self._app_profile_error) as error:
+            die(f"could not cache the app's optimization profile: {error}")
+        if selected is None and self.APP_PROFILE.exists():
+            print(f"note: {self.clang_version.split(' (')[0]} cannot read the app's optimization "
+                  "profile; building the app without it. Run scripts/windows/train_app_profile.py "
+                  "after building to record a compatible local profile.")
+        return selected
 
     def configure_app(self, build=None, instrument=False):
         """The app's build, by default build/windows/app. With the committed
@@ -522,14 +541,15 @@ int main(void) {
         profile, link = "", ""
         if instrument:
             profile = link = "-fprofile-instr-generate"
-        elif self.APP_PROFILE.exists() and not getattr(self.args, "no_app_pgo", False) \
-                and self.app_profile_readable():
-            # Functions changed since the profile was recorded are compiled
-            # without counts (the warnings say so; they are expected).
-            profile = subprocess.list2cmdline([
-                f"-fprofile-instr-use={self.APP_PROFILE.as_posix()}", "-Wno-profile-instr-unprofiled",
-                "-Wno-profile-instr-out-of-date", "-Wno-backend-plugin", "-flto=thin"])
-            link = "-flto=thin"
+        elif not getattr(self.args, "no_app_pgo", False):
+            app_profile = self.app_profile_path()
+            if app_profile is not None:
+                # The full digest changes every affected compile command when
+                # counts change; Clang does not list the profile in its depfile.
+                profile = subprocess.list2cmdline([
+                    f"-fprofile-instr-use={app_profile.as_posix()}", "-Wno-profile-instr-unprofiled",
+                    "-Wno-profile-instr-out-of-date", "-Wno-backend-plugin", "-flto=thin"])
+                link = "-flto=thin"
         # The app for the same CPU level as the game module: the FIFO worker's
         # matrix work for Smooth Motion needs AVX2 and FMA to keep up (at the
         # baseline level it held the game below 30 FPS on Outset, 2026-09-29).

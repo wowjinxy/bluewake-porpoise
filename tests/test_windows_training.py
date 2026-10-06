@@ -75,23 +75,26 @@ class TrainingTest(unittest.TestCase):
         profdata.write_bytes(b"fixture tool")
         for compatible in (True, False):
             with self.subTest(compatible=compatible):
-                if hasattr(self.b, "_app_profile_readable"):
-                    del self.b._app_profile_readable
+                if hasattr(self.b, "_app_profile_cache"):
+                    del self.b._app_profile_cache
                 calls = []
                 self.b.run = lambda name, argv, **kw: calls.append(list(map(str, argv)))
                 with patch.object(bw.subprocess, "run", return_value=SimpleNamespace(returncode=0 if compatible else 1)) as probe:
                     self.b.configure_app()
                     self.b.configure_app()
                 probe.assert_called_once()
-                self.assertEqual(probe.call_args.args[0], [str(profdata), "show", str(self.b.APP_PROFILE)])
+                snapshot = Path(probe.call_args.args[0][2])
+                self.assertEqual(probe.call_args.args[0][:2], [str(profdata), "show"])
+                self.assertNotEqual(snapshot, self.b.APP_PROFILE)
+                self.assertEqual(snapshot.read_bytes(), self.b.APP_PROFILE.read_bytes())
                 self.assertEqual("-fprofile-instr-use=" in " ".join(calls[0]), compatible)
                 self.assertEqual("-flto=thin" in " ".join(calls[0]), compatible)
                 if compatible:
-                    self.assertIn(f'"-fprofile-instr-use={self.b.APP_PROFILE.as_posix()}"', " ".join(calls[0]))
+                    self.assertIn(f'"-fprofile-instr-use={snapshot.as_posix()}"', " ".join(calls[0]))
 
     def test_app_instrumentation_and_explicit_opt_out_skip_profile_probe(self):
         self.b.run = lambda *args, **kwargs: None
-        with patch.object(self.b, "app_profile_readable", side_effect=AssertionError("unexpected profile read")):
+        with patch.object(self.b, "app_profile_path", side_effect=AssertionError("unexpected profile read")):
             self.b.configure_app(instrument=True)
             self.b.args.no_app_pgo = True
             self.b.configure_app()
