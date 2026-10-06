@@ -165,8 +165,22 @@ The empty mapping is retained without inventing a provider. Microsoft's
 [delay-load documentation](https://learn.microsoft.com/en-us/cpp/build/reference/linker-support-for-delay-loaded-dlls?view=msvc-170)
 describes loading when an imported function is called; an import descriptor
 alone establishes neither that call's reachability nor successful recovery.
-The next source proposal distinguishes required ordinary imports from explicitly
-unresolved delay imports. The earlier failures are not promoted to passing runs.
+Both source reviews accept a prospective distinction between required ordinary
+imports and explicitly unresolved, proven-empty direct delay imports. The earlier
+failures are not promoted to passing runs.
+
+Both independent file-only reviews now confirm the current schema's complete
+891 entries and 897 values, including every raw UTF-16 field and numerical
+contract hash. All 2276 recorded reader inputs are preserved. The schema has
+113 empty provider values and 42 non-DLL values: three Winspool mappings and
+39 kernel-module mappings. Those raw values do not admit kernel providers or
+prove that an imported function is called. The failing subsystem-query entry
+has one all-zero 20-byte default value; no fallback provider is present.
+
+The next file-only read implementing that distinction stopped on missing
+`hvsifiletrust.dll`. Both preservation reviews verify all 2376 recorded inputs
+remain exact, and the failure is retained. Its raw import origin is being checked
+before any further scope decision. Runtime staging and game replay remain pending.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
