@@ -35,4 +35,29 @@ Subject recognition needs the candidate alpha pass that completed before the ori
 
 The main risks are same-draw synchronization, destination-alpha preservation, native EFB format conversion and the cost of repeated peeks. Renderer files currently have unrelated work in progress; this report changes no renderer/runtime code.
 
+## Implementation approach after renderer review
+
+The current draw-done hook drains translated FIFO commands before reporting PE
+completion; it does not itself establish a GPU fence. A lazy snapshot on the
+first color peek can submit and read the current EFB once, without adding a
+readback to every draw-done call or every pixel. Drain FIFO before taking the
+recording mutex, require an open recording frame, and keep the snapshot in
+renderer-owned storage. Invalidate it after new FIFO work, clears, pixel-format
+changes, frame/device replacement and reset.
+
+The existing mid-frame `read_efb_copy` and worker-ordered
+`read_texture_rgba8` supply submission and bounded readback behavior. Capture
+the current EFB render-pass source, including its MSAA resolve, rather than the
+present source. Map logical EFB pixel centers with nearest sampling: the
+generic scaled resolve uses linear filtering, which would blend the alpha
+values that identify photographed subjects.
+
+Destination-alpha drawing and alpha replacement already exist in GXCore.
+The remaining bridge needs native ARGB packing, RGBA6 quantization and the PE
+alpha-read register at `0xCC001008`, applying `READ_NONE`, `READ_FF` and
+`READ_00` when returning each pixel. Local Dolphin sources provide the
+coordinate and conversion reference; the existing depth-peek sampling code
+provides a nearest-sampling donor. These are source-reviewed implementation
+choices, not implemented or GPU-qualified behavior.
+
 The verified basic Picto item award, manual save and fresh reload establish item and CARD/ledger persistence. They do not establish photographed-subject recognition or populated photo storage. The enhancement roadmap already keeps populated-photo gameplay verification open (`docs/ENHANCEMENT_ROADMAP.md:13`, `:82–83`). This core graphics task is independent of the disabled optional Tingle wait-shortening work.

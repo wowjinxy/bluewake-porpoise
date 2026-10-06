@@ -45,7 +45,9 @@ Other retained third-party libraries are uninstrumented. Earlier failed build
 recipes, mixed-library failures and the genuine held-reload regression remain
 preserved with their diagnostic results.
 
-Current-bundle native startup checks are pending. Physical trigger operation,
+The updated host passes all 14 hidden native CARD startup checks at 3,300 VIs,
+reaches ready gameplay and exits cleanly. Cards and settings remain unchanged;
+the run uses no window, live input or audio device. Physical trigger operation,
 native analog-trigger interactions and graphical presentation remain open.
 No Tingle wait-skip work is required by these checks; that optional feature
 remains disabled and deferred.

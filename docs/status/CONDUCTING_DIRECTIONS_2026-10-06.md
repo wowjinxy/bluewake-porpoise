@@ -41,7 +41,9 @@ The frozen source-plan digest is
 the actual-result digest is
 `ba83b8ea63553bd279acd0099f03a96e9bce0fb51c4cba576b6b5620075eb841`.
 
-This is source and authored regression qualification. A native conducting run,
-physical-controller coverage and an updated packaged tester remain pending.
+This is source and authored regression qualification. The updated core tester
+includes the fix, and its hidden native CARD startup passes all 14 checks at
+3,300 VIs with preserved cards and settings. A native conducting run and
+physical-controller coverage remain pending.
 Explicit controller profile axis inversions still transform the native C-stick;
 this change corrects the automatic camera fallback with the default mapping.
