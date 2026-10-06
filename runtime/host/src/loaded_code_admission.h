@@ -21,6 +21,11 @@ bool bw_ic_code_bind_descriptor(BwIcLoadedCode*,uint64_t,const StaticRecompModul
 uint64_t bw_ic_code_generation(const BwIcLoadedCode*) BW_IC_CODE_NOEXCEPT;
 // Cached game-thread lease identity only. NO callback code/page/file rehash.
 bool bw_ic_code_is_live(const BwIcLoadedCode*,uint64_t,const StaticRecompModuleDesc*) BW_IC_CODE_NOEXCEPT;
+// Copy the actual artifact digest verified against the approved policy at
+// startup. Requires the live owner thread/generation/descriptor; failure zeros
+// the 32-byte output. No file/page rehash or retained pointer is exposed.
+bool bw_ic_code_artifact_sha256(const BwIcLoadedCode*,uint64_t,
+    const StaticRecompModuleDesc*,uint8_t out[32]) BW_IC_CODE_NOEXCEPT;
 void bw_ic_code_revoke(BwIcLoadedCode*,uint64_t) BW_IC_CODE_NOEXCEPT;
 void bw_ic_code_destroy(BwIcLoadedCode*,uint64_t) BW_IC_CODE_NOEXCEPT;
 #ifdef __cplusplus

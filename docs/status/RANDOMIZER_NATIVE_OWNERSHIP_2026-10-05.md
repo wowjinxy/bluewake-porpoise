@@ -18,6 +18,16 @@ compiled profile/method backing. It rejects conflicting live slots, missing
 materialization tokens and partially shadowed mappings. It does not execute
 guest functions or change memory.
 
+The experimental loaded-code lease now exposes a copied artifact SHA-256.
+It returns the actual digest verified against the approved policy at startup,
+only for its live owner thread, generation and bound descriptor. Failed queries
+zero the output; callers cannot change the stored digest by editing their copy.
+The query performs no file or executable-page rehash. This lets a future session
+mount use the admitted artifact identity instead of trusting a supplied string.
+Optimized and AddressSanitizer runs each pass 699 checks using an authored
+synthetic Windows DLL, including actual unload/reload and stale queries.
+Those runs qualify this API rather than a game module or native reward adapter.
+
 Optimized and AddressSanitizer fixtures each pass 8,641 actor checks and 577
 REL checks. The actor fixture covers the 1,024-entry bound, malformed queue
 links, stale PIDs, profile and lifecycle mismatches, resolver failure and

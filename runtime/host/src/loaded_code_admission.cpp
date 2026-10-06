@@ -142,6 +142,7 @@ struct BwIcLoadedCode {
     Handle file;Identity file_id;std::vector<std::uint8_t> file_bytes;std::string load_path;
     HMODULE actual=nullptr,reference=nullptr;const void* getter=nullptr;
     const StaticRecompModuleDesc* descriptor=nullptr;bw_ic_code::Image image;
+    std::array<std::uint8_t,32> artifact_sha256{};
     ~BwIcLoadedCode(){ if(reference) FreeLibrary(reference); }
 };
 namespace {
@@ -186,6 +187,7 @@ extern "C" BwIcLoadedCode* bw_ic_code_prepare(const char* module,const char* pol
             !read_all(next->file.value,artifact_size,next->file_bytes)||!digest(next->file_bytes.data(),next->file_bytes.size(),actual_hash)||actual_hash!=artifact_hash ||
             !final_path(next->file.value,path)||!utf8(path,next->load_path)) return nullptr;
         Identity after;if(!identity(next->file.value,after)||!same(after,next->file_id)) return nullptr;
+        next->artifact_sha256=actual_hash;
         next->generation=++issued;active=next.release();*generation=active->generation;return active;
     } catch(...){ return nullptr; }
 }
@@ -231,6 +233,17 @@ extern "C" uint64_t bw_ic_code_generation(const BwIcLoadedCode* lease) noexcept 
 extern "C" bool bw_ic_code_is_live(const BwIcLoadedCode* lease,uint64_t generation,const StaticRecompModuleDesc* descriptor) noexcept {
     try { std::lock_guard<std::mutex> lock(mutex);return owned(lease)&&lease->alive&&lease->bound&&generation&&lease->generation==generation&&descriptor&&lease->descriptor==descriptor; } catch(...){ return false; }
 }
+extern "C" bool bw_ic_code_artifact_sha256(const BwIcLoadedCode* lease,uint64_t generation,
+    const StaticRecompModuleDesc* descriptor,uint8_t out[32]) noexcept {
+    if(!out)return false;
+    std::memset(out,0,32);
+    try {
+        std::lock_guard<std::mutex> lock(mutex);
+        if(!owned_generation(lease,generation)||!lease->alive||!lease->bound||
+           !descriptor||lease->descriptor!=descriptor)return false;
+        std::memcpy(out,lease->artifact_sha256.data(),32);return true;
+    } catch(...){return false;}
+}
 extern "C" void bw_ic_code_revoke(BwIcLoadedCode* lease,uint64_t generation) noexcept {
     try { std::lock_guard<std::mutex> lock(mutex);if(generation && active==lease && lease && lease->generation==generation) lease->alive=false; } catch(...){}
 }
@@ -244,6 +257,8 @@ extern "C" bool bw_ic_code_bind(BwIcLoadedCode*,uint64_t,void*,const void*) noex
 extern "C" bool bw_ic_code_bind_descriptor(BwIcLoadedCode*,uint64_t,const StaticRecompModuleDesc*) noexcept { return false; }
 extern "C" uint64_t bw_ic_code_generation(const BwIcLoadedCode*) noexcept { return 0; }
 extern "C" bool bw_ic_code_is_live(const BwIcLoadedCode*,uint64_t,const StaticRecompModuleDesc*) noexcept { return false; }
+extern "C" bool bw_ic_code_artifact_sha256(const BwIcLoadedCode*,uint64_t,
+    const StaticRecompModuleDesc*,uint8_t out[32]) noexcept { if(out)std::memset(out,0,32);return false; }
 extern "C" void bw_ic_code_revoke(BwIcLoadedCode*,uint64_t) noexcept {}
 extern "C" void bw_ic_code_destroy(BwIcLoadedCode*,uint64_t) noexcept {}
 #endif
