@@ -264,7 +264,8 @@ the original CARD remains unchanged.
 Before invoking the baseline reader, review found that its exact data-tree
 whitelist omitted normal startup outputs: empty CARD and manager lock files,
 an empty crash report named for the game process, and offline network
-preferences. The baseline and derived diagnostic readers remain uninvoked.
+preferences. Those original baseline and diagnostic readers were preserved
+without invocation.
 The first independently invoked reader then stopped because its whitelist also
 omitted the three empty startup texture directories. That failed read and all
 earlier sources remain preserved. The separately reviewed correction requires
@@ -281,8 +282,22 @@ only for the original replay comparisons. Quest selection, Tc ownership,
 registration, rescue/removal and the within-return timer proof remain unobserved
 in this unchanged host. No game replay was repeated to correct the file reader.
 
-Next are independent baseline interpretation and reference/OFF/ON rescue runs
-covering the six timer returns, original rewards,
+The first reference game run also terminated normally, in 116.453 seconds,
+and awarded the original Tuner and chart. Root's direct comparison found all
+85 checkpoint lines identical to the accepted baseline. The runner nevertheless
+failed its diagnostic gate: the provider stopped after the initial checkpoint,
+with no selected waits or returns. The two later raw checkpoint files are empty.
+Its first failure, inputs and outputs remain preserved. The diagnostic reader
+was not invoked on that failed case, and OFF/ON have not launched.
+
+Source review found an ordering risk in how ordinary Tc initialization is
+classified, but the trace does not identify the failed check. The next diagnostic
+change records the first failing source location without changing ownership,
+timer or observer guards. This failed reference is not accepted as rescue or
+feature evidence, and its game target has not been repeated.
+
+Next are provider diagnosis and separately qualified reference/OFF/ON rescue
+runs covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
 graphical-session ownership remains unqualified. The menu and ownership
 candidates remain private, the public main is unchanged, and the existing tester
