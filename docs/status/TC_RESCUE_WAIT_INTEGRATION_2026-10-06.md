@@ -200,13 +200,24 @@ Both independent preservation reviews confirm all 2376 original inputs and
 the collector's first stopped result are retained; neither review admits a
 complete dependency graph.
 
-The next source proposal will discover required ordinary imports and their
-forwarders first, preserving raw delay-import tables as separate conditional
-facts. Uninspected conditional targets remain unproved. A new prospective replay
-prerequisite draft requires zero unresolved required ordinary edges and two
-independent actual file reviews before a separate bounded-experiment decision.
-It grants no automatic staging or native authorization. Earlier scopes and
-failed reads remain unchanged; runtime staging and game replay are pending.
+The ordinary-first facts read completed. Both independent byte reviews verify
+44 required providers, 1738 raw descriptors and 20350 imported thunks, with zero
+unresolved required ordinary edges. Every selected export-forwarder chain is
+included. All 48 unresolved alternatives are original-importer context cycles
+through Kernel32; their endpoints and actual Windows lookup behavior remain
+unproved. Earlier failed reads retain their original status and bytes.
+
+The required providers also contain 3975 raw delayed-import facts: 1886 targets
+remain uninspected and 2089 have an already-required raw provider/export
+observation. Neither group establishes delayed-call availability or recovery.
+The report remains facts-only. Both reviews preserve all 2376 original inputs
+and 2303 observed interpreter files, including 54 preexisting bytecode files.
+
+A separate source prerequisite admission and file-copy decision bind those
+actual reviews. The decision covers only the original 56 copies and four
+settings files, after the final stager source checks. Fresh copied-byte reviews
+and separate bounded native decisions still precede each game case. Runtime
+staging and game replay remain pending.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
