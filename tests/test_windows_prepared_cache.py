@@ -138,6 +138,23 @@ class PreparedCacheTest(unittest.TestCase):
     def chunk(self, name="a.c"):
         return self.out / "composite-src/chunks_dol" / name
 
+    def test_float_widening_selection_invalidates_preparation_receipt(self):
+        self.args.inline_fp = self.args.gather_pipe = True
+        previous = None
+        for selected in (False, True, False):
+            self.args.f32_hw_widen = selected
+            self.cycle()
+            fingerprint = (self.out / "composite-inputs.digest").read_text()
+            receipt = json.loads((self.out / "prepared-blocks.json").read_text())
+            self.assertEqual(receipt["f32_hw_widen"], selected)
+            if previous is not None:
+                self.assertNotEqual(fingerprint, previous)
+            previous = fingerprint
+            before = self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns
+            self.cycle()
+            self.assertTrue(self.builder.preparation_current)
+            self.assertEqual(before, (self.chunk().read_bytes(), self.chunk().stat().st_mtime_ns))
+
     def test_direct_calls_reuse_disable_and_host_watch_changes(self):
         source = '''#include "../generated.h"
 void synthetic(CPUState* ctx) {

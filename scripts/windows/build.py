@@ -631,7 +631,8 @@ int main(void) {
         inputs.update((f"{digest}\n{int(self.mods)}\n{int(self.args.prepared_blocks)}\n"
                        f"{int(self.args.fixed_cpu)}\n{int(self.args.fixed_mem1)}\n{int(self.args.inline_fp)}\n{int(self.args.gather_pipe)}\n{int(self.args.direct_calls)}\n{int(self.args.inline_gpr)}\n{int(self.args.native_j3d)}\n{int(self.args.native_vec)}\n{int(self.args.native_math)}\n{int(self.args.native_skin)}\n{int(self.args.native_game_math)}\n"
                        f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n"
-                       f"{int(getattr(self.args, 'libporpoise', False))}\n").encode())
+                       f"{int(getattr(self.args, 'libporpoise', False))}\n"
+                       f"{int(getattr(self.args, 'f32_hw_widen', False))}\n").encode())
         inputs.update(json.dumps(self.libporpoise_inputs(), sort_keys=True).encode())
         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", ROOT / "scripts/windows/fast_blocks.py",
@@ -685,7 +686,7 @@ int main(void) {
                     prepared = {}
                 selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
-                              "native_entries", "lean_memory", "libporpoise")
+                              "native_entries", "lean_memory", "libporpoise", "f32_hw_widen")
                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
                                             prepared.get("final_digest") == saved and
                                             prepared.get("enabled") == self.args.prepared_blocks and
@@ -823,6 +824,7 @@ int main(void) {
                    "fixed_cpu": self.args.fixed_cpu,
                    "fixed_mem1": self.args.fixed_mem1,
                    "inline_fp": self.args.inline_fp,
+                   "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
                    "gather_pipe": self.args.gather_pipe,
                    "direct_calls": self.args.direct_calls,
                    "inline_gpr": self.args.inline_gpr,
@@ -930,6 +932,7 @@ int main(void) {
             f"-DBLUEWAKE_DIRECT_CALLS={'ON' if self.args.direct_calls else 'OFF'}",
             f"-DBLUEWAKE_GATHER_PIPE={'ON' if self.args.gather_pipe else 'OFF'}",
             f"-DBLUEWAKE_INLINE_FP={'ON' if self.args.inline_fp else 'OFF'}",
+            f"-DBLUEWAKE_F32_HW_WIDEN={'ON' if getattr(self.args, 'f32_hw_widen', False) else 'OFF'}",
             f"-DBLUEWAKE_FIXED_MEM1={'ON' if self.args.fixed_mem1 else 'OFF'}",
             f"-DCOMPOSITE_OPTIMIZATION_LEVEL={opt_level}", f"-DCOMPOSITE_DIR={self.out / 'composite-src'}",
             f"-DGXRUNTIME_DIR={rc / 'GXRuntime'}", f"-DABI_DIR={rc / 'Source/Core/Core/PowerPC/StaticRecomp'}",
@@ -1025,7 +1028,7 @@ int main(void) {
                                            ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp",
                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
                                             "native_vec", "native_math", "native_skin", "native_game_math",
-                                            "native_entries", "lean_memory", "libporpoise")},
+                                            "native_entries", "lean_memory", "libporpoise", "f32_hw_widen")},
                                "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
                                 "runtime_patches": self.runtime_patch_receipt,
@@ -1226,6 +1229,7 @@ int main(void) {
             "fixed_cpu": self.args.fixed_cpu,
             "fixed_mem1": self.args.fixed_mem1,
             "inline_fp": self.args.inline_fp,
+            "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
             "gather_pipe": self.args.gather_pipe,
             "direct_calls": self.args.direct_calls,
             "inline_gpr": self.args.inline_gpr,
@@ -1390,6 +1394,8 @@ def main():
                         help="opt into module-owned RAM; requires --fixed-cpu and a supporting app")
     parser.add_argument("--inline-fp", action="store_true",
                         help="opt into experimental inline floating-point helpers (off by default)")
+    parser.add_argument("--f32-hw-widen", action=argparse.BooleanOptionalAction, default=False,
+                        help="use exact hardware widening for normal float loads; requires inline FP and gather pipe (experimental)")
     parser.add_argument("--gather-pipe", action="store_true",
                         help="opt into experimental gather/inline-memory wrappers (off by default; host writer setup is separate)")
     parser.add_argument("--inline-gpr", action="store_true",
@@ -1433,6 +1439,8 @@ def main():
         args.libporpoise = not args.conservative
     if args.libporpoise and not args.native_math:
         parser.error("--libporpoise requires --native-math")
+    if args.f32_hw_widen and not (args.inline_fp and args.gather_pipe):
+        parser.error("--f32-hw-widen requires --inline-fp and --gather-pipe")
     if args.inline_gpr and not args.direct_calls:
         parser.error("--inline-gpr requires --direct-calls")
     if args.fixed_mem1 and not args.fixed_cpu:

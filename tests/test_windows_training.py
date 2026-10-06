@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Windows player-training contract checks using public, synthetic inputs only."""
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -16,7 +18,7 @@ bw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bw)
 OPTIONS = ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls",
            "inline_gpr", "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
-           "native_entries", "lean_memory")
+           "native_entries", "lean_memory", "f32_hw_widen")
 
 
 class TrainingTest(unittest.TestCase):
@@ -66,6 +68,41 @@ class TrainingTest(unittest.TestCase):
             self.assertNotIn("-fprofile-instr-generate", " ".join(map(str, argv)))
         self.b.run = check
         self.b.configure_app()
+
+    def test_float_widening_selection_reaches_each_module_compile_mode(self):
+        calls = []
+        def run(name, argv, **kwargs):
+            calls.append(list(map(str, argv)))
+            if name.endswith("-build"):
+                folder = Path(argv[2]); folder.mkdir(parents=True, exist_ok=True)
+                (folder / bw.MODULE).write_bytes(b"synthetic module")
+        self.b.run = run
+        for enabled in (False, True, False):
+            self.b.args.f32_hw_widen = enabled
+            self.b.compile_composite(self.root / "module", "2", [], [], "candidate")
+            self.assertIn("-DBLUEWAKE_F32_HW_WIDEN=" + ("ON" if enabled else "OFF"), calls[-2])
+
+    def test_float_widening_cli_defaults_and_required_helpers(self):
+        seen = []
+        def builder(args):
+            seen.append(args)
+            return SimpleNamespace(build=lambda: None)
+        with patch.object(bw, "Builder", builder):
+            for options, expected in (([], False), (["--f32-hw-widen"], True),
+                                      (["--conservative", "--f32-hw-widen", "--inline-fp", "--gather-pipe"], True)):
+                with patch.object(bw.sys, "argv", ["build.py", "synthetic.iso", "--out", str(self.root), *options]):
+                    bw.main()
+                self.assertEqual(seen[-1].f32_hw_widen, expected)
+            count = len(seen)
+            for helper in ([], ["--inline-fp"], ["--gather-pipe"]):
+                error = io.StringIO()
+                with patch.object(bw.sys, "argv", ["build.py", "synthetic.iso", "--out", str(self.root),
+                                                  "--conservative", "--f32-hw-widen", *helper]), contextlib.redirect_stderr(error):
+                    with self.assertRaises(SystemExit) as exited:
+                        bw.main()
+                self.assertEqual(exited.exception.code, 2)
+                self.assertIn("--f32-hw-widen requires --inline-fp and --gather-pipe", error.getvalue())
+                self.assertEqual(len(seen), count)
 
     def test_app_profile_compatibility_controls_pgo_and_thinlto(self):
         self.b.APP_PROFILE = self.root / "app.profdata"
@@ -259,6 +296,7 @@ class TrainingTest(unittest.TestCase):
             original = self.b.training_fingerprint()
             digest.return_value = "source2";self.assertNotEqual(original, self.b.training_fingerprint());digest.return_value = "source1"
             self.b.args.fixed_mem1 = True;self.assertNotEqual(original, self.b.training_fingerprint());self.b.args.fixed_mem1 = False
+            self.b.args.f32_hw_widen = True;self.assertNotEqual(original, self.b.training_fingerprint());self.b.args.f32_hw_widen = False
             host.write_text("new");self.assertNotEqual(original, self.b.training_fingerprint());host.write_text("old")
             self.b.git = lambda *a: "runtime2";self.assertNotEqual(original, self.b.training_fingerprint())
 

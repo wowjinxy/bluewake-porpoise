@@ -324,6 +324,11 @@ static inline void bw_dcbz_l(CPUState* cpu, u32 ea, u32 cia) {
     ppc_dcbz_l(cpu, ea, cia);
 }
 
+/* Opt-in normal-float widening, adapted from Elliott Tate, 7aca42ade. */
+#if defined(BW_F32_LOAD_HW_WIDEN) && BW_F32_LOAD_HW_WIDEN
+#define dolrecomp_f32_from_bits bw_generated_f32_from_bits
+#endif
+
 #define ppc_fallback_instruction bw_fallback_instruction
 #define ppc_psq_load bw_psq_load
 #define ppc_psq_store bw_psq_store

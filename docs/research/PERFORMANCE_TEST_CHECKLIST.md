@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 4:31 p.m. CDT**. Implementation started from
+Updated **October 6, 2026, 5:00 p.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0162**.
 Checking a box means locally qualified and recorded, not merely downloaded.
 Donor gains are evidence to investigate, not promised gains on this machine.
@@ -14,8 +14,9 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |
 | 01 | Isolated fusion candidate adds immutable array ownership, complete primitive groups and HUD/state boundaries. Actual O3 and ASan each passed 948 fusion checks; retained shader/plan tests also passed. | Combined renderer GPU/game images, array-copy cost and serialized timing. |
-| 07 | Isolated two-identity texture cache: O3 and ASan each passed 420,637 checks. Authored two-palette alternation used 2 uploads instead of 1,000 with identical decoded pixels. | Full renderer integration, real GPU/game images and serialized timing. No gameplay FPS claim. |
-| 10–11 | Opt-in dispatch/return transformations in implementation; existing computed-goto entry dispatch is preserved. | Exact state/budget tests and optimized assembly, then matching-profile gameplay A/B. |
+| 07 | Two-identity texture cache: O3 and ASan each passed 420,637 checks; authored palette alternation used 2 uploads instead of 1,000 with identical decoded pixels. Full production renderer compiled/linked; native 3,300-retrace Outset capture is byte-identical to the control. | Other native routes, combined renderer changes and serialized timing. Candidate remains unpromoted; no gameplay FPS claim. |
+| 10–11 | Isolated opt-in transforms passed 5,460,525 full CPU/budget/deadline comparisons in each of O3 and ASan. Existing computed-goto entry dispatch is preserved. On the actual 487-case irregular map, compiled prefix comparisons fell from 11 to 2 with slots, or 3 combined. Regular-stride maps already optimized equally; ranges alone added a comparison. | Builder integration and matching-profile native gameplay A/B. Preserve the assembly negatives; no blanket speedup claim. |
+| 12 | `--f32-hw-widen` is available, off by default, with required gather/inline-FP checks and preparation/training/provenance identities. All 2³² float patterns passed in each of four rounding modes; special-value, FP-environment and ASan checks passed. Public-header machine code matches the exhaustive test. | Complete translated-module/native gameplay comparison and load-heavy timing before enabling by default. |
 | 35 | Implemented full SHA-256 profile snapshots with compiler/tool-specific readability. 13 cache tests and 12 training tests passed. Real Clang/Ninja rebuilt affected C/C++ objects for same-name/size/mtime changed profiles, reused unrelated objects, and handled invalid-profile fallback. | Complete for build correctness; no gameplay FPS claim. |
 
 Item 35 private summary: `build/app-profile-cache-20261006/summary.json`,
@@ -24,6 +25,22 @@ Real compiler receipt: `build/app-profile-clang-ninja-20261006-attempt2/result.j
 SHA-256 `a187d274734cf3e4c8905e87c11592006e4e555fbb4e9369fe9fcdf55935a133`.
 Initial missing-CRT and test-recorder failures are preserved beside the passing
 results. Other optimizer changes in the shared builder/workflow are retained.
+
+Item 12 exhaustive summary: `build/f32-hardware-widen-20261006-attempt2/summary.json`,
+SHA-256 `bcd2c95611eea6ab025a83fe57b7eed061cf58746ecef415c3adf099392c3739`.
+The public-header integration rerun passed environment/pilot checks and exact
+machine-code identity with those exhaustive objects:
+`build/f32-build-integration-20261006/attempt1/result.json`, SHA-256
+`c2cf172634417b5e21e5b60fb1a7da603f9c23e18c625fcedbaf0ab46125533a`.
+Fourteen training/build-selection tests, real synthetic CMake configurations
+and the preparation-cache lifecycle checks passed. No profile was retrained.
+
+Item 07 native Outset receipt:
+`build/performance-07-production-20261006/native-3300-attempt1/result.json`,
+SHA-256 `cb5e0cb604657a9af9dcb5fc55cfa7c315baa9ac66de07c28b8116c5313c6364`.
+The complete captured PPM is identical to the control; RGB SHA-256 is
+`00e19929883fc4f2e07dc93305ea1c2bc8f3608bf5f99f31da82943653798353`.
+This run occurred alongside CPU compilation and is not a timing experiment.
 
 The game host's explicit `BLUEWAKE_RENDERER=aurora-noninteractive` route passed
 unattended native GPU correctness tests. It requires explicit disposable

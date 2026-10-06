@@ -419,6 +419,23 @@ static inline void bw_fp_ps_sum1(CPUState* cpu, u8 d, u8 a, u8 c, u8 b) {
     bw_fp_ps_write(cpu, d, s0, s1, s1);
 }
 
+/* Elliott Tate, 7aca42ade; special values retain the generated helper. */
+#if defined(BW_F32_LOAD_HW_WIDEN) && BW_F32_LOAD_HW_WIDEN
+#if !defined(RECOMP_COMPOSITE_H) || !defined(dolrecomp_f32_from_bits)
+#error "float widening requires gather_pipe.h before the generated header"
+#endif
+#undef dolrecomp_f32_from_bits
+static inline f64 dolrecomp_f32_from_bits(u32 bits) {
+    if (__builtin_expect(((bits >> 23) & 0xFFu) - 1u < 254u, 1)) {
+        f32 single;
+        memcpy(&single, &bits, sizeof single);
+        return (f64)single;
+    }
+    return bw_generated_f32_from_bits(bits);
+}
+
+#endif
+
 #define ppc_fadds bw_fp_fadds
 #define ppc_fsubs bw_fp_fsubs
 #define ppc_fadd bw_fp_fadd
