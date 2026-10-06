@@ -59,3 +59,13 @@ The final export removes only self-attribution from source comments. Original
 compiled proof sources and exports are preserved, with exact comment-only byte
 inverses in the private item20 comment-only-delta.json. No arithmetic, guard or
 fixture behavior changed, and no compiler or fixture rerun was required.
+
+Builder integration addendum, October 6, 2026: the qualified replay and preparer
+are now in the normal source behind the default-off `--native-quaternion` selection,
+requiring `--native-game-math`. Preparation, CMake certificate admission,
+cache/training identity and provenance use the same selection. It shares the
+existing host `BLUEWAKE_NATIVE_GAME_MATH` handshake; no new per-leaf host
+environment setting is introduced. Default optimized assembly is byte-identical
+to the earlier source; COFF products differ only in their timestamp. Live-source
+atan O3/ASan each pass 64,000 full-state cases and eight certification tests.
+These source/build proofs do not establish a complete module or gameplay gain.

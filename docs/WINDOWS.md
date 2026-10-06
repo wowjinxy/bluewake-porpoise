@@ -217,6 +217,9 @@ Options (`--help` lists all):
 | `--native-j3d` | Prepare certified J3D matrix functions |
 | `--native-vec` | Prepare nine certified SDK vector functions |
 | `--native-game-math` | Prepare twelve certified game-math functions |
+| `--native-bg-minmax` | Add certified block minimum/maximum replay; requires native game math, off by default |
+| `--native-quaternion` | Add certified table-based quaternion replay; requires native game math, off by default |
+| `--native-game-atan` | Add certified table-based angle replay; requires native game math, off by default |
 | `--native-skin` | Prepare certified model skinning |
 | `--native-math` | Prepare four certified SDK matrix functions |
 | `--libporpoise` / `--no-libporpoise` | Select the pinned native matrix constructors; enabled by default, requires native math; conservative builds disable it |
@@ -250,6 +253,11 @@ the original function bodies before other rewrites. `BLUEWAKE_NATIVE_J3D=1`,
 supporting host/module paths
 through versioned handshakes; absent support, disabled selection,
 unsupported inputs and observed boundaries retain translated execution.
+The three optional game-math leaves above use that existing game-math handshake.
+Each needs its original-body preparation certificate and matching module compile
+selection. Their names are build options and compile definitions, not new host
+environment variables. They remain off pending full-module/gameplay and timing
+qualification; unsupported inputs keep the original translated path.
 The second batch uses `--native-entries` and `BLUEWAKE_NATIVE_ENTRIES=1`, with
 original-body and shared-callee certification plus the same host observation
 handshake. It covers three FIFO matrix loads, two collision helpers,

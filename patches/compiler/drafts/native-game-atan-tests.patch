@@ -1,0 +1,226 @@
+--- /dev/null
++++ b/tests/native_game_atan_test.c
+@@ -0,0 +1,116 @@
++/* Authored protected-RAM cM_atan2s oracle; no game/device startup. */
++#include "StaticRecompABI.h"
++#include "native_game_math.h"
++#include "module_cpu_contract.h"
++#include <fenv.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#define AREA 0x80100000u
++#define SP (AREA+0x2800u)
++#define SDA (AREA+0x400u)
++#define TABLE 0x803952C8u
++#define ENTRY 0x802460D0u
++static u32 seed=0x41172382u;static unsigned queries;static bool eligible=true;
++static u32 rnd(void){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
++static void put(u8* p,u32 a,u32 x){write_be32(p+a-GC_RAM_BASE,x);}
++static bool gate(void* u,const CPUState* c,u32 p){(void)u;(void)c;++queries;return eligible&&p==ENTRY;}
++static void journal(u32 a,u32 n,void* u){(void)a;(void)n;(void)u;abort();}
++static void protect(u8* p){DWORD old;if(!VirtualProtect(p,GC_MAIN_RAM_SIZE,PAGE_READONLY,&old)||!VirtualProtect(p+AREA-GC_RAM_BASE,0x3000,PAGE_READWRITE,&old))abort();}
++static u8* image(void){u8* p=VirtualAlloc(NULL,GC_MAIN_RAM_SIZE,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!p)abort();return p;}
++static f64 single(u32 bits){return f64_value(convert_to_double(bits));}
++static u32 bits(f32 x){u32 b;memcpy(&b,&x,sizeof b);return b;}
++static void mismatch(const CPUState* c,const CPUState* r,unsigned i){
++ if(!memcmp(c,r,sizeof *c))return;
++ fprintf(stderr,"case%u mismatch pc%08X/%08X cycles%lld/%lld suffix%u/%u\n",i,c->pc,r->pc,(long long)c->downcount,(long long)r->downcount,c->cycle_observation_suffix,r->cycle_observation_suffix);
++ for(unsigned b=0;b<sizeof *c;++b)if(((const u8*)c)[b]!=((const u8*)r)[b])fprintf(stderr,"CPU byte%u %02X/%02X\n",b,((const u8*)c)[b],((const u8*)r)[b]);exit(1);
++}
++int main(int argc,char** argv){
++ if(argc!=2)return 2;HMODULE library=LoadLibraryA(argv[1]);if(!library)return 3;
++ StaticRecompGetModuleFn get=(StaticRecompGetModuleFn)GetProcAddress(library,STATICRECOMP_GET_MODULE_SYMBOL);if(!get)return 4;
++ const StaticRecompModuleDesc* desc=get();CPUState fallback={0};BlueWakeModuleStorage storage={0};
++ const char* error=bw_module_select_storage(desc,(BlueWakeModuleCPUFn)GetProcAddress(library,"bluewake_composite_guest_cpu"),(BlueWakeModuleMEM1Fn)GetProcAddress(library,"bluewake_composite_guest_mem1"),&fallback,&storage);
++ if(error||strcmp(desc->game_id,"GZLE01"))return 5;
++ u8* a=image();u8* b=storage.mem1?storage.mem1:image();DWORD old;
++ if(!VirtualProtect(b,GC_MAIN_RAM_SIZE,PAGE_READWRITE,&old))return 6;
++ for(u32 i=0;i<1025;++i)write_be16(a+TABLE-GC_RAM_BASE+2*i,(u16)rnd());
++ memcpy(b,a,GC_MAIN_RAM_SIZE);protect(a);protect(b);
++ if(!bluewake_composite_native_game_math_v1(true,gate,NULL))return 7;
++ unsigned accepted=0,declined=0,octants[8]={0},indices[1025]={0},shorts=0;
++ const int rounds[]={FE_TONEAREST,FE_DOWNWARD,FE_UPWARD,FE_TOWARDZERO};
++ for(unsigned i=0;i<64000;++i){
++  for(u32 o=0;o<0x3000;o+=4)put(a,AREA+o,rnd());
++  CPUState c={0};c.ram=a;c.ram_size=GC_MAIN_RAM_SIZE;
++  for(unsigned r=0;r<32;++r){c.gpr[r]=rnd();c.fpr[r]=f64_value(((u64)rnd()<<32)|rnd());c.ps1[r]=f64_value(((u64)rnd()<<32)|rnd());}
++  c.gpr[1]=SP;c.gpr[2]=SDA+16696u;
++  const bool exhaustive=i<8*1025u*4u;
++  unsigned oct=i/(1025u*4u),index=(i/4u)%1025u;
++  if(exhaustive){
++   const f32 q=(f32)index/1024.0f;
++   c.fpr[1]=(f64)((oct&1u)?1.0f:q);c.fpr[2]=(f64)((oct&1u)?q:1.0f);
++   if(oct&2u)c.fpr[1]=-c.fpr[1];if(oct&4u)c.fpr[2]=-c.fpr[2];
++  }else{c.fpr[1]=single((rnd()&0x807FFFFFu)|((90+rnd()%50)<<23));c.fpr[2]=single((rnd()&0x807FFFFFu)|((90+rnd()%50)<<23));}
++  put(a,SDA,0x44800000u);put(a,SDA+4u,0u);put(a,SDA+152u,0x3727C5ACu);
++  c.pc=ENTRY;c.lr=0xFFFFFFFCu;c.cr=rnd();c.xer=rnd();c.ctr=rnd();c.msr=PPC_MSR_FP;
++  c.fpscr=rnd()&~3u;ppc_fpscr_updated(&c);c.downcount=0;c.cycle_budget=1000;c.cycle_deadline_budget=i%3?0:1000;c.cycle_observation_suffix=rnd();
++  c.reserve_valid=(i&1)!=0;c.reserve_addr=SP-32u+4u*(rnd()%10u);
++  if(!exhaustive)switch(i%37){
++   case 0:c.cycle_budget=1+i%96;++shorts;break;
++   case 1:c.cycle_deadline_budget=1+i%96;break;
++   case 2:c.downcount=-999;break;
++   case 3:c.msr=0;break;
++   case 4:c.exception=1;break;
++   case 5:c.fpscr|=1;break;
++   case 6:c.gpr[1]=SDA+24u;break;
++   case 7:c.gpr[1]=TABLE+32u;break;
++   case 8:c.gpr[2]=0;break;
++   case 9:c.gpr[1]=0xCC000000u;break;
++   case 10:c.gpr[1]=GC_RAM_BASE+GC_MAIN_RAM_SIZE;break;
++   case 11:c.gpr[1]+=1;break;
++   case 12:g_mem_write_journal=journal;break;
++   case 13:g_ppc_guest_aliases_overlap_mem1=true;break;
++   case 14:eligible=false;break;
++   case 15:c.gpr[1]|=0x40000000u;break;
++   case 16:put(a,SDA,0x44800001u);break;
++   case 17:{const u32 special[]={0x7F812345u,0x7FC12345u,0xFFC12345u,0xFF800000u,1u,0x80000001u};c.fpr[1]=single(special[(i/37u)%6u]);break;}
++   case 18:c.fpr[2]=single(1);break;
++   case 19:c.fpr[2]=single(0x7F800000u);break;
++   case 20:put(a,SDA+152u,0u);break;
++   case 21:put(a,SDA+4u,0x80000000u);break;
++   case 22:c.fpr[1]=0.0;c.fpr[2]=-0.0;break;
++   case 23:c.fpr[1]=-0.0;c.fpr[2]=0.0;break;
++   case 24:c.fpr[1]=single(0x3727C5ABu);c.fpr[2]=-1.0;break;
++   case 25:c.fpr[1]=single(0x3727C5ACu);c.fpr[2]=1.0;break;
++   case 26:c.fpr[1]=single(0x3727C5ADu);c.fpr[2]=-1.0;break;
++   case 27:c.fpr[2]=1.0+0x1p-30;break;
++  }
++  memcpy(b+AREA-GC_RAM_BASE,a+AREA-GC_RAM_BASE,0x3000);
++  CPUState initial=c;unsigned prior=queries;u8 before[0x3000];memcpy(before,a+AREA-GC_RAM_BASE,sizeof before);
++  if(fesetround(rounds[i%4]))return 8;feclearexcept(FE_ALL_EXCEPT);if(i&1)feraiseexcept(FE_INEXACT);
++  int oldflags=fetestexcept(FE_ALL_EXCEPT),ok=bluewake_native_game_math_try(&c,ENTRY),gotflags=fetestexcept(FE_ALL_EXCEPT);
++  if(queries!=prior+1||fegetround()!=rounds[i%4])return 9;
++  g_mem_write_journal=NULL;g_ppc_guest_aliases_overlap_mem1=false;eligible=true;
++  if(!ok){++declined;mismatch(&c,&initial,i);if(memcmp(before,a+AREA-GC_RAM_BASE,sizeof before)||gotflags!=oldflags)return 10;continue;}
++  ++accepted;if(exhaustive){++octants[oct];++indices[index];}
++  *storage.cpu=initial;storage.cpu->ram=b;desc->on_state_loaded(storage.cpu);
++  feclearexcept(FE_ALL_EXCEPT);if(i&1)feraiseexcept(FE_INEXACT);
++  unsigned turns=0;while(storage.cpu->pc!=0xFFFFFFFCu&&storage.cpu->downcount>-storage.cpu->cycle_budget&&!storage.cpu->exception)if(++turns>10||!desc->dispatch(storage.cpu,storage.cpu->pc))return 11;
++  CPUState reference=*storage.cpu;reference.ram=a;mismatch(&c,&reference,i);
++  if(memcmp(a+AREA-GC_RAM_BASE,b+AREA-GC_RAM_BASE,0x3000)||fetestexcept(FE_ALL_EXCEPT)!=gotflags||fegetround()!=rounds[i%4])return 12;
++ }
++ for(unsigned oct=0;oct<8;++oct)if(octants[oct]!=1025u*4u)return 13;
++ for(unsigned index=0;index<1025;++index)if(indices[index]!=8u*4u)return 14;
++ if(accepted<40000||declined<10000||!shorts)return 15;
++ CPUState embedded={0};embedded.ram=a;embedded.ram_size=GC_MAIN_RAM_SIZE;
++ embedded.gpr[1]=SP;embedded.gpr[2]=SDA+16696u;embedded.fpr[1]=1.0;embedded.fpr[2]=2.0;
++ embedded.msr=PPC_MSR_FP;embedded.cycle_budget=1000;embedded.lr=0xFFFFFFFCu;embedded.pc=ENTRY;
++ CPUState* overlap=(CPUState*)(a+AREA-GC_RAM_BASE+0x1000u);
++ memcpy(overlap,&embedded,sizeof embedded);memcpy(b+AREA-GC_RAM_BASE+0x1000u,&embedded,sizeof embedded);
++ CPUState untouched=*overlap;
++ if(bluewake_native_game_math_try(overlap,ENTRY)||memcmp(overlap,&untouched,sizeof untouched))return 19;
++ eligible=false;unsigned prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior+1)return 16;
++ bluewake_composite_native_game_math_v1(false,gate,NULL);prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior)return 17;
++ if(memcmp(a,b,GC_MAIN_RAM_SIZE))return 18;
++ printf("item22 cases=64000 translated_equal=%u declined_unchanged=%u octants=8 table_ratio_inputs=1025x8x4 host_round_modes=4 fresh_queries=%u short_budget=%u\n",accepted,declined,queries,shorts);return 0;
++}
+--- /dev/null
++++ b/tests/native_game_atan_source_test.py
+@@ -0,0 +1,59 @@
++import importlib.util,pathlib,tempfile,unittest,sys,json
++import os
++ROOT=pathlib.Path(__file__).resolve().parents[1];SOURCE=ROOT
++sys.path.insert(0,str(ROOT/'scripts/windows'))
++spec=importlib.util.spec_from_file_location('candidate',ROOT/'scripts/windows/native_game_math.py')
++candidate=importlib.util.module_from_spec(spec);spec.loader.exec_module(candidate)
++CHUNK=pathlib.Path(os.environ.get('BLUEWAKE_GAME_ATAN_ORACLE_CHUNK',str(ROOT/'build/porpoise-game-run-module/composite-src/chunks_dol/chunk_0145_text1_802456E0.c')))
++BODY=candidate.HOOK.sub('',CHUNK.read_text())
++DIGEST={'game_atan': '31ee7ceef93f4061bbfa05f7b869092425a3f61d781099f01cb323d62223425d', 'atan_table': '21ef01f4fa4af09c1ab77479e6070986f15bf24260d9091db9d1f854fd5d6439'}
++class Preparation(unittest.TestCase):
++    def setUp(self):
++        self.tmp=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.tmp.name)
++        self.file=self.root/CHUNK.name;self.file.write_bytes(BODY.encode())
++        self.fragments=candidate.FRAGMENTS;self.entries=candidate.ENTRIES
++        candidate.FRAGMENTS={'game_atan':(0x802456E0,0x802460D0,0x80246270,DIGEST['game_atan']),
++            'atan_table':(0x802456E0,0x8024609C,0x802460D0,DIGEST['atan_table'])}
++        candidate.ENTRIES={0x802460D0:('game_atan','atan_table')}
++    def tearDown(self):
++        candidate.FRAGMENTS=self.fragments;candidate.ENTRIES=self.entries;self.tmp.cleanup()
++    def test_actual_fragments_and_fresh_hook(self):
++        entries=candidate.certify([self.file],set());self.assertEqual(entries,{0x802460D0})
++        text,count=candidate.transform(BODY,0x802456E0,entries);self.assertEqual(count,1)
++        self.assertIn('bluewake_native_game_math_try(ctx, 0x802460D0u)',text)
++        self.assertEqual(candidate.transform(text,0x802456E0,entries),(text,0))
++    def test_changed_main_declines(self):
++        self.file.write_bytes(BODY.replace('label_802460D0:\n','label_802460D0:\n    ctx->gpr[31]=0;\n',1).encode())
++        self.assertEqual(candidate.certify([self.file],set()),set())
++    def test_changed_helper_declines(self):
++        self.file.write_bytes(BODY.replace('label_802460A4:\n','label_802460A4:\n    ctx->cr=0;\n',1).encode())
++        self.assertEqual(candidate.certify([self.file],set()),set())
++    def test_changed_helper_mod_variant_disables_all(self):
++        variant=self.root/('mod_'+CHUNK.name);variant.write_bytes(BODY.replace('label_802460C4:\n','label_802460C4:\n    ctx->cr=0;\n',1).encode())
++        self.assertEqual(candidate.certify([self.file,variant],set()),set())
++    def test_every_main_and_helper_watched_instruction_and_mirror(self):
++        for pc in range(0x8024609C,0x80246270,4):
++            for watch in (pc,pc|0x40000000):
++                self.assertEqual(candidate.certify([self.file],{watch&~0x40000000}),set(),hex(watch))
++    def test_existing_native_entries_default_unchanged(self):
++        self.assertNotIn(0x802460D0,self.entries)
++        self.assertNotIn('game_atan',self.fragments);self.assertNotIn('atan_table',self.fragments)
++    def test_lost_certification_removes_only_optional_hook(self):
++        hooked,_=candidate.transform(BODY,0x802456E0,{0x802460D0})
++        restored,count=candidate.transform(hooked,0x802456E0,set())
++        self.assertEqual(count,0);self.assertNotIn('bluewake_native_game_math_try(ctx, 0x802460D0u)',restored)
++        for name,start,end in [('game_atan',0x802460D0,0x80246270),('atan_table',0x8024609C,0x802460D0)]:
++            self.assertEqual(candidate.fragment(restored,0x802456E0,start,end),candidate.fragment(BODY,0x802456E0,start,end),name)
++class ReusedImporter(unittest.TestCase):
++    def test_removing_option_clears_prior_failed_preparation(self):
++        spec=importlib.util.spec_from_file_location('fresh',ROOT/'scripts/windows/native_game_math.py')
++        fresh=importlib.util.module_from_spec(spec);spec.loader.exec_module(fresh)
++        with tempfile.TemporaryDirectory() as temp:
++            root=pathlib.Path(temp);header=root/'generated.h';header.write_bytes(b'/* authored */\n')
++            with self.assertRaises(ValueError):fresh.prepare(root,False,False,True)
++            self.assertIn(0x802460D0,fresh.ENTRIES)
++            with self.assertRaises(ValueError):fresh.prepare(root,False,False,False)
++            self.assertNotIn(0x802460D0,fresh.ENTRIES)
++            self.assertNotIn('game_atan',fresh.FRAGMENTS);self.assertNotIn('atan_table',fresh.FRAGMENTS)
++            self.assertEqual(header.read_bytes(),b'/* authored */\n')
++if __name__=='__main__':unittest.main()
+--- /dev/null
++++ b/tests/native_game_atan/CMakeLists.txt
+@@ -0,0 +1,42 @@
++cmake_minimum_required(VERSION 3.24)
++project(bluewake_game_atan_oracle C)
++set(CMAKE_C_STANDARD 11)
++set(CMAKE_C_STANDARD_REQUIRED ON)
++set(BLUEWAKE_ROOT "" CACHE PATH "BlueWake checkout after applying inactive patches")
++set(BLUEWAKE_ORIGINAL_MODULE "" CACHE FILEPATH "Personal unchanged GZLE01 module used as a function oracle")
++option(BLUEWAKE_ORACLE_ASAN "Instrument this fixture and all linked CPU sources" OFF)
++if(NOT BLUEWAKE_ROOT OR NOT BLUEWAKE_ORIGINAL_MODULE)
++  message(FATAL_ERROR "Explicit checkout and personal original-module paths required")
++endif()
++set(sdk "${BLUEWAKE_ROOT}/ref/recompcore")
++add_executable(game_atan
++  "${BLUEWAKE_ROOT}/tests/native_game_atan_test.c"
++  "${BLUEWAKE_ROOT}/cmake/composite/native_game_math.c"
++  "${sdk}/GXRuntime/src/core/cpu.c"
++  "${sdk}/GXRuntime/src/core/cpu_exception.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_float.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_integer.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_table.c")
++target_include_directories(game_atan PRIVATE
++  "${BLUEWAKE_ROOT}/cmake/composite" "${sdk}/GXRuntime/include"
++  "${sdk}/Source/Core/Core/PowerPC/StaticRecomp")
++target_compile_definitions(game_atan PRIVATE BLUEWAKE_NATIVE_GAME_ATAN=1)
++if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
++  target_compile_options(game_atan PRIVATE -O3 -UNDEBUG -ffp-contract=off)
++  if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "Clang")
++    target_compile_options(game_atan PRIVATE -fms-compatibility-version=19.44 -fms-runtime-lib=dll -Wno-dll-attribute-on-redeclaration)
++    target_link_options(game_atan PRIVATE -fms-runtime-lib=dll)
++  endif()
++  if(BLUEWAKE_ORACLE_ASAN)
++    target_compile_options(game_atan PRIVATE -fsanitize=address -fno-omit-frame-pointer)
++    target_link_options(game_atan PRIVATE -fsanitize=address)
++    if(WIN32)
++      target_compile_options(game_atan PRIVATE -shared-libasan)
++      target_link_options(game_atan PRIVATE -shared-libasan)
++    endif()
++  endif()
++endif()
++enable_testing()
++add_test(NAME native_game_atan COMMAND game_atan "${BLUEWAKE_ORIGINAL_MODULE}")
++set_tests_properties(native_game_atan PROPERTIES TIMEOUT 300 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1")

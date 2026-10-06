@@ -170,7 +170,29 @@ def transform(text, chunk, entries):
     return text, done
 
 
-def prepare(root):
+def prepare(root, bg_minmax=False, quaternion=False, game_atan=False):
+    # A reusable importer must not retain an earlier opt-in after it is removed.
+    FRAGMENTS.pop('bg_minmax', None)
+    ENTRIES.pop(0x80247C4C, None)
+    FRAGMENTS.pop('quaternion', None)
+    ENTRIES.pop(0x80301150, None)
+    FRAGMENTS.pop('game_atan', None)
+    FRAGMENTS.pop('atan_table', None)
+    ENTRIES.pop(0x802460D0, None)
+    if game_atan:
+        FRAGMENTS['game_atan'] = (0x802456E0, 0x802460D0, 0x80246270,
+            '31ee7ceef93f4061bbfa05f7b869092425a3f61d781099f01cb323d62223425d')
+        FRAGMENTS['atan_table'] = (0x802456E0, 0x8024609C, 0x802460D0,
+            '21ef01f4fa4af09c1ab77479e6070986f15bf24260d9091db9d1f854fd5d6439')
+        ENTRIES[0x802460D0] = ('game_atan', 'atan_table')
+    if quaternion:
+        FRAGMENTS['quaternion'] = (0x802FD6E0, 0x80301150, 0x80301218,
+            '385f769797cc36b8ef7de0bca33c828a57de95ee5b26216e637b15fb75a6752b')
+        ENTRIES[0x80301150] = ('quaternion',)
+    if bg_minmax:
+        FRAGMENTS['bg_minmax'] = (0x802456E0, 0x80247C4C, 0x80247CD4,
+                                 '5051e6b41b1fdc74f81c715efccf8af7613eeb6506a49fbb9eb9487a2a7c0cca')
+        ENTRIES[0x80247C4C] = ('bg_minmax',)
     header = root / 'generated.h'
     if not header.is_file():
         raise ValueError('missing generated.h')
@@ -212,8 +234,11 @@ def prepare(root):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('composite', type=Path)
+    parser.add_argument('--enable-bg-minmax', action='store_true')
+    parser.add_argument('--enable-quaternion', action='store_true')
+    parser.add_argument('--enable-game-atan', action='store_true')
     args = parser.parse_args()
     try:
-        prepare(args.composite)
+        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan)
     except ValueError as error:
         parser.exit(1, f'{error}\n')

@@ -1,0 +1,165 @@
+--- /dev/null
++++ b/tests/native_game_math_budget_test.c
+@@ -0,0 +1,117 @@
++/* Authored signed-cycle boundary oracle for the inactive20/21/22 leaves. */
++#include "StaticRecompABI.h"
++#include "native_game_math.h"
++#include "module_cpu_contract.h"
++#include <fenv.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#define AREA 0x80100000u
++#define BYTES 0x3000u
++#define SP (AREA+0x2800u)
++#define SDA (AREA+0x400u)
++#define TABLE 0x803952C8u
++static const u32 entries[]={0x80247C4Cu,0x80301150u,0x802460D0u};
++static const s64 bounds[]={36,50,96};
++static unsigned queries;
++static bool gate(void* u,const CPUState* c,u32 p){
++    (void)u;(void)c;++queries;return p==entries[0]||p==entries[1]||p==entries[2];
++}
++static void put(u8* p,u32 a,u32 x){write_be32(p+a-GC_RAM_BASE,x);}
++static CPUState input(u8* ram,unsigned leaf){
++    CPUState c={0};c.ram=ram;c.ram_size=GC_MAIN_RAM_SIZE;
++    c.gpr[1]=SP;c.pc=entries[leaf];c.lr=0xFFFFFFFCu;c.msr=PPC_MSR_FP;
++    c.cycle_budget=1000;c.cycle_observation_suffix=73;
++    memset(ram+AREA-GC_RAM_BASE,0,BYTES);
++    if(leaf==0){
++        c.gpr[3]=AREA+0x100u;c.gpr[4]=0;c.gpr[5]=AREA+0x200u;c.gpr[6]=AREA+0x220u;
++        put(ram,c.gpr[3]+144u,AREA+0x240u);
++        for(unsigned i=0;i<3;++i){
++            put(ram,AREA+0x200u+4u*i,0xC0000000u);
++            put(ram,AREA+0x220u+4u*i,0x40000000u);
++            put(ram,AREA+0x240u+4u*i,0x3F800000u);
++        }
++    }else if(leaf==1){
++        c.gpr[13]=SDA+26460u;c.gpr[6]=AREA+0x300u;
++        put(ram,SDA,31);put(ram,SDA+4u,AREA+0x500u);put(ram,SDA+8u,AREA+0x504u);
++        put(ram,AREA+0x500u,0x3F800000u);put(ram,AREA+0x504u,0x3F000000u);
++    }else{
++        c.gpr[2]=SDA+16696u;c.fpr[1]=1.0;c.fpr[2]=2.0;
++        put(ram,SDA,0x44800000u);put(ram,SDA+4u,0);put(ram,SDA+152u,0x3727C5ACu);
++    }
++    return c;
++}
++static u8* image(void){
++    u8* p=VirtualAlloc(NULL,GC_MAIN_RAM_SIZE,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
++    if(!p)abort();return p;
++}
++static void protect(u8* p){
++    DWORD old;
++    if(!VirtualProtect(p,GC_MAIN_RAM_SIZE,PAGE_READONLY,&old)||
++       !VirtualProtect(p+AREA-GC_RAM_BASE,BYTES,PAGE_READWRITE,&old))abort();
++}
++int main(int argc,char** argv){
++    if(argc!=2)return 2;
++    HMODULE library=LoadLibraryA(argv[1]);if(!library)return 3;
++    StaticRecompGetModuleFn get=(StaticRecompGetModuleFn)GetProcAddress(library,STATICRECOMP_GET_MODULE_SYMBOL);
++    if(!get)return 4;
++    const StaticRecompModuleDesc* desc=get();CPUState fallback={0};BlueWakeModuleStorage storage={0};
++    const char* error=bw_module_select_storage(desc,
++        (BlueWakeModuleCPUFn)GetProcAddress(library,"bluewake_composite_guest_cpu"),
++        (BlueWakeModuleMEM1Fn)GetProcAddress(library,"bluewake_composite_guest_mem1"),&fallback,&storage);
++    if(error||strcmp(desc->game_id,"GZLE01"))return 5;
++    u8* a=image();u8* b=storage.mem1?storage.mem1:image();DWORD old;
++    if(!VirtualProtect(b,GC_MAIN_RAM_SIZE,PAGE_READWRITE,&old))return 6;
++    for(u32 i=0;i<1025;++i)write_be16(a+TABLE-GC_RAM_BASE+2*i,(u16)(17u*i));
++    memcpy(b,a,GC_MAIN_RAM_SIZE);protect(a);protect(b);
++    if(!bluewake_composite_native_game_math_v1(true,gate,NULL))return 7;
++    unsigned cases=0,accepted=0,declined=0;
++    for(unsigned leaf=0;leaf<3;++leaf){
++        const s64 bound=bounds[leaf];
++        const s64 budgets[]={INT64_MIN,INT64_MIN+1,-1,0,1,bound,bound+1,INT64_MAX-bound,INT64_MAX-1,INT64_MAX};
++        const s64 counts[]={INT64_MIN,INT64_MIN+1,-INT64_MAX,-INT64_MAX+bound-1,-INT64_MAX+bound,-100,-1,0,1,INT64_MAX-1,INT64_MAX};
++        const s64 deadlines[]={INT64_MIN,INT64_MIN+1,-1,0,1,bound-1,bound,bound+1,INT64_MAX-bound,INT64_MAX};
++        for(unsigned ib=0;ib<sizeof budgets/sizeof *budgets;++ib)
++        for(unsigned ic=0;ic<sizeof counts/sizeof *counts;++ic)
++        for(unsigned id=0;id<sizeof deadlines/sizeof *deadlines;++id){
++            CPUState c=input(a,leaf);c.cycle_budget=budgets[ib];c.downcount=counts[ic];c.cycle_deadline_budget=deadlines[id];
++            memcpy(b+AREA-GC_RAM_BASE,a+AREA-GC_RAM_BASE,BYTES);
++            CPUState initial=c;u8 before[BYTES];memcpy(before,a+AREA-GC_RAM_BASE,BYTES);
++            /* Unsigned magnitude handles INT64_MIN without signed negation. */
++            const u64 spent=~(u64)c.downcount+1u;
++            const bool expected=c.cycle_budget>bound && c.downcount<=0 &&
++                spent<=(u64)c.cycle_budget-(u64)bound &&
++                (c.cycle_deadline_budget<=0 || (c.cycle_deadline_budget>=bound &&
++                    spent<=(u64)c.cycle_deadline_budget-(u64)bound));
++            feclearexcept(FE_ALL_EXCEPT);feraiseexcept(FE_INEXACT);
++            const int flags=fetestexcept(FE_ALL_EXCEPT);const unsigned prior=queries;
++            const int ok=bluewake_native_game_math_try(&c,entries[leaf]);
++            const int native_flags=fetestexcept(FE_ALL_EXCEPT);++cases;
++            if(queries!=prior+1 || (ok!=0)!=expected){
++                fprintf(stderr,"leaf%u budget%lld count%lld deadline%lld eligibility%u/%u\n",leaf,
++                    (long long)initial.cycle_budget,(long long)initial.downcount,
++                    (long long)initial.cycle_deadline_budget,ok,expected);return 8;
++            }
++            if(!ok){
++                ++declined;
++                if(memcmp(&c,&initial,sizeof c)||memcmp(before,a+AREA-GC_RAM_BASE,BYTES)||native_flags!=flags)return 9;
++                continue;
++            }
++            ++accepted;*storage.cpu=initial;storage.cpu->ram=b;desc->on_state_loaded(storage.cpu);
++            feclearexcept(FE_ALL_EXCEPT);feraiseexcept(FE_INEXACT);
++            unsigned turns=0;
++            while(storage.cpu->pc!=0xFFFFFFFCu&&!storage.cpu->exception)
++                if(++turns>10||!desc->dispatch(storage.cpu,storage.cpu->pc))return 10;
++            CPUState reference=*storage.cpu;reference.ram=a;
++            if(memcmp(&c,&reference,sizeof c)||memcmp(a+AREA-GC_RAM_BASE,b+AREA-GC_RAM_BASE,BYTES)||
++               fetestexcept(FE_ALL_EXCEPT)!=native_flags){
++                fprintf(stderr,"leaf%u budget boundary mismatch case%u\n",leaf,cases);return 11;
++            }
++        }
++    }
++    if(cases!=3300||!accepted||!declined||memcmp(a,b,GC_MAIN_RAM_SIZE))return 12;
++    printf("items20_21_22 signed_cycle_cases=%u translated_equal=%u declined_unchanged=%u fresh_queries=%u\n",cases,accepted,declined,queries);
++    return 0;
++}
+--- /dev/null
++++ b/tests/native_game_math_budget/CMakeLists.txt
+@@ -0,0 +1,42 @@
++cmake_minimum_required(VERSION 3.24)
++project(bluewake_game_math_budget_oracle C)
++set(CMAKE_C_STANDARD 11)
++set(CMAKE_C_STANDARD_REQUIRED ON)
++set(BLUEWAKE_ROOT "" CACHE PATH "BlueWake checkout after applying inactive patches")
++set(BLUEWAKE_ORIGINAL_MODULE "" CACHE FILEPATH "Personal unchanged GZLE01 module used as a function oracle")
++option(BLUEWAKE_ORACLE_ASAN "Instrument this fixture and all linked CPU sources" OFF)
++if(NOT BLUEWAKE_ROOT OR NOT BLUEWAKE_ORIGINAL_MODULE)
++  message(FATAL_ERROR "Explicit checkout and personal original-module paths required")
++endif()
++set(sdk "${BLUEWAKE_ROOT}/ref/recompcore")
++add_executable(game_math_budget
++  "${BLUEWAKE_ROOT}/tests/native_game_math_budget_test.c"
++  "${BLUEWAKE_ROOT}/cmake/composite/native_game_math.c"
++  "${sdk}/GXRuntime/src/core/cpu.c"
++  "${sdk}/GXRuntime/src/core/cpu_exception.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_float.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_integer.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_table.c")
++target_include_directories(game_math_budget PRIVATE
++  "${BLUEWAKE_ROOT}/cmake/composite" "${sdk}/GXRuntime/include"
++  "${sdk}/Source/Core/Core/PowerPC/StaticRecomp")
++target_compile_definitions(game_math_budget PRIVATE BLUEWAKE_NATIVE_GAME_ATAN=1 BLUEWAKE_NATIVE_QUATERNION=1 BLUEWAKE_NATIVE_BG_MINMAX=1)
++if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
++  target_compile_options(game_math_budget PRIVATE -O3 -UNDEBUG -ffp-contract=off)
++  if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "Clang")
++    target_compile_options(game_math_budget PRIVATE -fms-compatibility-version=19.44 -fms-runtime-lib=dll -Wno-dll-attribute-on-redeclaration)
++    target_link_options(game_math_budget PRIVATE -fms-runtime-lib=dll)
++  endif()
++  if(BLUEWAKE_ORACLE_ASAN)
++    target_compile_options(game_math_budget PRIVATE -fsanitize=address -fno-omit-frame-pointer)
++    target_link_options(game_math_budget PRIVATE -fsanitize=address)
++    if(WIN32)
++      target_compile_options(game_math_budget PRIVATE -shared-libasan)
++      target_link_options(game_math_budget PRIVATE -shared-libasan)
++    endif()
++  endif()
++endif()
++enable_testing()
++add_test(NAME native_game_math_budget COMMAND game_math_budget "${BLUEWAKE_ORIGINAL_MODULE}")
++set_tests_properties(native_game_math_budget PROPERTIES TIMEOUT 300 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1")

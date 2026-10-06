@@ -66,3 +66,13 @@ recorded in comment-only-delta.json. Arithmetic and guards are unchanged.
 Remaining: MakeBlckBnd80247CD4 (loop bound, TransMinMax and PSVECAdd) remains
 translated. Item21 now has a separate inactive quaternion candidate; items19,
 22,23,24 remain under review. See native-leaf-19-24-audit.md.
+
+Builder integration addendum, October 6, 2026: the qualified replay and preparer
+are now in the normal source behind the default-off `--native-bg-minmax` selection,
+requiring `--native-game-math`. Preparation, CMake certificate admission,
+cache/training identity and provenance use the same selection. It shares the
+existing host `BLUEWAKE_NATIVE_GAME_MATH` handshake; no new per-leaf host
+environment setting is introduced. Default optimized assembly is byte-identical
+to the earlier source; COFF products differ only in their timestamp. Live-source
+atan O3/ASan each pass 64,000 full-state cases and eight certification tests.
+These source/build proofs do not establish a complete module or gameplay gain.

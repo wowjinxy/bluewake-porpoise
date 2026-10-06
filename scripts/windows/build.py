@@ -49,6 +49,12 @@ MODULE = "gGZLE01_recomp.dll"
 NODTOOL_VERSION = "2.0.0-alpha.9"
 DISC_FORMATS = (".rvz", ".wia", ".gcz", ".ciso", ".nfs", ".wbfs", ".tgc")
 GC_MAGIC = 0xC2339F3D
+# Individually qualified native leaves; select neither preparation nor code by default.
+NATIVE_GAME_EXPERIMENTS = (
+    ("native_bg_minmax", "BLUEWAKE_NATIVE_BG_MINMAX", "--enable-bg-minmax"),
+    ("native_quaternion", "BLUEWAKE_NATIVE_QUATERNION", "--enable-quaternion"),
+    ("native_game_atan", "BLUEWAKE_NATIVE_GAME_ATAN", "--enable-game-atan"),
+)
 
 
 class BuildError(Exception):
@@ -613,6 +619,10 @@ int main(void) {
     def preparation_experiment_inputs(self):
         """Exact selected preparers and runtime contracts; defaults select none."""
         files = {}
+        if any(getattr(self.args, name, False) for name, _, _ in NATIVE_GAME_EXPERIMENTS):
+            for name in ("scripts/windows/native_game_math.py", "cmake/composite/native_game_math.c",
+                         "cmake/composite/native_game_math.h"):
+                files[name] = ROOT / name
         if getattr(self.args, "dispatch_slots", False) or getattr(self.args, "return_ranges", False):
             files["scripts/windows/dispatch_prepare.py"] = ROOT / "scripts/windows/dispatch_prepare.py"
         if getattr(self.args, "inline_cache_callbacks", False):
@@ -645,6 +655,9 @@ int main(void) {
                        f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n"
                        f"{int(getattr(self.args, 'libporpoise', False))}\n"
                        f"{int(getattr(self.args, 'f32_hw_widen', False))}\n"
+                       f"{int(getattr(self.args, 'native_bg_minmax', False))}\n"
+                       f"{int(getattr(self.args, 'native_quaternion', False))}\n"
+                       f"{int(getattr(self.args, 'native_game_atan', False))}\n"
                        f"{int(getattr(self.args, 'module_thinlto', False))}\n"
                        f"{int(getattr(self.args, 'dispatch_slots', False))}\n"
                        f"{int(getattr(self.args, 'return_ranges', False))}\n"
@@ -705,7 +718,8 @@ int main(void) {
                 selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
                               "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto",
-                              "dispatch_slots", "return_ranges", "inline_cache_callbacks")
+                              "dispatch_slots", "return_ranges", "inline_cache_callbacks",
+                              "native_bg_minmax", "native_quaternion", "native_game_atan")
                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
                                             prepared.get("final_digest") == saved and
                                             prepared.get("enabled") == self.args.prepared_blocks and
@@ -811,7 +825,10 @@ int main(void) {
         if getattr(self.args, "native_entries", False):
             self.source_step("native-entries", "scripts/windows/native_entries.py", o / "composite-src")
         if self.args.native_game_math:
-            self.source_step("native-game-math", "scripts/windows/native_game_math.py", o / "composite-src")
+            native_options = [flag for name, _, flag in NATIVE_GAME_EXPERIMENTS
+                              if getattr(self.args, name, False)]
+            self.source_step("native-game-math", "scripts/windows/native_game_math.py",
+                             o / "composite-src", *native_options)
         if self.args.native_j3d:
             self.source_step("native-j3d", "scripts/mods/prepare_native_j3d.py", o / "composite-src")
         if self.args.native_vec:
@@ -872,6 +889,9 @@ int main(void) {
                    "native_math": self.args.native_math,
                    "native_skin": self.args.native_skin,
                    "native_game_math": self.args.native_game_math,
+                   "native_bg_minmax": getattr(self.args, "native_bg_minmax", False),
+                   "native_quaternion": getattr(self.args, "native_quaternion", False),
+                   "native_game_atan": getattr(self.args, "native_game_atan", False),
                    "native_entries": getattr(self.args, "native_entries", False),
                    "lean_memory": getattr(self.args, "lean_memory", False),
                    "libporpoise": getattr(self.args, "libporpoise", False),
@@ -963,6 +983,8 @@ int main(void) {
             f"-DBLUEWAKE_NATIVE_J3D={'ON' if self.args.native_j3d else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_VEC={'ON' if self.args.native_vec else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_GAME_MATH={'ON' if self.args.native_game_math else 'OFF'}",
+            *[f"-D{macro}={'ON' if getattr(self.args, name, False) else 'OFF'}"
+              for name, macro, _ in NATIVE_GAME_EXPERIMENTS],
             f"-DBLUEWAKE_NATIVE_SKIN={'ON' if self.args.native_skin else 'OFF'}",
             f"-DBLUEWAKE_NATIVE_MATH={'ON' if self.args.native_math else 'OFF'}",
             f"-DBLUEWAKE_LIBPORPOISE={'ON' if getattr(self.args, 'libporpoise', False) else 'OFF'}",
@@ -1069,7 +1091,8 @@ int main(void) {
                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
                                             "native_vec", "native_math", "native_skin", "native_game_math",
                                             "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto",
-                                            "dispatch_slots", "return_ranges", "inline_cache_callbacks")},
+                                            "dispatch_slots", "return_ranges", "inline_cache_callbacks",
+                                            "native_bg_minmax", "native_quaternion", "native_game_atan")},
                                "preparation_experiment_inputs": self.preparation_experiment_inputs(),
                                "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
@@ -1285,6 +1308,9 @@ int main(void) {
             "native_math": self.args.native_math,
             "native_skin": self.args.native_skin,
             "native_game_math": self.args.native_game_math,
+            "native_bg_minmax": getattr(self.args, "native_bg_minmax", False),
+            "native_quaternion": getattr(self.args, "native_quaternion", False),
+            "native_game_atan": getattr(self.args, "native_game_atan", False),
             "native_entries": getattr(self.args, "native_entries", False),
             "lean_memory": getattr(self.args, "lean_memory", False),
             "libporpoise": getattr(self.args, "libporpoise", False),
@@ -1469,6 +1495,10 @@ def main():
                         help="prepare certified native matrix functions; off by default, compatible host opt-in required")
     parser.add_argument("--libporpoise", action=argparse.BooleanOptionalAction, default=None,
                         help="use the pinned libPorpoise SDK for certified matrix acceleration (default on; requires native math)")
+    for name, _, _ in NATIVE_GAME_EXPERIMENTS:
+        parser.add_argument("--" + name.replace("_", "-"),
+                            action=argparse.BooleanOptionalAction, default=False,
+                            help="select this certified native game-math leaf; requires native game math (experimental)")
     parser.add_argument("--native-entries", action=argparse.BooleanOptionalAction, default=False,
                         help="certify additional native FIFO, vector, collision and joint transforms; requires gather pipe and direct calls")
     parser.add_argument("--lean-memory", action=argparse.BooleanOptionalAction, default=False,
@@ -1506,6 +1536,8 @@ def main():
         parser.error("--lean-memory requires --prepared-blocks and --gather-pipe")
     if args.native_entries and not (args.gather_pipe and args.direct_calls):
         parser.error("--native-entries requires --gather-pipe and --direct-calls")
+    if any(getattr(args, name) for name, _, _ in NATIVE_GAME_EXPERIMENTS) and not args.native_game_math:
+        parser.error("native game-math leaf options require --native-game-math")
     args.jobs_auto = args.jobs is None
     if args.jobs is None:
         args.jobs = default_jobs()

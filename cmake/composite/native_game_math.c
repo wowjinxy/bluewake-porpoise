@@ -5145,8 +5145,254 @@ label_802F0E00:
     return 1;
 }
 
+/* Item 20, Elliott Tate donor 944a1f3c; exact fresh-gated adaptation.
+ * Exact translated MakeBlckMinMax, deliberately not the donor quiet-host cache.
+ * The existing game-math v1 wrapper supplies a fresh observation query per call;
+ * its preparation certifier must reject every watched interior instruction.
+ * No FP arithmetic is replaced with host min/max or approximate math. */
+#if defined(BLUEWAKE_NATIVE_BG_MINMAX) && BLUEWAKE_NATIVE_BG_MINMAX == 1
+static int bg_minmax(CPUState* cpu) {
+    const u32 self = cpu->gpr[3], low = cpu->gpr[5], high = cpu->gpr[6];
+    if (!ready(cpu, 36, false) || self > UINT32_MAX - 144u ||
+        !ram_ok(cpu, self + 144u, 4) || !ram_ok(cpu, low, 12) || !ram_ok(cpu, high, 12))
+        return 0;
+    /* Do not let authored/unsupported RAM storage overlap the CPU object. */
+    const uintptr_t cp = (uintptr_t)cpu, rp = (uintptr_t)cpu->ram;
+    if (rp > UINTPTR_MAX - cpu->ram_size || cp > UINTPTR_MAX - sizeof *cpu ||
+        !(cp + sizeof *cpu <= rp || rp + cpu->ram_size <= cp))
+        return 0;
+    const u32 offset = (u32)((s64)(s32)cpu->gpr[4] * 12);
+    const u32 vertex = word(cpu, self + 144u) + offset;
+    if (!ram_ok(cpu, vertex, 12) || !apart(low, 12, high, 12) ||
+        !apart(vertex, 12, low, 12) || !apart(vertex, 12, high, 12) ||
+        !apart(self + 144u, 4, low, 12) || !apart(self + 144u, 4, high, 12))
+        return 0;
+    /* Finite singles only. Zeros and subnormals still use integer widening;
+     * every infinity/NaN stays on the unchanged translation, without FP touches. */
+    for (unsigned axis = 0; axis < 3; ++axis)
+        if ((word(cpu, vertex + axis * 4u) & 0x7F800000u) == 0x7F800000u ||
+            (word(cpu, low + axis * 4u) & 0x7F800000u) == 0x7F800000u ||
+            (word(cpu, high + axis * 4u) & 0x7F800000u) == 0x7F800000u)
+            return 0;
+    cpu->gpr[0] = offset;
+    cpu->gpr[3] = vertex;
+    s64 cycles = 29;
+    for (unsigned axis = 0; axis < 3; ++axis) {
+        lfs(cpu, 0, low + axis * 4u);
+        lfs(cpu, 1, vertex + axis * 4u);
+        cpu->pc = 0x80247C60u + axis * 40u;
+        ppc_fcmp(cpu, 0, cpu->fpr[0], cpu->fpr[1], true);
+        if (cpu->cr & 0x40000000u) {
+            stfs(cpu, 1, low + axis * 4u);
+            ++cycles;
+        }
+        lfs(cpu, 0, high + axis * 4u);
+        lfs(cpu, 1, vertex + axis * 4u);
+        cpu->pc = 0x80247C74u + axis * 40u;
+        ppc_fcmp(cpu, 0, cpu->fpr[0], cpu->fpr[1], true);
+        if (cpu->cr & 0x80000000u) {
+            stfs(cpu, 1, high + axis * 4u);
+            cycles += axis == 2 ? 2 : 1;
+            if (axis == 2)
+                return finish(cpu, cycles, 1);
+        }
+    }
+    return finish(cpu, cycles, 2);
+}
+#endif
+
+/* Elliott Tate944a1f3c JMAEulerToQuat; exact fresh-gated replay.
+ * The loaded tables are data, not an assumed host sine/cosine implementation. */
+#if defined(BLUEWAKE_NATIVE_QUATERNION) && BLUEWAKE_NATIVE_QUATERNION == 1
+static u32 quat_offset(u32 angle, u32 shift) {
+    const u32 half = (u16)((s32)(s16)angle / 2); /* srawi+addze, toward zero */
+    shift &= 63u;
+    return shift >= 32u ? 0u : (half >> shift) << 2u;
+}
+static int quaternion(CPUState* cpu) {
+    const u32 sda = cpu->gpr[13] - 26460u, out = cpu->gpr[6];
+    if (!ready(cpu, 50, false) || !ram_ok(cpu, sda, 12) || !ram_ok(cpu, out, 16) ||
+        !apart(sda, 12, out, 16)) return 0;
+    const uintptr_t cp=(uintptr_t)cpu, rp=(uintptr_t)cpu->ram;
+    if (rp > UINTPTR_MAX-cpu->ram_size || cp > UINTPTR_MAX-sizeof *cpu ||
+        !(cp+sizeof *cpu <= rp || rp+cpu->ram_size <= cp)) return 0;
+    const u32 shift=word(cpu,sda), cosine=word(cpu,sda+4u), sine=word(cpu,sda+8u);
+    const u32 x=quat_offset(cpu->gpr[3],shift), y=quat_offset(cpu->gpr[4],shift), z=quat_offset(cpu->gpr[5],shift);
+    const u32 loads[]={sine+x,sine+y,sine+z,cosine+x,cosine+y,cosine+z};
+    for (unsigned i=0;i<6;++i)
+        if (!ram_ok(cpu,loads[i],4) || !apart(loads[i],4,out,16) || !bounded(word(cpu,loads[i]))) return 0;
+    cpu->gpr[7]=sine; cpu->gpr[8]=x; cpu->gpr[4]=y; cpu->gpr[0]=z; cpu->gpr[3]=cosine;
+    /* Each masked half-angle is nonnegative, so the final sraw clears CA.
+     * No intervening instruction observes earlier carry values. */
+    cpu->xer &= ~0x20000000u;
+    lfs(cpu,2,loads[0]);lfs(cpu,3,loads[1]);lfs(cpu,4,loads[2]);
+    lfs(cpu,5,loads[3]);lfs(cpu,6,loads[4]);lfs(cpu,7,loads[5]);
+#define QOP(pc_,op_,d_,a_,b_) do { cpu->pc=(pc_); op_(cpu,d_,a_,b_); } while (0)
+    QOP(0x803011BCu,bw_fp_fmuls,8,3,4);
+    QOP(0x803011C0u,bw_fp_fmuls,9,6,7);
+    QOP(0x803011C4u,bw_fp_fmuls,1,2,8);
+    QOP(0x803011C8u,bw_fp_fmuls,0,5,9);
+    QOP(0x803011CCu,bw_fp_fadds,0,1,0);stfs(cpu,0,out+12u);
+    QOP(0x803011D4u,bw_fp_fmuls,1,5,8);
+    QOP(0x803011D8u,bw_fp_fmuls,0,2,9);
+    QOP(0x803011DCu,bw_fp_fsubs,0,1,0);stfs(cpu,0,out);
+    QOP(0x803011E4u,bw_fp_fmuls,0,2,6);
+    QOP(0x803011E8u,bw_fp_fmuls,1,4,0);
+    QOP(0x803011ECu,bw_fp_fmuls,0,5,3);
+    QOP(0x803011F0u,bw_fp_fmuls,0,7,0);
+    QOP(0x803011F4u,bw_fp_fadds,0,1,0);stfs(cpu,0,out+4u);
+    QOP(0x803011FCu,bw_fp_fmuls,0,2,3);
+    QOP(0x80301200u,bw_fp_fmuls,1,7,0);
+    QOP(0x80301204u,bw_fp_fmuls,0,5,6);
+    QOP(0x80301208u,bw_fp_fmuls,0,4,0);
+    QOP(0x8030120Cu,bw_fp_fsubs,0,1,0);stfs(cpu,0,out+8u);
+#undef QOP
+    return finish(cpu,50,1);
+}
+#endif
+
+/* Elliott Tate donor 944a1f3c identifies cM_atan2s/U_GetAtanTable.
+ * Exact bounded replay of the certified translated instructions; no host atan. */
+#if defined(BLUEWAKE_NATIVE_GAME_ATAN) && BLUEWAKE_NATIVE_GAME_ATAN == 1
+static bool ga_single_argument(f64 value) {
+    u64 bits=f64_bits(value);
+    /* Keep classification integer even under the guest's DAZ/FTZ mode. */
+    __asm__("" : "+r"(bits));
+    const u64 mag=bits&0x7FFFFFFFFFFFFFFFull;
+    return (mag==0 || (mag>=0x3C30000000000000ull && mag<0x41D0000000000000ull)) &&
+        convert_to_double(convert_to_single(bits))==bits;
+}
+static void ga_cror(CPUState* cpu,unsigned a) {
+    const u32 value=((cpu->cr>>(31u-a))|(cpu->cr>>29u))&1u;
+    cpu->cr=(cpu->cr&~0x20000000u)|(value<<29u);
+}
+static void ga_neg(CPUState* cpu,unsigned d,unsigned s) {
+    cpu->fpr[d]=f64_value(f64_bits(cpu->fpr[s])^0x8000000000000000ull);
+}
+static void ga_table(CPUState* cpu) {
+    const u32 sp=cpu->gpr[1];
+    store(cpu,sp-16u,sp);cpu->gpr[1]=sp-16u;
+    lfs(cpu,3,cpu->gpr[2]-16696u);
+    bw_fp_fdivs(cpu,0,1,2);
+    bw_fp_fmuls(cpu,0,3,0);
+    u64 converted;const bool written=ppc_fctiw(cpu,cpu->fpr[0],true,&converted);
+    /* Finite [0,1024] was established by the octant and canonical scale guards. */
+    if(written)cpu->fpr[0]=f64_value(converted);
+    gm_store64(cpu,cpu->gpr[1]+8u,f64_bits(cpu->fpr[0]));
+    cpu->gpr[0]=word(cpu,cpu->gpr[1]+12u);
+    cpu->gpr[0]=gm_rotl32(cpu->gpr[0],1)&0xFFFFFFFEu;
+    cpu->gpr[3]=0x803952C8u;
+    cpu->gpr[3]=gm_word16(cpu,cpu->gpr[3]+cpu->gpr[0]);
+    cpu->gpr[1]+=16u;
+}
+static int game_atan(CPUState* cpu) {
+    const u32 sp=cpu->gpr[1],sda=cpu->gpr[2]-16696u,table=0x803952C8u;
+    if(!ready(cpu,96,false) || !ram_ok(cpu,sp-32u,40) ||
+       !ram_ok(cpu,sda,156) || !ram_ok(cpu,table,2052) ||
+       !apart(sp-32u,40,sda,156) || !apart(sp-32u,40,table,2052) ||
+       !ga_single_argument(cpu->fpr[1]) || !ga_single_argument(cpu->fpr[2]))return 0;
+    const uintptr_t cp=(uintptr_t)cpu,rp=(uintptr_t)cpu->ram;
+    if(rp>UINTPTR_MAX-cpu->ram_size || cp>UINTPTR_MAX-sizeof *cpu ||
+       !(cp+sizeof *cpu<=rp || rp+cpu->ram_size<=cp))return 0;
+    /* Exact guest constants restrict only this opt-in fast path. Epsilon is
+     * read afresh and may be any positive bounded normal f32. */
+    const u32 epsilon=word(cpu,sda+152u);
+    if(word(cpu,sda)!=0x44800000u || word(cpu,sda+4u)!=0u ||
+       epsilon<0x21800000u || epsilon>=0x4E800000u)return 0;
+    const u32 saved_lr=cpu->lr;
+    s64 cycles=9;
+    store(cpu,sp-16u,sp);cpu->gpr[1]=sp-16u;
+    cpu->gpr[0]=saved_lr;store(cpu,sp+4u,cpu->gpr[0]);
+    cpu->fpr[4]=cpu->fpr[1];
+    cpu->fpr[0]=f64_value(f64_bits(cpu->fpr[4])&0x7FFFFFFFFFFFFFFFull);
+    ppc_frsp(cpu,0,0);lfs(cpu,3,sda+152u);
+    bw_fp_fcmp(cpu,0,cpu->fpr[0],cpu->fpr[3],true);
+    if(!(cpu->cr&0x80000000u))goto ga_118;
+    cycles+=4;lfs(cpu,0,sda+4u);
+    bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[0],true);ga_cror(cpu,1);
+    if(!(cpu->cr&0x20000000u)){cycles+=3;cpu->gpr[3]=0x8000u;}
+    else {cycles+=2;cpu->gpr[3]=0u;}
+    goto ga_end;
+ga_118:
+    cycles+=4;cpu->fpr[0]=f64_value(f64_bits(cpu->fpr[2])&0x7FFFFFFFFFFFFFFFull);
+    ppc_frsp(cpu,0,0);bw_fp_fcmp(cpu,0,cpu->fpr[0],cpu->fpr[3],true);
+    if(!(cpu->cr&0x80000000u))goto ga_14C;
+    cycles+=4;lfs(cpu,0,sda+4u);
+    bw_fp_fcmp(cpu,0,cpu->fpr[4],cpu->fpr[0],true);ga_cror(cpu,1);
+    if(!(cpu->cr&0x20000000u)){cycles+=3;cpu->gpr[3]=0xC000u;}
+    else {cycles+=2;cpu->gpr[3]=0x4000u;}
+    goto ga_end;
+ga_14C:
+    cycles+=4;lfs(cpu,0,sda+4u);
+    bw_fp_fcmp(cpu,0,cpu->fpr[4],cpu->fpr[0],true);ga_cror(cpu,1);
+    if(!(cpu->cr&0x20000000u))goto ga_1D4;
+    cycles+=3;bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[0],true);ga_cror(cpu,1);
+    if(!(cpu->cr&0x20000000u))goto ga_198;
+    cycles+=3;bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[4],true);ga_cror(cpu,1);
+    if(!(cpu->cr&0x20000000u))goto ga_180;
+    cycles+=1+29;cpu->lr=0x80246178u;ga_table(cpu);
+    cycles+=2;cpu->gpr[3]&=0xFFFFu;goto ga_end;
+ga_180:
+    cycles+=3+29;cpu->fpr[1]=cpu->fpr[2];cpu->fpr[2]=cpu->fpr[4];
+    cpu->lr=0x8024618Cu;ga_table(cpu);
+    cycles+=3;cpu->gpr[0]=cpu->gpr[3]&0xFFFFu;
+    {const u64 res=(u64)0x4000u+(u64)~cpu->gpr[0]+1u;
+     cpu->gpr[3]=(u32)res;cpu->xer=(cpu->xer&~0x20000000u)|(((u32)(res>>32)&1u)<<29u);}
+    goto ga_end;
+ga_198:
+    cycles+=3;ga_neg(cpu,2,2);bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[4],true);
+    if(!(cpu->cr&0x80000000u))goto ga_1BC;
+    cycles+=3+29;cpu->fpr[1]=cpu->fpr[2];cpu->fpr[2]=cpu->fpr[4];
+    cpu->lr=0x802461B0u;ga_table(cpu);
+    cycles+=3;cpu->gpr[3]=(cpu->gpr[3]&0xFFFFu)+0x4000u;goto ga_end;
+ga_1BC:
+    cycles+=1+29;cpu->lr=0x802461C0u;ga_table(cpu);
+    cycles+=5;cpu->gpr[4]=cpu->gpr[3]&0xFFFFu;
+    cpu->gpr[3]=0x10000u;cpu->gpr[0]=cpu->gpr[3]-0x8000u;
+    cpu->gpr[3]=cpu->gpr[0]-cpu->gpr[4];goto ga_end;
+ga_1D4:
+    cycles+=2;bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[0],true);
+    if(!(cpu->cr&0x80000000u))goto ga_224;
+    cycles+=3;bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[4],true);ga_cror(cpu,0);
+    if(!(cpu->cr&0x20000000u))goto ga_204;
+    cycles+=3+29;ga_neg(cpu,1,4);ga_neg(cpu,2,2);
+    cpu->lr=0x802461F4u;ga_table(cpu);
+    cycles+=4;cpu->gpr[3]=(cpu->gpr[3]&0xFFFFu)+0x10000u;
+    cpu->gpr[3]-=0x8000u;goto ga_end;
+ga_204:
+    cycles+=3+29;ga_neg(cpu,1,2);ga_neg(cpu,2,4);
+    cpu->lr=0x80246210u;ga_table(cpu);
+    cycles+=5;cpu->gpr[4]=cpu->gpr[3]&0xFFFFu;
+    cpu->gpr[3]=0x10000u;cpu->gpr[0]=cpu->gpr[3]-0x4000u;
+    cpu->gpr[3]=cpu->gpr[0]-cpu->gpr[4];goto ga_end;
+ga_224:
+    cycles+=3;ga_neg(cpu,0,4);bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[0],true);
+    if(!(cpu->cr&0x80000000u))goto ga_24C;
+    cycles+=3+29;cpu->fpr[1]=cpu->fpr[2];cpu->fpr[2]=cpu->fpr[0];
+    cpu->lr=0x8024623Cu;ga_table(cpu);
+    cycles+=4;cpu->gpr[3]=(cpu->gpr[3]&0xFFFFu)+0x10000u;
+    cpu->gpr[3]-=0x4000u;goto ga_end;
+ga_24C:
+    cycles+=2+29;cpu->fpr[1]=cpu->fpr[0];cpu->lr=0x80246254u;ga_table(cpu);
+    cycles+=2;cpu->gpr[0]=cpu->gpr[3]&0xFFFFu;cpu->gpr[3]=0u-cpu->gpr[0];
+ga_end:
+    cycles+=6;cpu->gpr[3]=(u32)(s32)(s16)cpu->gpr[3];
+    cpu->gpr[0]=word(cpu,cpu->gpr[1]+20u);cpu->lr=cpu->gpr[0];cpu->gpr[1]+=16u;
+    return finish(cpu,cycles,2);
+}
+#endif
+
 int bluewake_native_game_math(CPUState* cpu, u32 address) {
     if (cpu == NULL) return 0;
+#if defined(BLUEWAKE_NATIVE_GAME_ATAN) && BLUEWAKE_NATIVE_GAME_ATAN == 1
+    if (address == 0x802460D0u) return game_atan(cpu);
+#endif
+#if defined(BLUEWAKE_NATIVE_QUATERNION) && BLUEWAKE_NATIVE_QUATERNION == 1
+    if (address == 0x80301150u) return quaternion(cpu);
+#endif
+#if defined(BLUEWAKE_NATIVE_BG_MINMAX) && BLUEWAKE_NATIVE_BG_MINMAX == 1
+    if (address == 0x80247C4Cu) return bg_minmax(cpu);
+#endif
     unsigned kind;
     switch (address) {
     case 0x80245674u:
