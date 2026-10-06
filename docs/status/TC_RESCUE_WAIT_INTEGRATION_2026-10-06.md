@@ -179,8 +179,19 @@ has one all-zero 20-byte default value; no fallback provider is present.
 
 The next file-only read implementing that distinction stopped on missing
 `hvsifiletrust.dll`. Both preservation reviews verify all 2376 recorded inputs
-remain exact, and the failure is retained. Its raw import origin is being checked
-before any further scope decision. Runtime staging and game replay remain pending.
+remain exact, and the failure is retained. Independent raw-byte checks identify
+direct delay descriptors in the current Shell32 and Windows.Storage providers,
+requesting three and two named functions respectively. Neither matching edge uses
+an API-set mapping or preceding forwarder. Their call reachability and recovery
+remain unproved. Microsoft's
+[optional delay API documentation](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi2/nf-libloaderapi2-queryoptionaldelayloadedapi)
+describes checking availability before a delayed call; it does not establish
+that these particular Windows providers perform that check.
+
+A separate source-only facts collector is being prepared to inventory conditional
+dependency failures and required ordinary membership together. It grants no static
+closure, deployment or native admission. Runtime staging and game replay remain
+pending; the prior failed readers are unchanged.
 
 Both source reviewers also accept the repaired hidden replay runner. It checks
 Windows reparse paths before bounded directory traversal and preserves terminal
