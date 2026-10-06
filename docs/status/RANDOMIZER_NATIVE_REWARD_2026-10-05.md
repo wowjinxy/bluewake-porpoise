@@ -40,7 +40,8 @@ Fatal loss of native continuation is reported separately and never counted
 as a successful save or completed drain.
 
 Qualification covers source compilation, build wiring, an initial native
-CARD load and two unsaved native reward runs. The
+CARD load, two unsaved native reward runs, one genuine manual save and a
+separate native reload of its confirmed CARD/ledger pair. The
 final C++17 adapter passed optimized and sanitizer-enabled compile checks,
 each with 281 audited compiler dependencies. Its unchanged 17-function C ABI
 also passed both compile configurations. Final main passed optimized builds
@@ -96,7 +97,35 @@ missing-core rejection. The new target is included under the existing Windows
 regression and runtime-host testing guards. The original path failure and its
 files are retained; Windows long-path publication remains unqualified.
 
-Native manual-save, reward replay/cancellation and a fresh confirmed CARD
-reload remain separate acceptance steps. No playable randomizer, full item
-pool, starting inventory, tracker, entrance shuffle or beatability claim
-follows from this integration.
+A further hidden Picto run completes one genuine manual save through the
+game's pause/save menu. It passes all 25 native log gates, including the
+serializer, successful SaveSync return and one published generation, and
+stops normally after 16,000 retraces. A separately qualified diagnostic host
+delays the original controller save route until the reward finishes and
+retires its scripted input after confirmed publication. These diagnostic
+changes are not promoted to production main. The stored generation-two pair
+contains exactly one completed Picto reward. Its CARD has the native Picto
+inventory state, opened chest and incremented save count; prior equipment,
+songs, other quests, photo bytes and unrelated records are preserved.
+
+The first offline audit of that successful native save failed because it
+read the song byte at the live-memory offset instead of the packed CARD
+offset. That failed result remains unchanged. A separate read-only audit
+corrects only those two offset literals and accepts the same saved files;
+the native save is not rerun. Independent byte and raw-log audits agree.
+
+A fresh hidden process using the normal qualified host then restores the
+saved pair and passes all 18 reload log gates after 3,300 retraces. A genuine
+CARD load and completed ready-player return precede generation-two
+confirmation. The host compares the loaded quest, Picto slot, obtained byte
+and chest state with the locked saved CARD before confirming readiness.
+No new selection, award or save occurs. The restored working CARD and both
+stored generations remain exact, with one reward record in the current
+ledger. Cleanup follows the summary and normal stop. All 490 frozen inputs
+remain unchanged, and an independent audit passes 74 byte checks plus its
+18 log checks. Neither diagnostic audit mints a native save receipt.
+
+Native reward replay/cancellation, other locations and broader save cases
+remain acceptance steps. No playable randomizer, full item pool, starting
+inventory, tracker, entrance shuffle or beatability claim follows from
+this integration.
