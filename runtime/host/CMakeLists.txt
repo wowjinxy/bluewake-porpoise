@@ -38,6 +38,7 @@ add_executable(bluewake_host
     src/cycle_domain.c
     src/delivery_digest.c
     src/edge_intercepts.c
+    src/efb_peek.c
     src/game_options.c
     src/game_events.c
     src/song_rel_owner.c
@@ -579,6 +580,13 @@ target_include_directories(bluewake_staging_budget_test PRIVATE
     ${GXRUNTIME_DIR}/graphics/aurora/lib)
 add_test(NAME bluewake_staging_budget_test
     COMMAND bluewake_staging_budget_test)
+
+add_executable(bluewake_efb_peek_test
+    ../../tests/efb_peek_test.c
+    src/efb_peek.c)
+target_include_directories(bluewake_efb_peek_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME bluewake_efb_peek_test COMMAND bluewake_efb_peek_test)
 
 # Manual GPU oracle: exercises gxcore texture decode, TEV alpha/compare,
 # Aurora blending, and framebuffer readback without private game data.

@@ -83,6 +83,13 @@ award or lesson replay. Borrowed practice equipment was not treated as an earned
 item. The other quests and baseline photo bytes remained unchanged; populated
 photos still need their own gameplay check.
 
+The Picto Box's native color/alpha EFB read bridge is implemented, with optimized
+and sanitizer host-state and renderer-helper checks. It reads the current pass
+once and reuses that snapshot for unchanged recognition pixels. Production
+source compilation is separate from GPU ordering, ordinary photographed-subject
+recognition and populated-photo save/reload, which remain open. Details are in
+[the Picto implementation status](status/PICTO_EFB_RECOGNITION_2026-10-06.md).
+
 The original Dragon Roost encounter also opened Medli's cage, ran her gift
 dialogue and awarded one Grappling Hook. Guarded autosave wrote both native
 quest copies after normal control resumed; a fresh offline card launch retained

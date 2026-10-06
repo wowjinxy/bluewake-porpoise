@@ -48,6 +48,16 @@ The dependency lock and build provenance record this recipe.
   textures and destination-alpha behavior remain intact. The shader constant
   layout changes with pipeline cache version 13. Customization is off by
   default; native hook and pixel qualification are tracked separately.
+- 0161 supplies synchronous color EFB peeks for translated game MMIO. It drains
+  FIFO input, flushes pending GXCore assembly, copies the current resolved pass
+  and submits a preserving continuation before reading it. Unchanged peeks
+  reuse one bounded snapshot; packing applies native pixel-format and PE alpha
+  modes. Failed captures cannot retain stale pixels or claim a lost recording
+  frame is open. Nearest sampling follows the existing depth-peek approach;
+  channel-conversion semantics follow the local Dolphin `VideoCommon.h`
+  reference. Host address/state and renderer helper fixtures are separate from
+  GPU and native Picto recognition qualification; see
+  [the implementation status](../../docs/status/PICTO_EFB_RECOGNITION_2026-10-06.md).
 
 These patches record BlueWake's RecompCore changes as they were made. They are history, not a build
 input: the series starts at 0008 (0001-0007 were never exported), so it does not apply to the

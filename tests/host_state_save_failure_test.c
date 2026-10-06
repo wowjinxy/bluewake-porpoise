@@ -3,6 +3,7 @@
 #undef NDEBUG
 #endif
 #include "save_state.h"
+#include "efb_peek.h"
 #include "gxruntime/interrupts.h"
 #include <assert.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@ static DolInterrupts g_interrupts = {
     .pe_control = DOL_PE_TOKEN_ENABLE_BIT | DOL_PE_FINISH_ENABLE_BIT,
     .pe_token_pending = true,
 };
+static BluewakeEfbPeek g_efb_peek = {.alpha_read = 6u};
 static char g_state_last_path[512];
 static u32 host_field = 0x4321;
 static const BwStateField k_host_state_fields[] = {{"host_field", &host_field, sizeof host_field}};
@@ -70,6 +72,9 @@ int main(void) {
     const BwStateChunk* pe = bw_state_find(&reader, "PE");
     assert(pe != NULL && pe->size == sizeof(g_interrupts) - offsetof(DolInterrupts, pe_token));
     assert(memcmp(pe->data, &g_interrupts.pe_token, (size_t)pe->size) == 0);
+    const BwStateChunk* efb_peek = bw_state_find(&reader, "EFBPEEK");
+    assert(efb_peek != NULL && efb_peek->size == sizeof g_efb_peek.alpha_read);
+    assert(memcmp(efb_peek->data, &g_efb_peek.alpha_read, (size_t)efb_peek->size) == 0);
     const size_t old_size = reader.buffer_size;
     const u64 old_hash = bw_state_hash(reader.buffer, reader.buffer_size, 0);
     bw_state_reader_close(&reader);

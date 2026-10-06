@@ -607,7 +607,7 @@
       },
       "active_patches": {
         "manifest": "patches/recompcore/active.json",
-        "sha256": "70c12f4e6ba2f2599dc0d03f76a1b20091be6a7b00792c2502201d21d1e44193",
+        "sha256": "01f1f26aeb5f9990960a7a6fe3c9b6e3859519d1cba33772bdded2c46b2ef95a",
         "patches": [
           {
             "path": "patches/recompcore/0152-reuse-unchanged-gx-transform-snapshots.patch",
@@ -620,6 +620,34 @@
           {
             "path": "patches/recompcore/0154-sustained-render-overload-pacing.patch",
             "sha256": "8128c590223e1f697ae8592e99ded7011a01ae093ff15c7a9274f7d7c0428671"
+          },
+          {
+            "path": "patches/recompcore/0155-controller-editor-backend.patch",
+            "sha256": "f429f850322f85707bd6e336000f5b3f8e0417a9d5b7bce65135f461b6f03c8c"
+          },
+          {
+            "path": "patches/recompcore/0156-memory-card-utf8-paths.patch",
+            "sha256": "34e02396c053d86dc1de9e9cdc735b2001afe1ca4f947122cc1b4283630216b7"
+          },
+          {
+            "path": "patches/recompcore/0157-inspect-texture-pack-registrations.patch",
+            "sha256": "e87c91ca43eb514b38d5f3a948e9aac53dc6b6bf47608b6d94317ce12dd650e7"
+          },
+          {
+            "path": "patches/recompcore/0158-preserve-final-zelda-sample-block.patch",
+            "sha256": "f9e49a75b3244f322a795d5313c21118abd3aaeb21cb42ec6ec947df4a922eaa"
+          },
+          {
+            "path": "patches/recompcore/0159-audio-premix-customization.patch",
+            "sha256": "a4bc836e097cb9ca459e5deecda142f94f4782ea8c57cb19c2972fb9cc914616"
+          },
+          {
+            "path": "patches/recompcore/0160-ordered-native-hud-presentation.patch",
+            "sha256": "773169fb4ae7cb4696d1300c7be2ea129dd6f09a03e0ad1a7328f4d9ae760bd1"
+          },
+          {
+            "path": "patches/recompcore/0161-synchronous-efb-color-peeks.patch",
+            "sha256": "a4b49013bdbc7e1b5d22162fd9169c0e50bbef7ee60121733b85f8944fb4d2ff"
           }
         ]
       }

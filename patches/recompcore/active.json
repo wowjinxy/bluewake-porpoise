@@ -36,6 +36,10 @@
     {
       "path": "patches/recompcore/0160-ordered-native-hud-presentation.patch",
       "sha256": "773169fb4ae7cb4696d1300c7be2ea129dd6f09a03e0ad1a7328f4d9ae760bd1"
+    },
+    {
+      "path": "patches/recompcore/0161-synchronous-efb-color-peeks.patch",
+      "sha256": "a4b49013bdbc7e1b5d22162fd9169c0e50bbef7ee60121733b85f8944fb4d2ff"
     }
   ]
 }

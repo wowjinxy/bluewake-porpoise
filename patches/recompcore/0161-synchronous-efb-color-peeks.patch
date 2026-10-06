@@ -1,0 +1,567 @@
+diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
+--- a/GXRuntime/backends/aurora/aurora_graphics.cpp
++++ b/GXRuntime/backends/aurora/aurora_graphics.cpp
+@@ -31,6 +31,8 @@
+ #include "../../graphics/aurora/lib/gfx/render_worker.hpp"
+ #include "../../graphics/aurora/lib/gfx/frame_interp.hpp"
+ #include "../../graphics/aurora/lib/gfx/thread_cpu.hpp"
++#include "../../graphics/aurora/lib/gfx/efb_color_peek.hpp"
++#include "../../graphics/aurora/lib/gfx/common.hpp"
+ 
+ #if GXRUNTIME_HAS_AURORA_RECOMP
+ // gxcore substrate submission lives in the Aurora fork (lib/gfx/gxcore_draw.cpp),
+@@ -48,6 +50,8 @@
+ #endif
+ 
+ namespace gx_aurora {
++
++static aurora::gfx::efb_color_peek::Cache g_color_peek_cache;
+ 
+ // True while the FIFO worker translates. Then the worker requests each present
+ // itself, once per display copy (wait_for_present), and the copy observer must
+@@ -1829,6 +1833,67 @@
+ #endif
+ }
+ 
++bool dol_aurora_gx_peek_argb(u16 x, u16 y, u16 alpha_read, u32* out) {
++#if GXRUNTIME_HAS_AURORA_RECOMP
++    if (out == nullptr || x >= 1024u || y >= 1024u || (alpha_read & 3u) == 3u ||
++        !gx_aurora::g_initialized || !gx_aurora::g_gx_core_enabled ||
++        !gx_aurora::g_shadow_frontend_enabled ||
++        gx_aurora::g_shadow_frontend_failed.load(std::memory_order_relaxed))
++        return false;
++    {
++        std::lock_guard<std::mutex> recording(gx_aurora::g_aurora_recording_mutex);
++        if (!gx_aurora::g_aurora_recording_open)
++            return false;
++        // Every BP format write is FIFO input too. An unchanged input/frame
++        // identity can use its copied format without reading worker-owned BP
++        // registers or draining the worker for each recognition pixel.
++        if (gx_aurora::g_color_peek_cache.matches_stream(
++                gx_aurora::g_fifo_bytes, aurora::gfx::current_frame_id()))
++            return gx_aurora::g_color_peek_cache.read(x, y, alpha_read, *out);
++    }
++    // Drain before locking: the FIFO worker itself needs the recording mutex.
++    gx_aurora::shadow_frontend_flush_pending();
++    if (gx_aurora::g_shadow_frontend_failed.load(std::memory_order_relaxed))
++        return false;
++    std::lock_guard<std::mutex> recording(gx_aurora::g_aurora_recording_mutex);
++    if (!gx_aurora::g_aurora_recording_open)
++        return false;
++    const auto& state = gx_aurora::g_shadow_frontend.state();
++    if (!state.bp_valid[0x43u] || (state.bp_regs[0x43u] & 7u) > 2u)
++        return false;
++    const auto pixel_format = state.bp_regs[0x43u] & 7u;
++    const auto revision = [&] {
++        return aurora::gfx::efb_color_peek::Revision{
++            gx_aurora::g_fifo_bytes, aurora::gfx::current_frame_id(), pixel_format};
++    };
++    if (gx_aurora::g_color_peek_cache.needs_capture(revision())) {
++        aurora::gfx::efb_color_peek::Snapshot snapshot;
++        try {
++            // The consumer emits its final draw only at the next draw or an
++            // explicit flush. Put it in this pass before the preserving copy.
++            gx_aurora::g_core_sink.flush_frame();
++            aurora::gfx::efb_color_peek::capture(snapshot);
++        } catch (...) {
++            snapshot = {};
++        }
++        // A staging-map failure can leave segment_frame without a replacement
++        // frame. Keep the worker out of that renderer until its existing reopen
++        // path succeeds; a readback timeout with a live frame stays open.
++        aurora::gfx::efb_color_peek::close_lost_recording_frame(
++            aurora::gfx::current_frame_id(), gx_aurora::g_frame_open,
++            gx_aurora::g_aurora_recording_open);
++        // The preserving submission opens a new frame packet. Its EFB is the
++        // just-captured EFB, so cache the post-submission identity, even on a
++        // failed map: unchanged repeated reads do not retry the GPU timeout.
++        gx_aurora::g_color_peek_cache.finish(revision(), std::move(snapshot));
++    }
++    return gx_aurora::g_color_peek_cache.read(x, y, alpha_read, *out);
++#else
++    (void)x; (void)y; (void)alpha_read; (void)out;
++    return false;
++#endif
++}
++
+ // A run of consecutive gather-pipe writes as their bytes in guest order (the
+ // game module's batch). Installed only where the FIFO is a byte stream - the
+ // GX core on and nothing traced (install_platform_ops) - so a byte at a time
+@@ -2058,6 +2123,7 @@
+     DolPlatformGuestAddressResolverFn resolve, void* user) {
+ #if GXRUNTIME_HAS_AURORA_RECOMP
+     gx_aurora::g_draw_sync_copy_valid = false;
++    gx_aurora::g_color_peek_cache.reset();
+ #endif
+     gx_aurora::g_guest_address_resolver = resolve;
+     gx_aurora::g_guest_address_resolver_user = user;
+@@ -2147,6 +2213,7 @@
+     // Whatever this run had buffered belongs to the frame being replaced.
+     gx_aurora::shadow_frontend_flush_pending();
+     gx_aurora::g_draw_sync_copy_valid = false;
++    gx_aurora::g_color_peek_cache.reset();
+     const auto* bytes = static_cast<const std::uint8_t*>(data) + sizeof header;
+     if (!gx_aurora::g_shadow_frontend.load_state(bytes, header[1]))
+         return false;
+@@ -2178,6 +2245,7 @@
+     mode.viWidth = vi_width;
+     mode.viHeight = vi_height;
+     VIConfigure(&mode);
++    gx_aurora::g_color_peek_cache.reset();
+ }
+ 
+ } // extern "C"
+diff --git a/GXRuntime/include/gxruntime/aurora_backend.h b/GXRuntime/include/gxruntime/aurora_backend.h
+--- a/GXRuntime/include/gxruntime/aurora_backend.h
++++ b/GXRuntime/include/gxruntime/aurora_backend.h
+@@ -107,6 +107,11 @@
+ /* Waits for the FIFO worker to finish what the guest has written: before a
+    load replaces guest memory the worker must not still be reading it. */
+ void dol_aurora_gx_drain(void);
++/* Synchronous CPU EFB color peek, after all preceding FIFO commands. Raw PE
++ * alpha-read register (mode in bits 0..1), native current BP pixel format.
++ * One ordered snapshot/failed attempt per unchanged FIFO/frame revision.
++ * False leaves out untouched; never answers from an older recognition pass. */
++bool dol_aurora_gx_peek_argb(u16 x, u16 y, u16 alpha_read, u32* out);
+ 
+ // Request recovery on the audio-owning host thread after an OS interruption.
+ void dol_aurora_audio_resume(void);
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.cpp b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+@@ -1593,6 +1593,41 @@
+   return begin_frame(true);
+ }
+ 
++std::vector<uint8_t> read_current_efb_rgba8(uint32_t& width, uint32_t& height) {
++  width = height = 0;
++  if (render_worker::is_worker_thread() || g_recordingFrame == nullptr || g_inOffscreen ||
++      g_currentRenderPass == UINT32_MAX || g_currentRenderPass >= current_render_passes().size())
++    return {};
++  // resolve_pass adds an aligned UV uniform, then segment_frame needs its usual
++  // finish headroom. A full draw staging buffer can lack room for this copy.
++  constexpr size_t peekUniformSize = sizeof(std::array<float, 4>);
++  if (!staging_has_capacity(0, 0, peekUniformSize, 0, 0)) {
++    if (!segment_frame() || !staging_has_capacity(0, 0, peekUniformSize, 0, 0))
++      return {};
++  }
++  const auto size = current_render_passes()[g_currentRenderPass].targetSize;
++  // Bound both the CPU allocation and padded GPU readback; row arithmetic in
++  // read_texture_rgba8 stays within u32. This does not widen any guest range.
++  if (size.width == 0 || size.height == 0 || size.width > 8192 || size.height > 8192 ||
++      uint64_t(size.width) * size.height > 32u * 1024u * 1024u)
++    return {};
++  const auto texture = new_render_texture(size.width, size.height, GX_TF_RGBA8, "CPU EFB color peek");
++  if (!texture || !texture->texture)
++    return {};
++  // Same-sized copy after the active pass's resolve. No texture conversion,
++  // scaling filter, copy-clear, display copy, or present-source substitution.
++  resolve_pass(texture, {0, 0, int32_t(size.width), int32_t(size.height)},
++               false, false, false, {}, 0.f);
++  if (!segment_frame())
++    return {};
++  auto rgba = read_texture_rgba8(texture);
++  if (rgba.size() != uint64_t(size.width) * size.height * 4u)
++    return {};
++  width = size.width;
++  height = size.height;
++  return rgba;
++}
++
+ bool staging_has_capacity(size_t vertLength, size_t indexLength,
+                           size_t uniformLength, size_t secondUniformLength,
+                           size_t storageLength) {
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.hpp b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+@@ -9,6 +9,7 @@
+ #include <functional>
+ #include <type_traits>
+ #include <utility>
++#include <vector>
+ 
+ #include <aurora/gfx.h>
+ #include <aurora/math.hpp>
+@@ -240,6 +241,10 @@
+ 
+ bool begin_frame(bool preserveEfb = false);
+ bool segment_frame();
++// Exact current EFB at source resolution (including ordinary MSAA resolve).
++// Caller owns recording, has drained FIFO, and is not the render worker.
++// Does not clear or present; empty means no supported current EFB/readback.
++std::vector<uint8_t> read_current_efb_rgba8(uint32_t& width, uint32_t& height);
+ bool staging_has_capacity(size_t vertLength, size_t indexLength,
+                           size_t uniformLength, size_t secondUniformLength = 0,
+                           size_t storageLength = 0);
+diff --git a/GXRuntime/graphics/aurora/cmake/aurora_gx.cmake b/GXRuntime/graphics/aurora/cmake/aurora_gx.cmake
+--- a/GXRuntime/graphics/aurora/cmake/aurora_gx.cmake
++++ b/GXRuntime/graphics/aurora/cmake/aurora_gx.cmake
+@@ -3,6 +3,7 @@
+         lib/gfx/common.cpp
+         lib/gfx/depth_peek.cpp
+         lib/gfx/efb_readback.cpp
++        lib/gfx/efb_color_peek.cpp
+         lib/gfx/pipeline_cache.cpp
+         lib/gfx/render_worker.cpp
+         lib/gfx/thread_cpu.cpp
+diff --git a/GXRuntime/graphics/aurora/tests/CMakeLists.txt b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
+--- a/GXRuntime/graphics/aurora/tests/CMakeLists.txt
++++ b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
+@@ -12,6 +12,10 @@
+ endif ()
+ 
+ if (AURORA_ENABLE_GX)
++  add_executable(efb_color_peek_tests efb_color_peek_test.cpp)
++  target_compile_features(efb_color_peek_tests PRIVATE cxx_std_17)
++  add_test(NAME efb_color_peek_tests COMMAND efb_color_peek_tests)
++
+   # GX FIFO round-trip tests
+   # Compile GX sources directly to avoid pulling in the full renderer/WebGPU runtime
+   add_executable(gx_fifo_tests
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/efb_color_peek.hpp b/GXRuntime/graphics/aurora/lib/gfx/efb_color_peek.hpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/gfx/efb_color_peek.hpp
+@@ -0,0 +1,140 @@
++#pragma once
++
++// Channel quantization adapted from Dolphin's
++// Source/Core/VideoCommon/VideoCommon.h.
++// Copyright 2008 Dolphin Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include <cmath>
++#include <cstddef>
++#include <cstdint>
++#include <utility>
++#include <vector>
++
++namespace aurora::gfx::efb_color_peek {
++
++// CPU peeks sample pixel centers, never a filtered resize of the alpha IDs.
++struct Mapping {
++  uint32_t width = 0, height = 0;
++  uint32_t logicalWidth = 0, logicalHeight = 0;
++  double scaleX = 1.0, scaleY = 1.0, offsetX = 0.0, offsetY = 0.0;
++};
++
++inline Mapping make_mapping(uint32_t width, uint32_t height, uint32_t logicalWidth,
++                            uint32_t logicalHeight, bool native, bool stretch) noexcept {
++  Mapping m{width, height, logicalWidth, logicalHeight};
++  if (native) {
++    m.logicalWidth = width;
++    m.logicalHeight = height;
++  } else if (logicalWidth != 0 && logicalHeight != 0) {
++    m.scaleX = double(width) / logicalWidth;
++    m.scaleY = double(height) / logicalHeight;
++    if (!stretch) {
++      const auto scale = m.scaleX < m.scaleY ? m.scaleX : m.scaleY;
++      m.scaleX = m.scaleY = scale;
++      m.offsetX = (double(width) - logicalWidth * scale) * 0.5;
++      m.offsetY = (double(height) - logicalHeight * scale) * 0.5;
++    }
++  }
++  return m;
++}
++
++inline bool map_pixel(const Mapping& m, uint16_t x, uint16_t y, size_t& index) noexcept {
++  if (m.width == 0 || m.height == 0 || x >= m.logicalWidth || y >= m.logicalHeight ||
++      !std::isfinite(m.scaleX) || !std::isfinite(m.scaleY) || !std::isfinite(m.offsetX) ||
++      !std::isfinite(m.offsetY) || m.scaleX <= 0 || m.scaleY <= 0)
++    return false;
++  const auto sx = std::floor(m.offsetX + (double(x) + 0.5) * m.scaleX);
++  const auto sy = std::floor(m.offsetY + (double(y) + 0.5) * m.scaleY);
++  if (sx < 0 || sy < 0 || sx >= m.width || sy >= m.height)
++    return false;
++  index = size_t(sy) * m.width + size_t(sx);
++  return true;
++}
++
++// The PE returns 0xAARRGGBB. Pixel-format quantization precedes alpha-read
++// override; the register's enable/reserved bits do not change its two mode bits.
++inline bool pack_argb(const uint8_t* rgba, uint32_t pixelFormat, uint16_t alphaRead,
++                      uint32_t& out) noexcept {
++  if (rgba == nullptr || pixelFormat > 2 || (alphaRead & 3u) == 3u)
++    return false;
++  uint32_t color = (uint32_t(rgba[3]) << 24) | (uint32_t(rgba[0]) << 16) |
++                   (uint32_t(rgba[1]) << 8) | uint32_t(rgba[2]);
++  if (pixelFormat == 1) {
++    color &= 0xFCFCFCFCu;
++    color |= (color >> 6) & 0x03030303u;
++  } else if (pixelFormat == 2) {
++    color &= 0x00F8FCF8u;
++    color |= (color >> 5) & 0x00070007u;
++    color |= (color >> 6) & 0x00000300u;
++  }
++  if (pixelFormat != 1 || (alphaRead & 3u) == 1u)
++    color |= 0xFF000000u;
++  if ((alphaRead & 3u) == 0u)
++    color &= 0x00FFFFFFu;
++  out = color;
++  return true;
++}
++
++struct Snapshot {
++  Mapping mapping;
++  std::vector<uint8_t> rgba;
++};
++
++struct Revision {
++  uint64_t fifoBytes = 0, frame = 0;
++  uint32_t pixelFormat = 0;
++  bool operator==(const Revision& rhs) const noexcept {
++    return fifoBytes == rhs.fifoBytes && frame == rhs.frame && pixelFormat == rhs.pixelFormat;
++  }
++};
++
++// Only the common renderer's live frame identity proves recording survived a
++// preserving submission. Never open a frame here or change a live frame's flags.
++inline void close_lost_recording_frame(uint64_t frame, bool& frameOpen,
++                                       bool& recordingOpen) noexcept {
++  if (frame == 0)
++    frameOpen = recordingOpen = false;
++}
++
++// A failed attempt is cached too: a recognition loop must not wait for the
++// five-second GPU timeout for every pixel of the same unchanged pass.
++class Cache {
++public:
++  bool matches_stream(uint64_t fifoBytes, uint64_t frame) const noexcept {
++    return attempted_ && revision_.fifoBytes == fifoBytes && revision_.frame == frame;
++  }
++  bool needs_capture(const Revision& revision) const noexcept {
++    return !attempted_ || !(revision_ == revision);
++  }
++  void finish(const Revision& revision, Snapshot snapshot) noexcept {
++    revision_ = revision;
++    attempted_ = true;
++    snapshot_ = std::move(snapshot);
++    const auto& m = snapshot_.mapping;
++    ready_ = m.width != 0 && m.height != 0 &&
++             uint64_t(m.width) * m.height <= 32u * 1024u * 1024u &&
++             snapshot_.rgba.size() == uint64_t(m.width) * m.height * 4u;
++    if (!ready_)
++      snapshot_.rgba.clear();
++  }
++  void reset() noexcept {
++    attempted_ = ready_ = false;
++    snapshot_.rgba.clear();
++  }
++  bool read(uint16_t x, uint16_t y, uint16_t alphaRead, uint32_t& out) const noexcept {
++    size_t index = 0;
++    return ready_ && map_pixel(snapshot_.mapping, x, y, index) &&
++           pack_argb(snapshot_.rgba.data() + index * 4u, revision_.pixelFormat, alphaRead, out);
++  }
++private:
++  bool attempted_ = false, ready_ = false;
++  Revision revision_;
++  Snapshot snapshot_;
++};
++
++// Recording thread only, after the FIFO has drained and while its recording
++// mutex is held. Captures the current EFB, submits without a present/clear,
++// then waits for the ordered GPU map. Empty output is failure, never stale data.
++bool capture(Snapshot& out);
++} // namespace aurora::gfx::efb_color_peek
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/efb_color_peek.cpp b/GXRuntime/graphics/aurora/lib/gfx/efb_color_peek.cpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/gfx/efb_color_peek.cpp
+@@ -0,0 +1,20 @@
++#include "efb_color_peek.hpp"
++#include "common.hpp"
++#include "../gx/gx.hpp"
++#include "../dolphin/vi/vi_internal.hpp"
++
++namespace aurora::gfx::efb_color_peek {
++bool capture(Snapshot& out) {
++  out = {};
++  uint32_t width = 0, height = 0;
++  const auto logical = vi::configured_fb_size();
++  const auto policy = gx::g_gxState.viewportPolicy;
++  auto rgba = read_current_efb_rgba8(width, height);
++  if (rgba.empty())
++    return false;
++  out.mapping = make_mapping(width, height, logical.x, logical.y,
++      policy == AURORA_VIEWPORT_NATIVE, policy == AURORA_VIEWPORT_STRETCH);
++  out.rgba = std::move(rgba);
++  return true;
++}
++} // namespace aurora::gfx::efb_color_peek
+diff --git a/GXRuntime/graphics/aurora/tests/efb_color_peek_test.cpp b/GXRuntime/graphics/aurora/tests/efb_color_peek_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/tests/efb_color_peek_test.cpp
+@@ -0,0 +1,172 @@
++// Pure EFB peek conversion, coordinate and revision checks. No device/window.
++#include "../lib/gfx/efb_color_peek.hpp"
++#include "../lib/gfx/staging_budget.hpp"
++
++#include <cstdio>
++#include <limits>
++
++namespace cp = aurora::gfx::efb_color_peek;
++static unsigned checks = 0, failures = 0;
++#define CHECK(c) do { ++checks; if (!(c)) { ++failures; \
++  std::fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #c); } } while (0)
++
++static cp::Snapshot one_pixel(uint8_t alpha) {
++  return {cp::make_mapping(1, 1, 1, 1, true, false), {0x12, 0x34, 0x56, alpha}};
++}
++
++static void packing() {
++  uint32_t out = 0;
++  const uint8_t rgba[]{0x12, 0x34, 0x56, 0x94};
++  CHECK(cp::pack_argb(rgba, 1, 6, out) && out == 0x96103455u);
++  CHECK(cp::pack_argb(rgba, 1, 5, out) && out == 0xFF103455u);
++  CHECK(cp::pack_argb(rgba, 1, 4, out) && out == 0x00103455u);
++  CHECK(cp::pack_argb(rgba, 0, 6, out) && out == 0xFF123456u);
++  CHECK(cp::pack_argb(rgba, 0, 4, out) && out == 0x00123456u);
++  CHECK(cp::pack_argb(rgba, 2, 6, out) && out == 0xFF103452u);
++  CHECK(cp::pack_argb(rgba, 2, 4, out) && out == 0x00103452u);
++  out = 0x12345678u;
++  CHECK(!cp::pack_argb(rgba, 3, 6, out) && out == 0x12345678u);
++  CHECK(!cp::pack_argb(rgba, 1, 7, out) && out == 0x12345678u);
++  CHECK(!cp::pack_argb(nullptr, 1, 6, out) && out == 0x12345678u);
++  for (unsigned id = 0; id < 64; ++id) {
++    const uint8_t pixel[]{255, 127, 0, uint8_t(id * 4)};
++    CHECK(cp::pack_argb(pixel, 1, 6, out) && (out >> 26) == id);
++    CHECK(cp::pack_argb(pixel, 1, 0xFFFEu, out) && (out >> 26) == id);
++  }
++  // Independent per-channel bit replication, including all discarded bits.
++  for (unsigned byte = 0; byte < 256; ++byte) {
++    const uint8_t pixel[]{uint8_t(byte), uint8_t(byte), uint8_t(byte), uint8_t(byte)};
++    const auto six = ((byte >> 2) << 2) | (byte >> 6);
++    const auto five = ((byte >> 3) << 3) | (byte >> 5);
++    CHECK(cp::pack_argb(pixel, 1, 2, out) &&
++          out == (six << 24 | six << 16 | six << 8 | six));
++    CHECK(cp::pack_argb(pixel, 2, 2, out) &&
++          out == (0xFF000000u | five << 16 | six << 8 | five));
++  }
++}
++
++static void mapping() {
++  size_t i = size_t(-1);
++  auto m = cp::make_mapping(640, 528, 640, 528, true, false);
++  CHECK(cp::map_pixel(m, 0, 0, i) && i == 0);
++  CHECK(cp::map_pixel(m, 639, 527, i) && i == 640u * 528u - 1u);
++  CHECK(!cp::map_pixel(m, 640, 0, i));
++  CHECK(!cp::map_pixel(m, 0, 528, i));
++  m = cp::make_mapping(1920, 1584, 640, 528, false, true);
++  CHECK(cp::map_pixel(m, 0, 0, i) && i == 1921);
++  CHECK(cp::map_pixel(m, 639, 527, i) && i == 1582u * 1920u + 1918u);
++  m = cp::make_mapping(1000, 600, 640, 480, false, false);
++  CHECK(cp::map_pixel(m, 0, 0, i) && i == 100);
++  CHECK(cp::map_pixel(m, 639, 479, i) && i == 599u * 1000u + 899u);
++  CHECK(!cp::map_pixel(m, 640, 479, i));
++  m = cp::make_mapping(3, 1, 2, 1, false, true);
++  CHECK(cp::map_pixel(m, 0, 0, i) && i == 0);
++  CHECK(cp::map_pixel(m, 1, 0, i) && i == 2);
++  m.scaleX = std::numeric_limits<double>::quiet_NaN();
++  CHECK(!cp::map_pixel(m, 0, 0, i));
++  m.scaleX = std::numeric_limits<double>::infinity();
++  CHECK(!cp::map_pixel(m, 0, 0, i));
++  m.scaleX = 1; m.offsetX = -2;
++  CHECK(!cp::map_pixel(m, 0, 0, i));
++  m = cp::make_mapping(0, 1, 2, 1, false, true);
++  CHECK(!cp::map_pixel(m, 0, 0, i));
++}
++
++static void caching() {
++  cp::Cache cache;
++  cp::Revision r{100, 1, 1};
++  uint32_t out = 0x12345678u;
++  CHECK(cache.needs_capture(r));
++  CHECK(!cache.matches_stream(r.fifoBytes, r.frame));
++  CHECK(!cache.read(0, 0, 6, out) && out == 0x12345678u);
++  unsigned attempts = 0;
++  for (unsigned pixel = 0; pixel < 1000; ++pixel) {
++    if (cache.needs_capture(r)) { ++attempts; cache.finish(r, one_pixel(37 * 4)); }
++    CHECK(cache.read(0, 0, 6, out) && (out >> 26) == 37);
++  }
++  CHECK(attempts == 1);
++  CHECK(cache.matches_stream(r.fifoBytes, r.frame));
++  CHECK(!cache.matches_stream(r.fifoBytes + 1, r.frame));
++  CHECK(!cache.matches_stream(r.fifoBytes, r.frame + 1));
++  CHECK(cache.read(0, 0, 4, out) && (out >> 24) == 0);
++  CHECK(cache.read(0, 0, 5, out) && (out >> 24) == 255);
++  CHECK(!cache.needs_capture(r));
++  ++r.fifoBytes;
++  CHECK(cache.needs_capture(r));
++  cache.finish(r, {}); // actual timeout/failure is remembered, never stale ID37
++  CHECK(cache.matches_stream(r.fifoBytes, r.frame));
++  out = 0x12345678u;
++  for (unsigned pixel = 0; pixel < 1000; ++pixel) {
++    CHECK(!cache.needs_capture(r));
++    CHECK(!cache.read(0, 0, 6, out) && out == 0x12345678u);
++  }
++  ++r.frame;
++  CHECK(cache.needs_capture(r));
++  cache.finish(r, one_pixel(63 * 4));
++  CHECK(cache.read(0, 0, 6, out) && (out >> 26) == 63);
++  r.pixelFormat = 0;
++  CHECK(cache.needs_capture(r));
++  cache.finish(r, one_pixel(0));
++  CHECK(cache.read(0, 0, 6, out) && (out >> 24) == 255);
++  cache.reset();
++  CHECK(cache.needs_capture(r) && !cache.read(0, 0, 6, out));
++  auto malformed = one_pixel(0);
++  malformed.rgba.pop_back();
++  cache.finish(r, std::move(malformed));
++  CHECK(!cache.needs_capture(r) && !cache.read(0, 0, 6, out));
++  malformed = one_pixel(0);
++  malformed.mapping.width = malformed.mapping.height = 0xFFFFFFFFu;
++  cache.finish(r, std::move(malformed));
++  CHECK(!cache.read(0, 0, 6, out));
++}
++
++static void recording_failure() {
++  bool frameOpen = true, recordingOpen = true;
++  cp::close_lost_recording_frame(91, frameOpen, recordingOpen);
++  CHECK(frameOpen && recordingOpen); // failed readback, live continued frame
++  cp::close_lost_recording_frame(0, frameOpen, recordingOpen);
++  CHECK(!frameOpen && !recordingOpen); // failed staging map, no continued frame
++  cp::close_lost_recording_frame(92, frameOpen, recordingOpen);
++  CHECK(!frameOpen && !recordingOpen); // reopening is the backend's responsibility
++  frameOpen = true;
++  cp::close_lost_recording_frame(0, frameOpen, recordingOpen);
++  CHECK(!frameOpen && !recordingOpen);
++
++  cp::Cache cache;
++  const cp::Revision failed{200, 0, 1};
++  cache.finish(failed, {});
++  CHECK(!cache.needs_capture(failed));
++  uint32_t out = 0x12345678u;
++  CHECK(!cache.read(0, 0, 6, out) && out == 0x12345678u);
++  const cp::Revision reopened{200, 93, 1};
++  CHECK(cache.needs_capture(reopened));
++  cache.finish(reopened, one_pixel(17 * 4));
++  CHECK(cache.read(0, 0, 6, out) && (out >> 26) == 17);
++}
++
++static void copy_headroom() {
++  // A draw may fit with finish headroom while the copy's aligned UV does not.
++  aurora::gfx::StagingLimits limits{};
++  limits.capacity.uniforms = 1024;
++  limits.uniformAlignment = 256;
++  limits.storageAlignment = 1;
++  limits.finishUniformHeadroom = 128;
++  aurora::gfx::StagingUse used{};
++  used.uniforms = 769;
++  const aurora::gfx::StagingRequest copy{0, 0, 16, 0, 0};
++  // The previous draw has retained its promised finish-only room.
++  CHECK(used.uniforms + limits.finishUniformHeadroom <= limits.capacity.uniforms);
++  CHECK(!aurora::gfx::staging_fits(used, copy, limits));
++  used.uniforms = 768;
++  CHECK(aurora::gfx::staging_fits(used, copy, limits));
++  used.uniforms = 0; // preserving segmentation resets the mapped staging use
++  CHECK(aurora::gfx::staging_fits(used, copy, limits));
++  limits.capacity.uniforms = 143; // 16 UV bytes plus 128 finish bytes cannot fit
++  CHECK(!aurora::gfx::staging_fits(used, copy, limits));
++}
++
++int main() {
++  packing(); mapping(); caching(); recording_failure(); copy_headroom();
++  std::printf("EFB color peek: %u checks, %u failures\n", checks, failures);
++  return failures == 0 ? 0 : 1;
++}

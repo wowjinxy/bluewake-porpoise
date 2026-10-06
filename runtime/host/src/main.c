@@ -28,6 +28,7 @@
 #include "gather_pipe_bridge.h"
 #include "guest_checkpoint.h"
 #include "edge_intercepts.h"
+#include "efb_peek.h"
 #include "game_options.h"
 #include "game_events.h"
 #include "song_host_adapter.h"
@@ -438,6 +439,8 @@ static BluewakeIplSram g_ipl_sram;
 // 2026-09-24). The headless renderer, which the certified route uses, keeps 0.
 static bool g_efb_peek_enabled;
 static unsigned g_efb_peek_reports;
+static unsigned g_efb_color_peek_reports;
+static BluewakeEfbPeek g_efb_peek;
 static bool g_audio_capture_failure_reported;
 static DolAudioEventAdapter g_audio_events;
 static unsigned g_audio_event_reports;
@@ -3666,6 +3669,12 @@ static void host_mmio_unhandled(const char* kind, u32 address, u8 size,
             (unsigned long long)g_host_retrace_count);
 }
 
+static bool host_efb_color_read(void* user, u16 x, u16 y,
+                                u16 alpha_read, u32* argb) {
+    (void)user;
+    return dol_aurora_gx_peek_argb(x, y, alpha_read, argb);
+}
+
 static u64 host_mmio_read(CPUState* ctx, u32 address, u8 size) {
 #if BLUEWAKE_EDGE_CENSUS
     g_mmio_read_buckets[host_mmio_bucket(address)]++;
@@ -3675,6 +3684,20 @@ static u64 host_mmio_read(CPUState* ctx, u32 address, u8 size) {
         return memory_value;
     if (bluewake_ipl_sram_contains(&g_ipl_sram, address) && size == 4u)
         return bluewake_ipl_sram_read(&g_ipl_sram, address);
+    u16 efb_x, efb_y;
+    if (g_efb_peek_enabled &&
+        bluewake_efb_color_address(address, size, &efb_x, &efb_y)) {
+        bool live = false;
+        const u32 argb = bluewake_efb_color_read(&g_efb_peek, efb_x, efb_y,
+                                                host_efb_color_read, NULL, &live);
+        if (g_efb_color_peek_reports < 12u && getenv("BLUEWAKE_EFB_PEEK_LOG") != NULL) {
+            g_efb_color_peek_reports++;
+            fprintf(stderr, "[efb-peek] color x=%u y=%u value=0x%08X snapshot=%u retrace=%llu\n",
+                    efb_x, efb_y, argb, live ? 1u : 0u,
+                    (unsigned long long)g_host_retrace_count);
+        }
+        return argb;
+    }
     if (g_efb_peek_enabled && size == 4u && (address & 0xFF000000u) == 0xC8000000u &&
         (address & 0x00C00000u) == 0x00400000u) {
         const u16 x = (u16)((address >> 2) & 0x3FFu);
@@ -3699,6 +3722,8 @@ static u64 host_mmio_read(CPUState* ctx, u32 address, u8 size) {
 
     if (dol_di_mmio_contains(address))
         return dol_di_mmio_read(&g_di, address, size);
+    if (bluewake_efb_alpha_register(address, size))
+        return g_efb_peek.alpha_read;
     if (dol_interrupts_mmio_contains(address))
         return dol_interrupts_mmio_read(&g_interrupts, address, size);
     if (dol_si_mmio_contains(address)) {
@@ -4880,6 +4905,10 @@ static void host_mmio_write(CPUState* ctx, u32 address, u64 value, u8 size) {
     }
     if (dol_di_mmio_contains(address)) {
         dol_di_mmio_write(&g_di, ctx, address, size, value);
+        goto rebudget;
+    }
+    if (bluewake_efb_alpha_register(address, size)) {
+        g_efb_peek.alpha_read = (u16)value;
         goto rebudget;
     }
     if (dol_interrupts_mmio_contains(address)) {
@@ -6979,6 +7008,8 @@ static bool host_state_save(const char* path, CPUState* cpu,
         ok = ok && bw_state_write_chunk(writer, "HOSTVARS", vars, vars_size);
         ok = ok && bw_state_write_chunk(writer, "PE", &g_interrupts.pe_token,
             sizeof(g_interrupts) - offsetof(DolInterrupts, pe_token));
+        ok = ok && bw_state_write_chunk(writer, "EFBPEEK", &g_efb_peek.alpha_read,
+                                        sizeof g_efb_peek.alpha_read);
         free(vars);
     } else {
         ok = false;
@@ -7117,6 +7148,12 @@ static bool host_state_load(const char* path, CPUState* cpu,
     const BwStateChunk* vars = bw_state_find(&reader, "HOSTVARS");
     const BwStateChunk* loops = bw_state_find(&reader, "LOOPVARS");
     const BwStateChunk* pe = bw_state_find(&reader, "PE");
+    const BwStateChunk* efb_peek = bw_state_find(&reader, "EFBPEEK");
+    if (!bluewake_efb_peek_state_valid(efb_peek != NULL ? efb_peek->data : NULL,
+                                     efb_peek != NULL ? efb_peek->size : 0u)) {
+        fprintf(stderr, "[state] %s: incompatible EFB peek state size\n", path);
+        goto done;
+    }
     if (pe != NULL && pe->size != sizeof(g_interrupts) - offsetof(DolInterrupts, pe_token)) {
         fprintf(stderr, "[state] %s: incompatible PE state size\n", path);
         goto done;
@@ -7236,6 +7273,9 @@ static bool host_state_load(const char* path, CPUState* cpu,
         (g_interrupts.pi_cause & DOL_PI_CAUSE_PE_FINISH) != 0u;
     if (pe != NULL)
         memcpy(&g_interrupts.pe_token, pe->data, (size_t)pe->size);
+    (void)bluewake_efb_peek_restore(&g_efb_peek,
+        efb_peek != NULL ? efb_peek->data : NULL,
+        efb_peek != NULL ? efb_peek->size : 0u);
     chunk = bw_state_find(&reader, "LOOPVARS");
     if (chunk != NULL) {
         const BwStateField loop_fields[] = {
@@ -8172,6 +8212,7 @@ int main(int argc, char** argv) {
     }
     dol_di_set_command_callback(&g_di, host_di_command, NULL);
     dol_interrupts_init(&g_interrupts);
+    bluewake_efb_peek_reset(&g_efb_peek);
     g_cycle_vi_clock = &vi_clock;
     // Shipping policy. Measured on the regenerated build with the chassis
     // schedule (docs/status/CURRENT.md, 2026-09-17 "the cycle window is a free
