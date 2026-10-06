@@ -296,6 +296,25 @@ change records the first failing source location without changing ownership,
 timer or observer guards. This failed reference is not accepted as rescue or
 feature evidence, and its game target has not been repeated.
 
+The additive provider now records the first failing source location and the first
+of fourteen sample rejection stages. The existing return categories, ownership
+checks, evaluation order and failure latch are preserved. Repeated reports and
+sample calls from another thread are suppressed; this does not claim that direct
+off-thread calls to the original failure latch are safe.
+
+The optimized and AddressSanitizer authored tests each completed 486 checks.
+Both captured exactly fourteen rejection rows and one failure row at the frozen
+source locations. The tests compare the full 3552-byte CPU state and authored
+guest memory, and cover repeated reports, prefailed state and a real worker
+thread. All six compile/link/test roles exited zero with empty stderr, closed
+dependencies and link inputs. The isolated parent also exited zero and preserved
+its inputs. Independent file qualification remains pending; these authored tests
+do not establish native actor ownership or rescue behavior.
+
+Source reviews also accept the six-role host rebuild: three main compiles and
+three links, each retaining 73 accepted objects, including the shared trace
+sink. Its execution and new native diagnostic cohort remain pending.
+
 Next are provider diagnosis and separately qualified reference/OFF/ON rescue
 runs covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
