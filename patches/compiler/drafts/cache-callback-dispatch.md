@@ -71,4 +71,11 @@ normal configured Clang/MSVC SDK and matching CRT/ASan DLL deployment. The
 portable CMake recipe was source-reviewed, not separately run; the retained
 actual direct-tool commands are in `actual2/commands.json`.
 
-The reviewed helper/preparer and exported tests are now available in the public tree. All nine preparation tests passed after integration. The normal builder does not select this experiment; it remains explicit and no game module has been regenerated with it.
+The reviewed helper/preparer and exported tests are now available in the public tree. All nine preparation tests passed after integration.
+
+The later builder integration adds `--inline-cache-callbacks`, off by default,
+requiring gather-pipe preparation. It runs after native certification and other
+source transformations. The option, preparer/helper/gather bytes, exact runtime
+CPU source and final chunk digest bind preparation reuse, training and provenance.
+Earlier inactive-builder statements above describe the original export stage.
+No full game module or native performance qualification is implied.

@@ -3,7 +3,8 @@
 
 Adapted from Elliott Tate, app 944a1f3c2b130a8086295428a0847938a777a2d7.
 Run on a private prepared source copy, before final source/provenance hashes.
-No builder integration is active. --enable is required to change any bytes.
+The builder's --inline-cache-callbacks option is off by default. This standalone
+CLI requires --enable to change any bytes.
 """
 import argparse
 import hashlib
@@ -64,11 +65,12 @@ def convert(text):
     return converted, changed
 
 
-def prepare(root, cpu_source, helper, enable=False):
+def prepare(root, cpu_source, helper, enable=False, *, gather_header=None):
     if not enable:
         return 0, 0
     root = Path(root)
-    if sha((root / "gather_pipe.h").read_bytes()) != GATHER_SHA:
+    gather_header = Path(gather_header) if gather_header is not None else root / "gather_pipe.h"
+    if sha(gather_header.read_bytes()) != GATHER_SHA:
         raise ValueError("unrecognized gather-pipe wrapper contract")
     if sha(Path(cpu_source).read_bytes()) != CPU_SHA:
         raise ValueError("unrecognized CPU fallback contract")
@@ -107,9 +109,12 @@ def main():
     parser.add_argument("source", type=Path)
     parser.add_argument("--cpu-source", type=Path, required=True)
     parser.add_argument("--helper", type=Path, default=Path(__file__).resolve().parents[2] / "cmake/composite/cache_fallback.h")
+    parser.add_argument("--gather-header", type=Path,
+                        help="actual gather header selected by the module's include path (default: source/gather_pipe.h)")
     parser.add_argument("--enable", action="store_true")
     args = parser.parse_args()
-    sites, files = prepare(args.source, args.cpu_source, args.helper, args.enable)
+    sites, files = prepare(args.source, args.cpu_source, args.helper, args.enable,
+                           gather_header=args.gather_header)
     print(f"cache callback dispatch: {sites} sites in {files} chunks; FIFO/callback retained")
 
 

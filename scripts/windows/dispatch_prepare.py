@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in exact dispatch preparations; no builder or default-runtime integration.
+"""Opt-in exact dispatch preparations, also exposed by explicit builder options.
 
 Instruction-slot switches adapt AceSpectre's b6d5e7cb7c16103f4c3ef68b4d721f4a82977380.
 Budget-first return ranges adapt elliotttate's 7aca42ade32d41b38a3810d5ba6f28bd37127e4b.

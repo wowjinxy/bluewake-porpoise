@@ -207,7 +207,12 @@ Options (`--help` lists all):
 | `--fixed-cpu` | Prepare fixed-address CPU storage; requires the matching app |
 | `--fixed-mem1` | Use module-owned RAM; requires `--fixed-cpu` and the matching app |
 | `--inline-fp` | Prepare inline floating-point helpers; module/gameplay/performance qualification remains separate |
+| `--f32-hw-widen` | Use exact hardware widening for eligible normal floats; requires inline FP and gather pipe, off by default |
 | `--gather-pipe` | Prepare gather/inline-memory wrappers; host batching and module qualification remain separate |
+| `--dispatch-slots` | Prepare exact instruction-slot switches after native certification; off by default |
+| `--return-ranges` | Prepare budget-first return-dispatch range checks; off by default |
+| `--inline-cache-callbacks` | Inline four cache fallback dispatches, preserving FIFO drain and callbacks; requires gather pipe, off by default |
+| `--module-thinlto` | Use ThinLTO for the prepared C game DLL on Windows Clang; off by default |
 | `--direct-calls` | Prepare direct cross-chunk/indirect calls; requires a supporting host |
 | `--native-j3d` | Prepare certified J3D matrix functions |
 | `--native-vec` | Prepare nine certified SDK vector functions |

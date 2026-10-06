@@ -66,6 +66,22 @@ class PreparationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "gather-pipe"):
             self.prepare()
 
+    def test_explicit_compiler_include_header_needs_no_generated_copy(self):
+        (self.root / "gather_pipe.h").unlink()
+        self.assertEqual(preparation.prepare(
+            self.root, CPU, ROOT / "cmake/composite/cache_fallback.h", True,
+            gather_header=GATHER), (4, 1))
+        self.assertFalse((self.root / "gather_pipe.h").exists())
+
+    def test_explicit_changed_gather_declines_before_publication(self):
+        bad = self.root / "different-gather.h"
+        bad.write_bytes(GATHER.read_bytes() + b"/* changed contract */\n")
+        with self.assertRaisesRegex(ValueError, "gather-pipe"):
+            preparation.prepare(self.root, CPU, ROOT / "cmake/composite/cache_fallback.h",
+                                True, gather_header=bad)
+        self.assertEqual(self.path.read_text(), self.original)
+        self.assertFalse((self.root / "cache_fallback.h").exists())
+
     def test_prepared_helper_cannot_be_replaced(self):
         self.prepare()
         (self.root / "cache_fallback.h").write_bytes(b"changed")

@@ -10,4 +10,11 @@ Native gameplay A/B, profile retraining, combined preparation order, and frame-t
 
 The v2 draft pair supersedes the earlier draft exports without changing their preserved evidence. Only the opt-in parser guard and its adversarial tests changed; compiled positive case bodies are byte-identical. No compiled target was rerun for this source-only guard update.
 
-The reviewed preparer and authored fixtures are now available in the public tree. `python -B tests/prepare_dispatch_cases.py` passed all 64 parser checks after integration. The normal builder still does not select these transforms; use the explicit preparer only on a private module copy before final hashes/profile training.
+The reviewed preparer and authored fixtures are now available in the public tree. `python -B tests/prepare_dispatch_cases.py` passed all 64 parser checks after integration.
+
+The later builder integration exposes `--dispatch-slots` and `--return-ranges`,
+both off by default and reversible with their `--no-...` forms. Preparation runs
+after all native certification and memory/direct-call preparation. Each option,
+the selected preparer bytes and the final source digest bind preparation reuse,
+training and provenance. Earlier statements above describe the inactive export
+stage. Full translated-module/native performance qualification remains pending.

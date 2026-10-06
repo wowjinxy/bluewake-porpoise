@@ -610,6 +610,18 @@ int main(void) {
                         "--output-dir", out])
 
     # --- 6 generate ------------------------------------------------------
+    def preparation_experiment_inputs(self):
+        """Exact selected preparers and runtime contracts; defaults select none."""
+        files = {}
+        if getattr(self.args, "dispatch_slots", False) or getattr(self.args, "return_ranges", False):
+            files["scripts/windows/dispatch_prepare.py"] = ROOT / "scripts/windows/dispatch_prepare.py"
+        if getattr(self.args, "inline_cache_callbacks", False):
+            for name in ("scripts/windows/cache_callbacks.py", "cmake/composite/cache_fallback.h",
+                         "cmake/composite/gather_pipe.h"):
+                files[name] = ROOT / name
+            files["runtime_cpu"] = self.recompcore / "GXRuntime/src/core/cpu.c"
+        return {name: sha256_file(path) for name, path in files.items()}
+
     def generate(self):
         o = self.out
         self.preparation_current = False
@@ -633,7 +645,11 @@ int main(void) {
                        f"{int(getattr(self.args, 'native_entries', False))}\n{int(getattr(self.args, 'lean_memory', False))}\n"
                        f"{int(getattr(self.args, 'libporpoise', False))}\n"
                        f"{int(getattr(self.args, 'f32_hw_widen', False))}\n"
-                       f"{int(getattr(self.args, 'module_thinlto', False))}\n").encode())
+                       f"{int(getattr(self.args, 'module_thinlto', False))}\n"
+                       f"{int(getattr(self.args, 'dispatch_slots', False))}\n"
+                       f"{int(getattr(self.args, 'return_ranges', False))}\n"
+                       f"{int(getattr(self.args, 'inline_cache_callbacks', False))}\n").encode())
+        inputs.update(json.dumps(self.preparation_experiment_inputs(), sort_keys=True).encode())
         inputs.update(json.dumps(self.libporpoise_inputs(), sort_keys=True).encode())
         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", ROOT / "scripts/windows/fast_blocks.py",
@@ -688,7 +704,8 @@ int main(void) {
                     prepared = {}
                 selections = ("fixed_cpu", "fixed_mem1", "inline_fp", "gather_pipe", "direct_calls", "inline_gpr",
                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
-                              "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto")
+                              "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto",
+                              "dispatch_slots", "return_ranges", "inline_cache_callbacks")
                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
                                             prepared.get("final_digest") == saved and
                                             prepared.get("enabled") == self.args.prepared_blocks and
@@ -821,6 +838,21 @@ int main(void) {
             self.source_step("lean-memory", "scripts/windows/lean_memory.py", o / "composite-src")
         if self.args.direct_calls:
             self.source_step("direct-calls", "scripts/windows/direct_calls.py", o / "composite-src")
+        # Native body certificates and memory/direct-call rewriting finish
+        # before dispatch preparation, retaining their observation hooks.
+        if getattr(self.args, "dispatch_slots", False) or getattr(self.args, "return_ranges", False):
+            options = ["--apply"]
+            if getattr(self.args, "dispatch_slots", False):
+                options.append("--dense")
+            if getattr(self.args, "return_ranges", False):
+                options.append("--return-ranges")
+            self.source_step("dispatch-preparation", "scripts/windows/dispatch_prepare.py",
+                             o / "composite-src", *options)
+        if getattr(self.args, "inline_cache_callbacks", False):
+            self.source_step("cache-callbacks", "scripts/windows/cache_callbacks.py",
+                             o / "composite-src", "--enable", "--cpu-source",
+                             self.recompcore / "GXRuntime/src/core/cpu.c", "--gather-header",
+                             ROOT / "cmake/composite/gather_pipe.h")
         digest = tree_digest(o / "composite-src")
         receipt = {"enabled": self.args.prepared_blocks,
                    "fixed_cpu": self.args.fixed_cpu,
@@ -828,6 +860,10 @@ int main(void) {
                    "inline_fp": self.args.inline_fp,
                    "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
                    "module_thinlto": getattr(self.args, "module_thinlto", False),
+                   "dispatch_slots": getattr(self.args, "dispatch_slots", False),
+                   "return_ranges": getattr(self.args, "return_ranges", False),
+                   "inline_cache_callbacks": getattr(self.args, "inline_cache_callbacks", False),
+                   "preparation_experiment_inputs": self.preparation_experiment_inputs(),
                    "gather_pipe": self.args.gather_pipe,
                    "direct_calls": self.args.direct_calls,
                    "inline_gpr": self.args.inline_gpr,
@@ -1032,7 +1068,9 @@ int main(void) {
                                            ("prepared_blocks", "fixed_cpu", "fixed_mem1", "inline_fp",
                                             "gather_pipe", "direct_calls", "inline_gpr", "native_j3d",
                                             "native_vec", "native_math", "native_skin", "native_game_math",
-                                            "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto")},
+                                            "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto",
+                                            "dispatch_slots", "return_ranges", "inline_cache_callbacks")},
+                               "preparation_experiment_inputs": self.preparation_experiment_inputs(),
                                "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
                                 "runtime_patches": self.runtime_patch_receipt,
@@ -1235,6 +1273,10 @@ int main(void) {
             "inline_fp": self.args.inline_fp,
             "f32_hw_widen": getattr(self.args, "f32_hw_widen", False),
             "module_thinlto": getattr(self.args, "module_thinlto", False),
+            "dispatch_slots": getattr(self.args, "dispatch_slots", False),
+            "return_ranges": getattr(self.args, "return_ranges", False),
+            "inline_cache_callbacks": getattr(self.args, "inline_cache_callbacks", False),
+            "preparation_experiment_inputs": self.preparation_experiment_inputs(),
             "gather_pipe": self.args.gather_pipe,
             "direct_calls": self.args.direct_calls,
             "inline_gpr": self.args.inline_gpr,
@@ -1403,6 +1445,12 @@ def main():
                         help="opt into experimental inline floating-point helpers (off by default)")
     parser.add_argument("--f32-hw-widen", action=argparse.BooleanOptionalAction, default=False,
                         help="use exact hardware widening for normal float loads; requires inline FP and gather pipe (experimental)")
+    parser.add_argument("--dispatch-slots", action=argparse.BooleanOptionalAction, default=False,
+                        help="prepare exact instruction-slot dispatch switches (experimental; off by default)")
+    parser.add_argument("--return-ranges", action=argparse.BooleanOptionalAction, default=False,
+                        help="prepare budget-first return dispatch range checks (experimental; off by default)")
+    parser.add_argument("--inline-cache-callbacks", action=argparse.BooleanOptionalAction, default=False,
+                        help="inline four cache fallback dispatches while preserving callbacks; requires gather pipe (experimental)")
     parser.add_argument("--gather-pipe", action="store_true",
                         help="opt into experimental gather/inline-memory wrappers (off by default; host writer setup is separate)")
     parser.add_argument("--inline-gpr", action="store_true",
@@ -1448,6 +1496,8 @@ def main():
         parser.error("--libporpoise requires --native-math")
     if args.f32_hw_widen and not (args.inline_fp and args.gather_pipe):
         parser.error("--f32-hw-widen requires --inline-fp and --gather-pipe")
+    if args.inline_cache_callbacks and not args.gather_pipe:
+        parser.error("--inline-cache-callbacks requires --gather-pipe")
     if args.inline_gpr and not args.direct_calls:
         parser.error("--inline-gpr requires --direct-calls")
     if args.fixed_mem1 and not args.fixed_cpu:
