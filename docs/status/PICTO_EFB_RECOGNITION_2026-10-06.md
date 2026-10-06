@@ -161,3 +161,43 @@ photo CARD save/reload remain open. Other GPU APIs, sample configurations and
 actual device/readback failure recovery have not been qualified by these runs.
 
 The verified basic Picto item award, manual save and fresh reload establish item and CARD/ledger persistence. They do not establish photographed-subject recognition or populated photo storage. The enhancement roadmap already keeps populated-photo gameplay verification open (`docs/ENHANCEMENT_ROADMAP.md:13`, `:82–83`). This core graphics task is independent of the disabled optional Tingle wait-shortening work.
+
+## Paused resume checkpoint
+
+Paused at the maintainer's request on **2026-10-06, 21:07:51 UTC**. The active
+goal is paused, and the two read-only source reviews have been interrupted.
+No native game or GPU process is running from this work.
+
+Completed commits:
+
+- `99c668e`: synchronous current-EFB color-read bridge for the translated Picto
+  recognition route, with host/state and renderer-helper checks.
+- `8e79edd`: explicit noninteractive SDK startup and authored real-GPU
+  qualification. D3D12 on the RTX 3070 passed 403 checks each at scales 1,
+  1.5 and 2. The active eleven-patch manifest and dependency lock agree.
+
+The next work was **native Picto photo-taking and populated-photo CARD
+save/reload validation**. Only source review began after the last commit;
+the game host has not yet been changed to select the new noninteractive mode.
+Its existing `aurora` startup still installs mouse/settings hooks and starts
+ordinary devices, so it must not be used for unattended testing.
+
+Resume with these steps:
+
+1. Finish reviewing `runtime/host/src/main.c` renderer selection and subsequent
+   mouse/settings/input calls. Add an explicit noninteractive renderer selection
+   using the committed SDK flag, private paths and disabled live input. Preserve
+   ordinary startup and existing headless-only reward/collector guards.
+2. Rebuild host configuration-header consumers, especially `main.c`, before
+   linking to the updated SDK layout. Verify the hidden game-host contract before
+   any native GPU launch.
+3. Locate and copy an appropriate Picto-equipped native CARD context. Exercise
+   original subject recognition and image capture, save a populated photo slot
+   through genuine CARD saving, then inspect it after a separate normal CARD
+   reload. Existing item-award and authored GPU results do not prove this step.
+
+The Tingle rescue wait-skip remains disabled and deferred. Its source and all
+diagnostics are preserved; it is not a dependency of this work or tester builds.
+The previously packaged controls tester ZIP is unchanged. Other-agent
+optimization edits remain separate and unstaged. Continue to avoid mouse
+takeover, visible/focused test windows and physical audio/controller startup.
