@@ -103,7 +103,23 @@ links retain the warning that -gcodeview is unused during linking. Those
 diagnostics remain alongside the original stopped camera attempt and settings
 warning. The recipe is not diagnostic free.
 
-Next are the read-only provider regression and genuine OFF/ON rescue runs
+The read-only provider regression now passes 436 authored checks in each
+optimized and AddressSanitizer build. Its 17 failure cases cover revocation
+and failures inside the current handler, including stops before subsequent
+CPU reads, register reads, event queries and output writes. The fixture uses
+the real recorder and local file operations with synthetic game inputs;
+after the tested failure it protects an authored CPU page to detect any
+continued access. It does not establish native game ownership or gameplay.
+
+Both independent file-only reviews accept all 12 actual roles: eight compiles,
+two links and two fixture processes. The dependency files contain 592 mentions
+across 206 distinct inputs. Each link uses four ordered objects and matching
+adjacent runtimes; every actual diagnostic stream is empty. The first reader's
+mistyped hash argument and the second reader's overly small object-section
+limit remain preserved. The corrected file-only readers inspect the original
+artifacts; no target was rerun.
+
+Next are the reference/OFF/ON diagnostic host builds and genuine rescue runs
 covering the six timer returns, original rewards,
 cleanup, replay and save recovery. The initial provider covers headless sessions;
 graphical-session ownership remains unqualified. The menu and ownership
