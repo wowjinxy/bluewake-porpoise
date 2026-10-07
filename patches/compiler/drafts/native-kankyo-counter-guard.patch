@@ -1,0 +1,63 @@
+diff --git a/cmake/composite/native_kankyo.c b/cmake/composite/native_kankyo.c
+index 34764ad..0d4a26f 100644
+--- a/cmake/composite/native_kankyo.c
++++ b/cmake/composite/native_kankyo.c
+@@ -226,6 +226,10 @@ static int ky_color(CPUState* cpu) {
+ }
+ 
+ int bluewake_native_kankyo(CPUState* cpu, u32 address) {
++    if (cpu == NULL || cpu->cycle_budget <= 0 || cpu->cycle_budget > INT32_MAX) return 0;
++    /* Bound signed prepaid arithmetic before any local FP work or stores.
++     * A positive bounded budget makes the negation below well-defined. */
++    if (cpu->downcount > 0 || cpu->downcount <= -cpu->cycle_budget) return 0;
+     unsigned which;
+     int done;
+     switch (address) {
+diff --git a/tests/performance_native_kankyo/native_kankyo_test.c b/tests/performance_native_kankyo/native_kankyo_test.c
+index db187b9..570293b 100644
+--- a/tests/performance_native_kankyo/native_kankyo_test.c
++++ b/tests/performance_native_kankyo/native_kankyo_test.c
+@@ -178,6 +178,35 @@ static Case build(u8* ram, unsigned which, unsigned scenario) {
+     return k;
+ }
+ 
++/* Every ordinary finite input first matches its translation. Malformed
++ * signed-counter cases then decline before any CPU/RAM or MXCSR change. */
++static void extreme_counter_checks(Harness* h) {
++    static const s64 budgets[8]={0,-1,INT64_MIN,INT64_MAX,(s64)INT32_MAX+1,1000,1000,1000};
++    static const s64 counts[8]={0,0,0,-INT64_MAX+1,-(s64)INT32_MAX,INT64_MIN,1,-1000};
++    for(unsigned which=0;which<3u;++which) {
++        CPUState c;memset(&c,0,sizeof c);
++        c.ram=h->native_ram;c.ram_size=GC_MAIN_RAM_SIZE;
++        c.gpr[1]=STACK;c.gpr[2]=AREA+0x6000u;c.gpr[3]=10;c.gpr[4]=20;
++        c.gpr[5]=30;c.gpr[6]=40;c.gpr[7]=1;
++        c.fpr[1]=0.5;c.fpr[2]=0.25;c.fpr[3]=1.0;
++        c.pc=FUNCTIONS[which];c.lr=RETURN_ADDRESS;
++        c.msr=PPC_MSR_FP;c.hid2=PPC_HID2_LSQE;c.cycle_budget=100000;
++        memset(h->native_ram+(AREA-GC_RAM_BASE),0,AREA_BYTES);
++        put64(h->native_ram,c.gpr[2]+(u32)MAGIC_OFFSET[which],MAGIC);
++        put32(h->native_ram,ALL_COL_RATIO,0x3F800000u);
++        if(!harness_case(h,routed_replay,FUNCTIONS[which],"signed-counter finite control",which,
++                         &c,false,false,false,false)) abort();
++        for(unsigned i=0;i<8u;++i) {
++            copy_regions(h->before,h->native_ram);
++            CPUState probe=c;probe.cycle_budget=budgets[i];probe.downcount=counts[i];
++            const CPUState before=probe;const unsigned mxcsr=_mm_getcsr();
++            if(routed_replay(&probe,FUNCTIONS[which]) || memcmp(&probe,&before,sizeof probe) ||
++               !same_regions(h->before,h->native_ram) || _mm_getcsr()!=mxcsr) abort();
++        }
++    }
++    printf("signed counters: 3 exact finite controls, 24 unchanged extreme/spent refusals\n");
++}
++
+ int main(int argc, char** argv) {
+     if (argc < 2) {
+         fprintf(stderr, "usage: native_kankyo_test MODULE.dll [CASES_PER_FUNCTION] [BENCH_CALLS]\n");
+@@ -189,6 +218,7 @@ int main(int argc, char** argv) {
+     Harness h;
+     if (!harness_load(&h, argv[1], false, TEST_REGIONS, sizeof TEST_REGIONS / sizeof TEST_REGIONS[0]))
+         return 1;
++    extreme_counter_checks(&h);
+     /* Versioned routing is tested separately; raw replay is compared here. */
+     int status = 0;
+     for (unsigned which = 0; which < 3u; ++which) {

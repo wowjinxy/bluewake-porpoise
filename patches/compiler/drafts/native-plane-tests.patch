@@ -1,0 +1,423 @@
+--- /dev/null
++++ b/tests/native_plane_test.c
+@@ -0,0 +1,136 @@
++/* Authored cM3d_CalcPla whole-state/real-boundary function oracle. */
++#include "StaticRecompABI.h"
++#include "native_game_math.h"
++#include "module_cpu_contract.h"
++#include <fenv.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#include <xmmintrin.h>
++#define AREA 0x80100000u
++#define BYTES 0x3000u
++#define SP (AREA+0x2800u)
++#define SDA (AREA+0x400u)
++#define ENTRY 0x8024A6F0u
++static u32 seed=0x29143112u;
++static unsigned queries,boundaries,reference_boundaries,reject_at,change_alias_at,journal_at;
++static bool eligible=true,record=true;
++static CPUState views[16];static u8 images[16][BYTES];
++static u32 rnd(void){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
++static void put(u8* p,u32 a,u32 x){write_be32(p+a-GC_RAM_BASE,x);}
++static void journal(u32 a,u32 n,void* u){(void)a;(void)n;(void)u;abort();}
++static void same(const CPUState* a,const CPUState* b,unsigned i,unsigned boundary){
++ if(!memcmp(a,b,sizeof *a))return;
++ fprintf(stderr,"case%u boundary%u CPU mismatch pc%08X/%08X dc%lld/%lld suffix%u/%u\n",i,boundary,a->pc,b->pc,(long long)a->downcount,(long long)b->downcount,a->cycle_observation_suffix,b->cycle_observation_suffix);
++ for(unsigned j=0;j<sizeof *a;++j)if(((const u8*)a)[j]!=((const u8*)b)[j])fprintf(stderr,"CPUbyte%u:%02X/%02X\n",j,((const u8*)a)[j],((const u8*)b)[j]);exit(20);
++}
++static bool gate(void* u,const CPUState* c,u32 p){
++ (void)u;++queries;
++ if(p==ENTRY)return eligible;
++ ++boundaries;
++ if(boundaries>16||p!=c->pc)abort();
++ if(record){views[boundaries-1]=*c;memcpy(images[boundaries-1],c->ram+AREA-GC_RAM_BASE,BYTES);}
++ if(change_alias_at==boundaries)++g_ppc_guest_alias_generation;
++ if(journal_at==boundaries)g_mem_write_journal=journal;
++ return reject_at!=boundaries;
++}
++static bool original_gate(void* u,const CPUState* c,u32 p){
++ (void)u;
++ if(reference_boundaries>=boundaries)abort();
++ const unsigned k=reference_boundaries++;
++ CPUState copy=*c;copy.ram=views[k].ram;
++ if(p!=copy.pc)abort();same(&views[k],&copy,999999,k+1);
++ if(memcmp(images[k],c->ram+AREA-GC_RAM_BASE,BYTES)){fprintf(stderr,"RAM boundary%u\n",k+1);exit(21);}
++ return true;
++}
++typedef int (*DirectFn)(bool,const bool*,const bool*,const u32*,const u32*,bool (*)(void*,const CPUState*,u32),void*);
++static u8* image(void){u8* p=VirtualAlloc(NULL,GC_MAIN_RAM_SIZE,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!p)abort();return p;}
++static void protect(u8* p){DWORD old;if(!VirtualProtect(p,GC_MAIN_RAM_SIZE,PAGE_READONLY,&old)||!VirtualProtect(p+AREA-GC_RAM_BASE,BYTES,PAGE_READWRITE,&old))abort();}
++static CPUState input(u8* ram,unsigned i){
++ for(u32 o=0;o<BYTES;o+=4)put(ram,AREA+o,rnd());
++ CPUState c={0};c.ram=ram;c.ram_size=GC_MAIN_RAM_SIZE;
++ for(unsigned r=0;r<32;++r){c.gpr[r]=rnd();c.fpr[r]=f64_value(((u64)rnd()<<32)|rnd());c.ps1[r]=f64_value(((u64)rnd()<<32)|rnd());}
++ c.gpr[1]=SP;c.gpr[2]=SDA+16540u;
++ c.gpr[3]=AREA+0x100u;c.gpr[4]=AREA+0x120u;c.gpr[5]=AREA+0x140u;c.gpr[6]=AREA+0x180u;c.gpr[7]=AREA+0x1A0u;
++ for(unsigned r=3;r<6;++r)for(unsigned j=0;j<3;++j)put(ram,c.gpr[r]+4*j,(rnd()&0x807FFFFFu)|((120u+rnd()%20u)<<23));
++ if(i%5==0)for(unsigned j=0;j<3;++j)put(ram,c.gpr[5]+4*j,read_be32(ram+c.gpr[4]+4*j-GC_RAM_BASE));
++ if(i%5==1)for(unsigned r=3;r<6;++r)for(unsigned j=0;j<3;++j)put(ram,c.gpr[r]+4*j,0u);
++ put(ram,SDA,0u);put(ram,SDA+20u,0x3F800000u);put(ram,SDA+24u,0x3727C5ACu);
++ put(ram,SDA+3656u,0x3F000000u);put(ram,SDA+3660u,0x40400000u);
++ c.pc=ENTRY;c.lr=0xFFFFFFFCu;c.cr=rnd();c.xer=rnd();c.ctr=rnd();c.msr=PPC_MSR_FP;c.hid2=PPC_HID2_LSQE;
++ c.fpscr=rnd()&~3u;ppc_fpscr_updated(&c);
++ c.cycle_budget=10000;c.cycle_deadline_budget=i%3?0:10000;c.downcount=-(s64)(i%11u);c.cycle_observation_suffix=rnd();
++ c.reserve_valid=(i&1)!=0;c.reserve_addr=(i%3==0)?SP-48u+4u*(rnd()%14u):c.gpr[6]+4u*(rnd()%3u);
++ return c;
++}
++int main(int argc,char** argv){
++ if(argc!=2)return 2;HMODULE lib=LoadLibraryA(argv[1]);if(!lib)return 3;
++ StaticRecompGetModuleFn get=(StaticRecompGetModuleFn)GetProcAddress(lib,STATICRECOMP_GET_MODULE_SYMBOL);
++ DirectFn direct=(DirectFn)GetProcAddress(lib,"bluewake_composite_direct_calls_v2");if(!get||!direct)return 4;
++ const StaticRecompModuleDesc* desc=get();CPUState fallback={0};BlueWakeModuleStorage storage={0};
++ const char* error=bw_module_select_storage(desc,(BlueWakeModuleCPUFn)GetProcAddress(lib,"bluewake_composite_guest_cpu"),(BlueWakeModuleMEM1Fn)GetProcAddress(lib,"bluewake_composite_guest_mem1"),&fallback,&storage);
++ if(error||strcmp(desc->game_id,"GZLE01"))return 5;
++ u8* a=image();u8* b=storage.mem1?storage.mem1:image();DWORD old;if(!VirtualProtect(b,GC_MAIN_RAM_SIZE,PAGE_READWRITE,&old))return 6;
++ memcpy(b,a,GC_MAIN_RAM_SIZE);protect(a);protect(b);
++ bool clear=false;u32 zero=0;if(!direct(true,&clear,&clear,&zero,&zero,original_gate,NULL))return 7;
++ if(!bluewake_composite_native_game_math_v1(true,gate,NULL))return 8;
++ const int rounds[]={FE_TONEAREST,FE_DOWNWARD,FE_UPWARD,FE_TOWARDZERO};
++ unsigned accepted=0,declined=0,normalized=0,degenerate=0,compared_boundaries=0,refusals=0;
++ for(unsigned i=0;i<40000;++i){
++  CPUState c=input(a,i);
++  reject_at=change_alias_at=journal_at=0;record=true;
++  if(i>=20000)switch(i%43){
++   case 0:c.cycle_budget=1+i%160;break;
++   case 1:c.cycle_deadline_budget=1+i%160;break;
++   case 2:c.downcount=-9999;break;
++   case 3:c.msr=0;break;
++   case 4:c.exception=1;break;
++   case 5:c.fpscr|=1;break;
++   case 6:c.gpr[1]=c.gpr[3]+48u;break;
++   case 7:c.gpr[6]=c.gpr[4];break;
++   case 8:c.gpr[7]=c.gpr[6]+4u;break;
++   case 9:c.gpr[2]=0;break;
++   case 10:c.gpr[3]=0xCC000000u;break;
++   case 11:c.gpr[5]|=0x40000000u;break;
++   case 12:c.gpr[6]+=1;break;
++   case 13:g_mem_write_journal=journal;break;
++   case 14:g_ppc_guest_aliases_overlap_mem1=true;break;
++   case 15:eligible=false;break;
++   case 16:put(a,c.gpr[3],0x7F812345u);break;
++   case 17:put(a,c.gpr[4],0x7F800000u);break;
++   case 18:put(a,c.gpr[5],1u);break;
++   case 19:c.hid2=0;break;
++   case 20:c.gqr[0]=1;break;
++   case 21:put(a,SDA+3656u,0);break;
++   case 22:put(a,SDA+20u,0);break;
++   case 23:put(a,SDA+24u,0);break;
++   case 24:c.cycle_budget=INT64_MIN;break;
++   case 25:c.cycle_budget=INT64_MAX;c.downcount=INT64_MIN;break;
++   case 26:reject_at=1+(i/43u)%16u;++refusals;break;
++   case 27:change_alias_at=1+(i/43u)%16u;++refusals;break;
++   case 28:journal_at=1+(i/43u)%16u;++refusals;break;
++  }
++  memcpy(b+AREA-GC_RAM_BASE,a+AREA-GC_RAM_BASE,BYTES);
++  CPUState initial=c;u8 before[BYTES];memcpy(before,a+AREA-GC_RAM_BASE,BYTES);
++  if(fesetround(rounds[i%4]))return 9;feclearexcept(FE_ALL_EXCEPT);if(i&1)feraiseexcept(FE_INEXACT);
++  const unsigned csr=_mm_getcsr();int oldflags=fetestexcept(FE_ALL_EXCEPT);boundaries=reference_boundaries=0;
++  unsigned prior=queries;int ok=bluewake_native_game_math_try(&c,ENTRY);int flags=fetestexcept(FE_ALL_EXCEPT);unsigned gotcsr=_mm_getcsr();
++  if(queries!=prior+1+boundaries||fegetround()!=rounds[i%4])return 10;
++  g_mem_write_journal=NULL;g_ppc_guest_aliases_overlap_mem1=false;eligible=true;
++  if(!ok){++declined;same(&c,&initial,i,0);if(memcmp(before,a+AREA-GC_RAM_BASE,BYTES)||oldflags!=flags||csr!=gotcsr)return 11;continue;}
++  ++accepted;if(boundaries==16)++normalized;else if(boundaries==12)++degenerate;else return 12;
++  *storage.cpu=initial;storage.cpu->ram=b;desc->on_state_loaded(storage.cpu);
++  feclearexcept(FE_ALL_EXCEPT);if(i&1)feraiseexcept(FE_INEXACT);_mm_setcsr(csr);
++  unsigned turns=0;while(storage.cpu->pc!=0xFFFFFFFCu&&storage.cpu->downcount>-storage.cpu->cycle_budget&&!storage.cpu->exception)if(++turns>20||!desc->dispatch(storage.cpu,storage.cpu->pc))return 13;
++  CPUState reference=*storage.cpu;reference.ram=a;same(&c,&reference,i,0);
++  if(reference_boundaries!=boundaries||memcmp(a+AREA-GC_RAM_BASE,b+AREA-GC_RAM_BASE,BYTES)||flags!=fetestexcept(FE_ALL_EXCEPT)||gotcsr!=_mm_getcsr())return 14;
++  compared_boundaries+=boundaries;
++ }
++ if(accepted<20000||declined<8000||normalized<5000||degenerate<5000||refusals<1000)return 15;
++ eligible=false;unsigned prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior+1)return 16;
++ bluewake_composite_native_game_math_v1(false,gate,NULL);prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior)return 17;
++ if(memcmp(a,b,GC_MAIN_RAM_SIZE))return 18;
++ printf("item23 cases=40000 translated_equal=%u declined_unchanged=%u normalized=%u degenerate=%u boundary_cpu_ram_equal=%u host_round_modes=4 fresh_queries=%u late_refusals=%u\n",accepted,declined,normalized,degenerate,compared_boundaries,queries,refusals);return 0;
++}
+--- /dev/null
++++ b/tests/native_plane_boundaries_test.c
+@@ -0,0 +1,161 @@
++/* Authored cM3d_CalcPla whole-state/real-boundary function oracle. */
++#include "StaticRecompABI.h"
++#include "native_game_math.h"
++#include "module_cpu_contract.h"
++#include <fenv.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#include <xmmintrin.h>
++#define AREA 0x80100000u
++#define BYTES 0x3000u
++#define SP (AREA+0x2800u)
++#define SDA (AREA+0x400u)
++#define ENTRY 0x8024A6F0u
++static u32 seed=0x29143112u;
++static unsigned queries,boundaries,reference_boundaries,reject_at,change_alias_at,journal_at;
++static bool eligible=true,record=true;
++static CPUState views[16];static u8 images[16][BYTES];
++static u32 rnd(void){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
++static void put(u8* p,u32 a,u32 x){write_be32(p+a-GC_RAM_BASE,x);}
++static void journal(u32 a,u32 n,void* u){(void)a;(void)n;(void)u;abort();}
++static void same(const CPUState* a,const CPUState* b,unsigned i,unsigned boundary){
++ if(!memcmp(a,b,sizeof *a))return;
++ fprintf(stderr,"case%u boundary%u CPU mismatch pc%08X/%08X dc%lld/%lld suffix%u/%u\n",i,boundary,a->pc,b->pc,(long long)a->downcount,(long long)b->downcount,a->cycle_observation_suffix,b->cycle_observation_suffix);
++ for(unsigned j=0;j<sizeof *a;++j)if(((const u8*)a)[j]!=((const u8*)b)[j])fprintf(stderr,"CPUbyte%u:%02X/%02X\n",j,((const u8*)a)[j],((const u8*)b)[j]);exit(20);
++}
++static bool gate(void* u,const CPUState* c,u32 p){
++ (void)u;++queries;
++ if(p==ENTRY)return eligible;
++ ++boundaries;
++ if(boundaries>16||p!=c->pc)abort();
++ if(record){views[boundaries-1]=*c;memcpy(images[boundaries-1],c->ram+AREA-GC_RAM_BASE,BYTES);}
++ if(change_alias_at==boundaries)++g_ppc_guest_alias_generation;
++ if(journal_at==boundaries)g_mem_write_journal=journal;
++ return reject_at!=boundaries;
++}
++static bool original_gate(void* u,const CPUState* c,u32 p){
++ (void)u;
++ if(reference_boundaries>=boundaries)abort();
++ const unsigned k=reference_boundaries++;
++ CPUState copy=*c;copy.ram=views[k].ram;
++ if(p!=copy.pc)abort();same(&views[k],&copy,999999,k+1);
++ if(memcmp(images[k],c->ram+AREA-GC_RAM_BASE,BYTES)){fprintf(stderr,"RAM boundary%u\n",k+1);exit(21);}
++ return true;
++}
++typedef int (*DirectFn)(bool,const bool*,const bool*,const u32*,const u32*,bool (*)(void*,const CPUState*,u32),void*);
++static u8* image(void){u8* p=VirtualAlloc(NULL,GC_MAIN_RAM_SIZE,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!p)abort();return p;}
++static void protect(u8* p){DWORD old;if(!VirtualProtect(p,GC_MAIN_RAM_SIZE,PAGE_READONLY,&old)||!VirtualProtect(p+AREA-GC_RAM_BASE,BYTES,PAGE_READWRITE,&old))abort();}
++static CPUState input(u8* ram,unsigned i){
++ for(u32 o=0;o<BYTES;o+=4)put(ram,AREA+o,rnd());
++ CPUState c={0};c.ram=ram;c.ram_size=GC_MAIN_RAM_SIZE;
++ for(unsigned r=0;r<32;++r){c.gpr[r]=rnd();c.fpr[r]=f64_value(((u64)rnd()<<32)|rnd());c.ps1[r]=f64_value(((u64)rnd()<<32)|rnd());}
++ c.gpr[1]=SP;c.gpr[2]=SDA+16540u;
++ c.gpr[3]=AREA+0x100u;c.gpr[4]=AREA+0x120u;c.gpr[5]=AREA+0x140u;c.gpr[6]=AREA+0x180u;c.gpr[7]=AREA+0x1A0u;
++ for(unsigned r=3;r<6;++r)for(unsigned j=0;j<3;++j)put(ram,c.gpr[r]+4*j,(rnd()&0x807FFFFFu)|((120u+rnd()%20u)<<23));
++ if(i%5==0)for(unsigned j=0;j<3;++j)put(ram,c.gpr[5]+4*j,read_be32(ram+c.gpr[4]+4*j-GC_RAM_BASE));
++ if(i%5==1)for(unsigned r=3;r<6;++r)for(unsigned j=0;j<3;++j)put(ram,c.gpr[r]+4*j,0u);
++ put(ram,SDA,0u);put(ram,SDA+20u,0x3F800000u);put(ram,SDA+24u,0x3727C5ACu);
++ put(ram,SDA+3656u,0x3F000000u);put(ram,SDA+3660u,0x40400000u);
++ c.pc=ENTRY;c.lr=0xFFFFFFFCu;c.cr=rnd();c.xer=rnd();c.ctr=rnd();c.msr=PPC_MSR_FP;c.hid2=PPC_HID2_LSQE;
++ c.fpscr=rnd()&~3u;ppc_fpscr_updated(&c);
++ c.cycle_budget=10000;c.cycle_deadline_budget=i%3?0:10000;c.downcount=-(s64)(i%11u);c.cycle_observation_suffix=rnd();
++ c.reserve_valid=(i&1)!=0;c.reserve_addr=(i%3==0)?SP-48u+4u*(rnd()%14u):c.gpr[6]+4u*(rnd()%3u);
++ return c;
++}
++int main(int argc,char** argv){
++ if(argc!=2)return 2;HMODULE lib=LoadLibraryA(argv[1]);if(!lib)return 3;
++ StaticRecompGetModuleFn get=(StaticRecompGetModuleFn)GetProcAddress(lib,STATICRECOMP_GET_MODULE_SYMBOL);
++ DirectFn direct=(DirectFn)GetProcAddress(lib,"bluewake_composite_direct_calls_v2");if(!get||!direct)return 4;
++ const StaticRecompModuleDesc* desc=get();CPUState fallback={0};BlueWakeModuleStorage storage={0};
++ const char* error=bw_module_select_storage(desc,(BlueWakeModuleCPUFn)GetProcAddress(lib,"bluewake_composite_guest_cpu"),(BlueWakeModuleMEM1Fn)GetProcAddress(lib,"bluewake_composite_guest_mem1"),&fallback,&storage);
++ if(error||strcmp(desc->game_id,"GZLE01"))return 5;
++ u8* a=image();u8* b=storage.mem1?storage.mem1:image();DWORD old;if(!VirtualProtect(b,GC_MAIN_RAM_SIZE,PAGE_READWRITE,&old))return 6;
++ memcpy(b,a,GC_MAIN_RAM_SIZE);protect(a);protect(b);
++ bool clear=false;u32 zero=0;if(!direct(true,&clear,&clear,&zero,&zero,original_gate,NULL))return 7;
++ if(!bluewake_composite_native_game_math_v1(true,gate,NULL))return 8;
++ const int rounds[]={FE_TONEAREST,FE_DOWNWARD,FE_UPWARD,FE_TOWARDZERO};
++ unsigned accepted=0,declined=0,normalized=0,degenerate=0,compared_boundaries=0,refusals=0;
++ for(unsigned i=0;i<5;++i){
++  CPUState c=input(a,i);
++  reject_at=change_alias_at=journal_at=0;record=true;
++  if(i>=20000)switch(i%43){
++   case 0:c.cycle_budget=1+i%160;break;
++   case 1:c.cycle_deadline_budget=1+i%160;break;
++   case 2:c.downcount=-9999;break;
++   case 3:c.msr=0;break;
++   case 4:c.exception=1;break;
++   case 5:c.fpscr|=1;break;
++   case 6:c.gpr[1]=c.gpr[3]+48u;break;
++   case 7:c.gpr[6]=c.gpr[4];break;
++   case 8:c.gpr[7]=c.gpr[6]+4u;break;
++   case 9:c.gpr[2]=0;break;
++   case 10:c.gpr[3]=0xCC000000u;break;
++   case 11:c.gpr[5]|=0x40000000u;break;
++   case 12:c.gpr[6]+=1;break;
++   case 13:g_mem_write_journal=journal;break;
++   case 14:g_ppc_guest_aliases_overlap_mem1=true;break;
++   case 15:eligible=false;break;
++   case 16:put(a,c.gpr[3],0x7F812345u);break;
++   case 17:put(a,c.gpr[4],0x7F800000u);break;
++   case 18:put(a,c.gpr[5],1u);break;
++   case 19:c.hid2=0;break;
++   case 20:c.gqr[0]=1;break;
++   case 21:put(a,SDA+3656u,0);break;
++   case 22:put(a,SDA+20u,0);break;
++   case 23:put(a,SDA+24u,0);break;
++   case 24:c.cycle_budget=INT64_MIN;break;
++   case 25:c.cycle_budget=INT64_MAX;c.downcount=INT64_MIN;break;
++   case 26:reject_at=1+(i/43u)%16u;++refusals;break;
++   case 27:change_alias_at=1+(i/43u)%16u;++refusals;break;
++   case 28:journal_at=1+(i/43u)%16u;++refusals;break;
++  }
++  memcpy(b+AREA-GC_RAM_BASE,a+AREA-GC_RAM_BASE,BYTES);
++  CPUState initial=c;u8 before[BYTES];memcpy(before,a+AREA-GC_RAM_BASE,BYTES);
++  if(fesetround(rounds[i%4]))return 9;feclearexcept(FE_ALL_EXCEPT);if(i&1)feraiseexcept(FE_INEXACT);
++  const unsigned csr=_mm_getcsr();int oldflags=fetestexcept(FE_ALL_EXCEPT);boundaries=reference_boundaries=0;
++  unsigned prior=queries;int ok=bluewake_native_game_math_try(&c,ENTRY);int flags=fetestexcept(FE_ALL_EXCEPT);unsigned gotcsr=_mm_getcsr();
++  if(queries!=prior+1+boundaries||fegetround()!=rounds[i%4])return 10;
++  g_mem_write_journal=NULL;g_ppc_guest_aliases_overlap_mem1=false;eligible=true;
++  if(!ok){++declined;same(&c,&initial,i,0);if(memcmp(before,a+AREA-GC_RAM_BASE,BYTES)||oldflags!=flags||csr!=gotcsr)return 11;continue;}
++  ++accepted;if(boundaries==16)++normalized;else if(boundaries==12)++degenerate;else return 12;
++  *storage.cpu=initial;storage.cpu->ram=b;desc->on_state_loaded(storage.cpu);
++  feclearexcept(FE_ALL_EXCEPT);if(i&1)feraiseexcept(FE_INEXACT);_mm_setcsr(csr);
++  unsigned turns=0;while(storage.cpu->pc!=0xFFFFFFFCu&&storage.cpu->downcount>-storage.cpu->cycle_budget&&!storage.cpu->exception)if(++turns>20||!desc->dispatch(storage.cpu,storage.cpu->pc))return 13;
++  CPUState reference=*storage.cpu;reference.ram=a;same(&c,&reference,i,0);
++  if(reference_boundaries!=boundaries||memcmp(a+AREA-GC_RAM_BASE,b+AREA-GC_RAM_BASE,BYTES)||flags!=fetestexcept(FE_ALL_EXCEPT)||gotcsr!=_mm_getcsr())return 14;
++  compared_boundaries+=boundaries;
++ }
++
++ unsigned explicit_refusals=0;
++ for(unsigned kind=0;kind<3;++kind)for(unsigned n=1;n<=16;++n){
++  CPUState c=input(a,2);
++  for(unsigned r=3;r<6;++r)for(unsigned j=0;j<3;++j)put(a,c.gpr[r]+4u*j,(r==4&&j==0)||(r==5&&j==1)?0x3F800000u:0u);
++  CPUState initial=c;u8 before[BYTES];memcpy(before,a+AREA-GC_RAM_BASE,BYTES);
++  if(fesetround(FE_TONEAREST))return 30;feclearexcept(FE_ALL_EXCEPT);feraiseexcept(FE_INEXACT);
++  const unsigned csr=_mm_getcsr();boundaries=0;reject_at=change_alias_at=journal_at=0;
++  if(kind==0)reject_at=n;else if(kind==1)change_alias_at=n;else journal_at=n;
++  if(bluewake_native_game_math_try(&c,ENTRY)||boundaries!=n)return 31;
++  g_mem_write_journal=NULL;g_ppc_guest_aliases_overlap_mem1=false;
++  same(&c,&initial,40000+16*kind+n,n);
++  if(memcmp(before,a+AREA-GC_RAM_BASE,BYTES)||_mm_getcsr()!=csr)return 32;
++  ++explicit_refusals;
++ }
++ reject_at=change_alias_at=journal_at=0;
++ CPUState c=input(a,2);u8 before[BYTES];memcpy(before,a+AREA-GC_RAM_BASE,BYTES);
++ const unsigned csr=_mm_getcsr();_mm_setcsr(csr&~0x80u);CPUState initial=c;
++ if(bluewake_native_game_math_try(&c,ENTRY)||memcmp(&c,&initial,sizeof c)||memcmp(before,a+AREA-GC_RAM_BASE,BYTES)||_mm_getcsr()!=(csr&~0x80u))return 33;
++ _mm_setcsr(csr);
++ CPUState* embedded=(CPUState*)(a+AREA-GC_RAM_BASE+0x1000u);
++ memcpy(embedded,&c,sizeof c);initial=*embedded;
++ if(bluewake_native_game_math_try(embedded,ENTRY)||memcmp(embedded,&initial,sizeof initial))return 34;
++ memcpy(b+AREA-GC_RAM_BASE,a+AREA-GC_RAM_BASE,BYTES);
++ printf("item23 focused_all16_refusal_journal_alias=%u cpu_ram_overlap_decline=1 unmasked_host_decline=1 initial_controls=%u boundary_equal=%u\n",explicit_refusals,accepted,compared_boundaries);
++
++ eligible=false;unsigned prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior+1)return 16;
++ bluewake_composite_native_game_math_v1(false,gate,NULL);prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior)return 17;
++ if(memcmp(a,b,GC_MAIN_RAM_SIZE))return 18;
++ printf("item23 focused_controls=5 translated_equal=%u declined_unchanged=%u normalized=%u degenerate=%u boundary_cpu_ram_equal=%u host_round_modes=4 fresh_queries=%u late_refusals=%u\n",accepted,declined,normalized,degenerate,compared_boundaries,queries,refusals);return 0;
++}
+--- /dev/null
++++ b/tests/native_plane_source_test.py
+@@ -0,0 +1,72 @@
++import importlib.util,pathlib,tempfile,unittest,sys,json,contextlib,io
++import os
++ROOT=pathlib.Path(__file__).resolve().parents[1];SOURCE=ROOT
++sys.path.insert(0,str(ROOT/'scripts/windows'))
++spec=importlib.util.spec_from_file_location('candidate',ROOT/'scripts/windows/native_game_math.py')
++candidate=importlib.util.module_from_spec(spec);spec.loader.exec_module(candidate)
++CHUNKS={c:next((pathlib.Path(os.environ.get('BLUEWAKE_PLANE_ORACLE_CHUNKS',str(ROOT/'build/porpoise-game-run-module/composite-src/chunks_dol')))).glob(f'*_{c:08X}.c')) for c in (0x802496E0,0x8030D6E0,0x803256E0)}
++RANGES={'plane':(0x802496E0,0x8024A6F0,0x8024A7BC),'plane_cross':(0x8030D6E0,0x8030DECC,0x8030DF08),
++ 'plane_mag':(0x8030D6E0,0x8030DE68,0x8030DEAC),'plane_dot':(0x8030D6E0,0x8030DEAC,0x8030DECC)}
++RANGES.update({'plane_save':(0x803256E0,0x80328F3C,0x80328F50),'plane_restore':(0x803256E0,0x80328F88,0x80328F9C)})
++DIGEST={'plane': 'd0a5789e0976289d30ca43be72334239af64a0f8b0161a1b7e814e0f4690a36c', 'plane_cross': 'a1eedeef0d07eb445d5d0b52313325a54945cb299e4abc81b058c2107676fe04', 'plane_mag': 'ed8be5c3e04ec0bb6b8b8af13095e391acb4291521073be27f3c74ec63909313', 'plane_dot': '62a35df011a51e2aef7a0db1bfa512390017e42567a52275ea91e01c3398607b', 'plane_save': '5edcdccc1424eca7aa29c27064f6f7003890e7e5aff2f6ad4410437659b7fb42', 'plane_restore': '1e09a9f3f03e9cea060a494e1e79184d1bd0d3cd68329b8f4e3989db337cb33a'}
++class Preparation(unittest.TestCase):
++ def setUp(self):
++  self.tmp=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.tmp.name)
++  self.files={c:self.root/p.name for c,p in CHUNKS.items()}
++  for c,p in self.files.items():
++   text=candidate.HOOK.sub('',CHUNKS[c].read_text())
++   if c==0x8030D6E0:
++    text,count=__import__('re').subn(r'    /\* bluewake: SDK vector leaf ([0-9A-F]{8}) \*/\n    if \(bluewake_native_vec_try\(ctx, 0x\1u\)\)\n        goto return_dispatch_8030D6E0;\n','',text)
++    self.assertEqual(count,12);self.assertNotIn('bluewake_native_vec_try(',text)
++   p.write_text(text)
++  self.fragments=candidate.FRAGMENTS;self.entries=candidate.ENTRIES
++  candidate.FRAGMENTS={name:(*values,DIGEST[name]) for name,values in RANGES.items()}
++  for name in ('sdk_sub','sdk_scale'):candidate.FRAGMENTS[name]=self.fragments[name]
++  candidate.ENTRIES={0x8024A6F0:tuple(candidate.FRAGMENTS)}
++ def tearDown(self):
++  candidate.FRAGMENTS=self.fragments;candidate.ENTRIES=self.entries;self.tmp.cleanup()
++ def certified(self,watched=set(),extra=[]):
++  with contextlib.redirect_stdout(io.StringIO()):return candidate.certify([*self.files.values(),*extra],watched)
++ def test_actual_fragments_hook_and_idempotence(self):
++  self.assertEqual(self.certified(),{0x8024A6F0})
++  body=self.files[0x802496E0].read_text();text,count=candidate.transform(body,0x802496E0,{0x8024A6F0})
++  self.assertEqual(count,1);self.assertEqual(candidate.transform(text,0x802496E0,{0x8024A6F0}),(text,0))
++ def test_changed_main_and_each_callee_decline(self):
++  for name,(chunk,start,end,_) in candidate.FRAGMENTS.items():
++   p=self.files[chunk];before=p.read_text();p.write_text(before.replace(f'label_{start:08X}:\n',f'label_{start:08X}:\n    ctx->cr=0;\n',1))
++   self.assertEqual(self.certified(),set(),name);p.write_text(before)
++ def test_changed_mod_variant_declines_all(self):
++  p=self.root/('mod_'+self.files[0x8030D6E0].name)
++  p.write_text(self.files[0x8030D6E0].read_text().replace('label_8030DECC:\n','label_8030DECC:\n    ctx->cr=0;\n',1))
++  self.assertEqual(self.certified(extra=[p]),set())
++ def test_all_internal_instructions_and_mirrors_decline(self):
++  for chunk,start,end,_ in candidate.FRAGMENTS.values():
++   for pc in range(start,end,4):
++    if start in (0x80328F3C,0x80328F88) and pc==start:continue
++    for watch in (pc,pc|0x40000000):self.assertEqual(self.certified({watch,watch|0x40000000,watch&~0x40000000}),set(),hex(watch))
++ def test_only_kept_save_restore_dynamic_targets_allowed(self):
++  self.assertEqual(self.certified({0x80328F3C,0x80328F88}),{0x8024A6F0})
++  self.assertEqual(self.certified({0x80328F40}),set())
++  # Every skipped save/restore interior must remain statically unwatched.
++  # Their actual entry/return views are queried dynamically at runtime.
++ def test_lost_certificate_removes_hook(self):
++  body=self.files[0x802496E0].read_text();hooked,_=candidate.transform(body,0x802496E0,{0x8024A6F0})
++  restored,count=candidate.transform(hooked,0x802496E0,set())
++  self.assertEqual(count,0);self.assertNotIn('bluewake_native_game_math_try(ctx, 0x8024A6F0u)',restored)
++  self.assertEqual(candidate.fragment(restored,0x802496E0,0x8024A6F0,0x8024A7BC),candidate.fragment(body,0x802496E0,0x8024A6F0,0x8024A7BC))
++ def test_optional_default_absent(self):
++  self.assertNotIn(0x8024A6F0,self.entries);self.assertNotIn('plane',self.fragments)
++class Reused(unittest.TestCase):
++ def test_removed_option_clears_prior_failed_preparation(self):
++  spec=importlib.util.spec_from_file_location('fresh',ROOT/'scripts/windows/native_game_math.py')
++  fresh=importlib.util.module_from_spec(spec);spec.loader.exec_module(fresh)
++  with tempfile.TemporaryDirectory() as temp:
++   root=pathlib.Path(temp);header=root/'generated.h';header.write_text('/* authored */\n')
++   with contextlib.redirect_stdout(io.StringIO()):
++    with self.assertRaises(ValueError):fresh.prepare(root,False,False,False,True)
++    self.assertIn(0x8024A6F0,fresh.ENTRIES)
++    with self.assertRaises(ValueError):fresh.prepare(root)
++   self.assertNotIn(0x8024A6F0,fresh.ENTRIES)
++   for name in RANGES:self.assertNotIn(name,fresh.FRAGMENTS)
++   self.assertEqual(header.read_text(),'/* authored */\n')
++if __name__=='__main__':unittest.main()
+--- /dev/null
++++ b/tests/native_plane/CMakeLists.txt
+@@ -0,0 +1,42 @@
++cmake_minimum_required(VERSION 3.24)
++project(bluewake_plane_oracle C)
++set(CMAKE_C_STANDARD 11)
++set(CMAKE_C_STANDARD_REQUIRED ON)
++set(BLUEWAKE_ROOT "" CACHE PATH "Checkout after applying inactive patches")
++set(BLUEWAKE_ORIGINAL_MODULE "" CACHE FILEPATH "Personal unchanged GZLE01 function oracle")
++option(BLUEWAKE_ORACLE_ASAN "Instrument fixture and CPU/native sources" OFF)
++if(NOT BLUEWAKE_ROOT OR NOT BLUEWAKE_ORIGINAL_MODULE)
++  message(FATAL_ERROR "Explicit checkout and personal original module required")
++endif()
++set(sdk "${BLUEWAKE_ROOT}/ref/recompcore")
++set(common_sources
++  "${BLUEWAKE_ROOT}/cmake/composite/native_game_math.c"
++  "${BLUEWAKE_ROOT}/cmake/composite/native_vec.c"
++  "${sdk}/GXRuntime/src/core/cpu.c"
++  "${sdk}/GXRuntime/src/core/cpu_exception.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_float.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_integer.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_table.c")
++enable_testing()
++foreach(name IN ITEMS plane plane_boundaries)
++  add_executable(${name} "${BLUEWAKE_ROOT}/tests/native_${name}_test.c" ${common_sources})
++  target_include_directories(${name} PRIVATE "${BLUEWAKE_ROOT}/cmake/composite"
++    "${sdk}/GXRuntime/include" "${sdk}/Source/Core/Core/PowerPC/StaticRecomp")
++  target_compile_definitions(${name} PRIVATE BLUEWAKE_NATIVE_PLANE=1)
++  target_compile_options(${name} PRIVATE -O3 -UNDEBUG -ffp-contract=off)
++  if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "Clang")
++    target_compile_options(${name} PRIVATE -fms-compatibility-version=19.44 -fms-runtime-lib=dll -Wno-dll-attribute-on-redeclaration)
++    target_link_options(${name} PRIVATE -fms-runtime-lib=dll)
++  endif()
++  if(BLUEWAKE_ORACLE_ASAN)
++    target_compile_options(${name} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
++    target_link_options(${name} PRIVATE -fsanitize=address)
++    if(WIN32)
++      target_compile_options(${name} PRIVATE -shared-libasan)
++      target_link_options(${name} PRIVATE -shared-libasan)
++    endif()
++  endif()
++  add_test(NAME native_${name} COMMAND ${name} "${BLUEWAKE_ORIGINAL_MODULE}")
++  set_tests_properties(native_${name} PROPERTIES TIMEOUT 300 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1")
++endforeach()

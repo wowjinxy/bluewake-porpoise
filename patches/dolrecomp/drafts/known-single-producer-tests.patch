@@ -1,0 +1,61 @@
+--- a/tests/known_single/generate.c
++++ b/tests/known_single/generate.c
+@@ -11,6 +11,23 @@
+ static void add(PPCInst* p,unsigned* n,PPCInst i){p[(*n)++]=i;}
+ static void program(FILE* out,unsigned which) {
+     PPCInst p[40];unsigned n=0;const u32 base=0x80006000u+which*0x100u;
++    if(which >= 13) {
++        /* Unknown high-precision source lanes, including D/source aliases.
++         * SUM narrows its carried C lane; RSQRTE narrows both estimates.
++         * Each result is then consumed as C and all three FMA operands. */
++        unsigned d = which == 15 ? 20u : which == 16 ? 21u : which == 18 ? 20u : 1u;
++        if(which == 13) add(p,&n,op(PPC_OP_PS_SUM0,d,20,21,22));
++        if(which == 14) add(p,&n,op(PPC_OP_PS_SUM1,d,20,21,22));
++        if(which == 15) add(p,&n,op(PPC_OP_PS_SUM0,d,20,21,20));
++        if(which == 16) add(p,&n,op(PPC_OP_PS_SUM1,d,20,21,21));
++        if(which == 17 || which == 18) add(p,&n,op(PPC_OP_PS_RSQRTE,d,0,20,0));
++        add(p,&n,op(PPC_OP_PS_MUL,4,19,0,d));
++        add(p,&n,op(PPC_OP_PS_MADD,5,4,d,d));
++        for(unsigned i=0;i<n;++i)p[i].address=base+4*i;
++        if(!emit_function(out,p,n,base))exit(2);
++        fprintf(out,"/* program %u instructions %u end %08X */\n",which,n,base+4*n);
++        return;
++    }
+     add(p,&n,op(PPC_OP_PS_NEG,1,0,1,0));
+     add(p,&n,op(PPC_OP_PS_ABS,2,0,2,0));
+     add(p,&n,op(PPC_OP_PS_NABS,3,0,3,0));
+@@ -57,6 +74,6 @@
+     snprintf(path,sizeof path,"%s/generated.c",argv[1]);
+     FILE* c=fopen(path,"wb");if(!c)return 5;
+     fprintf(c,"#define DOLRECOMP_CPU_HEADER \"core/cpu.h\"\n#include \"generated.h\"\n#include \"inline_fp.h\"\n#include \"fixture_support.h\"\n");
+-    for(unsigned i=0;i<13;++i)program(c,i);
+-    fclose(c);puts("13 actual emitted instruction programs");return 0;
++    for(unsigned i=0;i<19;++i)program(c,i);
++    fclose(c);puts("19 actual emitted instruction programs");return 0;
+ }
+--- a/tests/known_single/known_single_test.c
++++ b/tests/known_single/known_single_test.c
+@@ -12,10 +12,11 @@
+ DECLARE(80006000) DECLARE(80006100) DECLARE(80006200) DECLARE(80006300)
+ DECLARE(80006400) DECLARE(80006500) DECLARE(80006600) DECLARE(80006700)
+ DECLARE(80006800) DECLARE(80006900) DECLARE(80006A00) DECLARE(80006B00) DECLARE(80006C00)
++DECLARE(80006D00) DECLARE(80006E00) DECLARE(80006F00) DECLARE(80007000) DECLARE(80007100) DECLARE(80007200)
+ typedef void(*Function)(CPUState*);
+-static Function refs[]={ref_80006000,ref_80006100,ref_80006200,ref_80006300,ref_80006400,ref_80006500,ref_80006600,ref_80006700,ref_80006800,ref_80006900,ref_80006A00,ref_80006B00,ref_80006C00};
+-static Function opts[]={func_80006000,func_80006100,func_80006200,func_80006300,func_80006400,func_80006500,func_80006600,func_80006700,func_80006800,func_80006900,func_80006A00,func_80006B00,func_80006C00};
+-static const unsigned lengths[]={14,15,15,15,16,15,15,15,15,18,14,14,14};
++static Function refs[]={ref_80006000,ref_80006100,ref_80006200,ref_80006300,ref_80006400,ref_80006500,ref_80006600,ref_80006700,ref_80006800,ref_80006900,ref_80006A00,ref_80006B00,ref_80006C00,ref_80006D00,ref_80006E00,ref_80006F00,ref_80007000,ref_80007100,ref_80007200};
++static Function opts[]={func_80006000,func_80006100,func_80006200,func_80006300,func_80006400,func_80006500,func_80006600,func_80006700,func_80006800,func_80006900,func_80006A00,func_80006B00,func_80006C00,func_80006D00,func_80006E00,func_80006F00,func_80007000,func_80007100,func_80007200};
++static const unsigned lengths[]={14,15,15,15,16,15,15,15,15,18,14,14,14,3,3,3,3,3,3};
+ static const u64 patterns[]={
+  0,0x8000000000000000ull,0x3FF0000000000000ull,0xBFF0000000000000ull,
+  0x3FF0000002000001ull,0x400921FB54442D18ull,0x3FD5555555555555ull,
+@@ -89,7 +90,7 @@
+ int main(void) {
+     if(sizeof(CPUState)!=3552u){fprintf(stderr,"actual CPU ABI size=%zu\n",sizeof(CPUState));return 2;}
+     const unsigned budgets[]={1,7,256};
+-    for(unsigned seed=0;seed<32;++seed)for(unsigned which=0;which<13;++which)
++    for(unsigned seed=0;seed<32;++seed)for(unsigned which=0;which<19;++which)
+     for(unsigned entry=0;entry<lengths[which];++entry)for(unsigned rn=0;rn<4;++rn)
+     for(unsigned ni=0;ni<2;++ni)for(unsigned host=0;host<4;++host)
+     for(unsigned option=0;option<2;++option)for(unsigned b=0;b<3;++b)

@@ -1,0 +1,73 @@
+{
+  "status": "INACTIVE_AUTHORED_PRODUCER_PARITY_ADDENDUM",
+  "item": 13,
+  "ancestor_tests_patch": {
+    "path": "patches\\dolrecomp\\drafts\\known-single-precision-tests.patch",
+    "sha256": "9f4bde1263dce3c90056f8b9466712d220197f1a035967ec00e3428c973c9391",
+    "bytes": 10785
+  },
+  "patch": {
+    "path": "patches\\dolrecomp\\drafts\\known-single-producer-tests.patch",
+    "sha256": "2b7886755cc4c056ed2c7761f0e6a0a933caefe86cdb99684590ebcc95229508",
+    "bytes": 4268
+  },
+  "actual": {
+    "path": "build\\performance-13-fact-audit-20261006\\actual-v1\\result.json",
+    "sha256": "ec518c89e7e94f9d09039a06a736dbef83044b615ea3e77b01c5c973db0ba300",
+    "bytes": 47666
+  },
+  "parent": {
+    "path": "build\\performance-13-fact-audit-20261006\\parent-attempt-v1\\result.json",
+    "sha256": "c59d7296e466b1a53ef9002650b0fd4430616d9f75c329880c8f8980416d1438",
+    "bytes": 167
+  },
+  "source_plan": {
+    "path": "build\\performance-13-fact-audit-20261006\\source-plan.json",
+    "sha256": "a94024aac876049aa41e182e824f1a9ed96d3f17dd01b466cdf1a6263aa6f8db",
+    "bytes": 1863
+  },
+  "fixture_outputs": [
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-13-fact-audit-20261006\\actual-v1\\logs\\14.log",
+      "sha256": "de0a884fc3b7ac1e3847155c084654e6467cb362f8303c6ca847f8df2fe93b8f",
+      "bytes": 139
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-13-fact-audit-20261006\\actual-v1\\logs\\19.log",
+      "sha256": "de0a884fc3b7ac1e3847155c084654e6467cb362f8303c6ca847f8df2fe93b8f",
+      "bytes": 139
+    }
+  ],
+  "checks_per_mode": 6543360,
+  "cases_per_mode": 1308672,
+  "callback_cases_per_mode": 143360,
+  "interrupted_cases_per_mode": 615936,
+  "digest": "f38fc132e033221d",
+  "original_proof_unchanged": true,
+  "candidate_behavior_changed": false,
+  "native_or_performance_qualified": false,
+  "dependency_provenance": {
+    "original_raw_object_md_overwritten_by_assembly": ["actual-v5/o3/reference.d", "actual-v5/o3/candidate.d"],
+    "original_parsed_object_dependencies": {
+      "path": "build/performance-13-known-single-20261006/actual-v5/dependencies.json",
+      "sha256": "52f480619897dca66e2d7dd0de4f44272fed27358c3ce5bbda11d584b75e731f",
+      "bytes": 666261
+    },
+    "original_raw_md_reconstructed": false,
+    "addendum_assembly_produced": false,
+    "separate_obj_d_and_s_d_names_claimed": false,
+    "addendum_raw_object_md": [
+      {"path": "build/performance-13-fact-audit-20261006/actual-v1/o3/reference.d", "sha256": "b7a5fe9d539bc83a1098c7988babfe52650e8d2ab2f0be22674cc15a4f2cbf94", "bytes": 5630},
+      {"path": "build/performance-13-fact-audit-20261006/actual-v1/o3/candidate.d", "sha256": "852d2f8185389c27133cff831880993cf59a82330139b703a0c8d391cfc85778", "bytes": 6274},
+      {"path": "build/performance-13-fact-audit-20261006/actual-v1/o3/fixture.d", "sha256": "f898c4c4530dd24043cbf76f841b3c32675b1b5b935a060309f46ab2b9b47639", "bytes": 6251},
+      {"path": "build/performance-13-fact-audit-20261006/actual-v1/asan/reference.d", "sha256": "0d35a1608e5e1b8e9ada17a5139063483eca457d408445df60cab0c7ca04eeaf", "bytes": 5632},
+      {"path": "build/performance-13-fact-audit-20261006/actual-v1/asan/candidate.d", "sha256": "d54883fce73b86e30665f8d14962d665dcf0bc3b3257f666e1339fe63f4bb670", "bytes": 6276},
+      {"path": "build/performance-13-fact-audit-20261006/actual-v1/asan/fixture.d", "sha256": "c697aec00a448d069845ab17dd3e4dfb83bd1fbc36e7f69734e8c4cfe24da9ed", "bytes": 6253}
+    ]
+  },
+  "finding": "Actual generated unary, runtime/inline SUM, and paired RSQRTE all narrow both output lanes. No false known-single producer was found.",
+  "donor": {
+    "commit": "83398f1ccd93dc9f0e11ac626c0c11ae5b74ee5c",
+    "author": "AceSpectre <69684743+AceSpectre@users.noreply.github.com>"
+  }
+}
