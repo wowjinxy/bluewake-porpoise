@@ -932,6 +932,7 @@ endif()
 include("${BLUEWAKE_REPO_ROOT}/cmake/health_host_test.cmake")
 
 if(BUILD_TESTING)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/finite_observer_filter_test.cmake")
   include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/inventory_collector_test.cmake")
   include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/randomizer_reward_host_test.cmake")
 endif()

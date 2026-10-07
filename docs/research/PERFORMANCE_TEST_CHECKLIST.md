@@ -591,3 +591,17 @@ Decision: accept / reject / inconclusive:
 Reason and any prerequisite for retesting:
 Private receipt paths:
 ```
+
+## Crowded-scene follow-up - October 7, 2026, 02:16 CDT
+
+The latest play log still shows a game-thread limit in crowded views. The
+[finite gameplay observer filter](PERFORMANCE_BUSY_SCENES.md#second-pass-finite-gameplay-observer-filter-october-7-2026)
+passed real-predicate O3/ASan checks and exact native Dragon capture/context
+comparison. Four serialized control/candidate runs finished 9.96% sooner with
+7.36% less process CPU; both pairs agreed. This is an additional host-only
+improvement over d2285b8, not full-speed qualification of all busy areas.
+
+Keep the partial native-RIP diagnostic, fixture failures and prior checklist
+results. Selective host ThinLTO and gather batching remain inactive because
+speed evidence is insufficient. Tingle rescue wait-skip remains disabled and
+is not a prerequisite for this tester or unrelated gameplay milestones.

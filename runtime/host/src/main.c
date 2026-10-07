@@ -31,6 +31,7 @@
 #include "efb_peek.h"
 #include "game_options.h"
 #include "game_events.h"
+#include "finite_observer_filter.h"
 #include "song_host_adapter.h"
 #include "hud_host.h"
 #include "health_host.h"
@@ -2285,19 +2286,20 @@ static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 addre
     (void)cpu; (void)address;
     return false;
 #else
+    const bool finite_observer = bluewake_finite_observer_maybe(address);
     const bool allowed = !g_deadline_census_enabled && !g_delivery_safety_census_enabled &&
            !g_guest_state_trace_enabled && !bluewake_jump_button_armed &&
            !bluewake_feature_observes(address) &&
            !bluewake_game_events_observes(address) &&
-           !bw_hud_host_observes(cpu,address) &&
-           !bw_health_host_observes(cpu,address) &&
+           (!finite_observer || (!bw_hud_host_observes(cpu,address) &&
+                                 !bw_health_host_observes(cpu,address))) &&
 #ifdef BW_NATIVE_REWARD_SESSION
            !(g_reward_host && bw_randomizer_reward_host_observes(g_reward_host, cpu, address)) &&
 #endif
-           !bluewake_quick_items_observes(address) &&
-           !bluewake_dialogue_speed_observes(address) &&
-           !bluewake_enhancement_hooks_observes_context(cpu, address) &&
-           !bluewake_autosave_observes(address) &&
+           (!finite_observer || (!bluewake_quick_items_observes(address) &&
+                                 !bluewake_dialogue_speed_observes(address) &&
+                                 !bluewake_enhancement_hooks_observes_context(cpu, address) &&
+                                 !bluewake_autosave_observes(address))) &&
            !(address == BW_SEARCH_JUDGE_FILTER && g_actor_search_native) &&
            !host_chassis_requires_full(cpu, address);
     return allowed;
