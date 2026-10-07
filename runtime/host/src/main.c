@@ -2136,8 +2136,12 @@ static inline bool host_chassis_requires_full(const CPUState* cpu, u32 address) 
     // The address first: a compare with an immediate, where the flag is a load.
     if (__builtin_expect(address == 0x80122D30u, 0) && g_player_route_waiting)
         return true;
+    // GroundCross observes this shared restore entry only for its own return.
+    // Retain the conservative canonical-address match for mirrored entries.
+    const u32 canonical_address = host_canonical_linked_pc(address);
     if ((g_module1_raw_base != 0u && address == g_module1_raw_base + 0xD4u) ||
-        bluewake_edge_maybe_intercept(host_canonical_linked_pc(address)))
+        (bluewake_edge_maybe_intercept(canonical_address) &&
+         (canonical_address != 0x80328F84u || cpu->lr == 0x80246A04u)))
         return true;
     if ((cpu->msr & PPC_MSR_EE) != 0u &&
         (g_guest_decrementer_pending ||

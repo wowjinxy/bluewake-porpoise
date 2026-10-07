@@ -605,3 +605,17 @@ Keep the partial native-RIP diagnostic, fixture failures and prior checklist
 results. Selective host ThinLTO and gather batching remain inactive because
 speed evidence is insufficient. Tingle rescue wait-skip remains disabled and
 is not a prerequisite for this tester or unrelated gameplay milestones.
+
+
+## Title-intro follow-up - October 7, 2026, 12:33 CDT
+
+The title attract sequence still has a CPU-bound 20 FPS dip. The
+[caller-context chassis guard](PERFORMANCE_BUSY_SCENES.md#title-intro-follow-up-october-7-2026)
+admits the existing certified Maya helper without dropping GroundCross return
+observation. Actual old/new predicates pass O3/ASan checks; separate title and
+Dragon Roost captures match, and Dragon's GroundCross count is unchanged.
+Four serialized title runs improve route time by 4.23% and process CPU by 4.41%.
+This is a modest host-only improvement; full-speed title/gameplay is unresolved.
+The current module is unchanged. Native GX writers remain a separate candidate
+requiring fresh module admission, native/GPU checks and repeated timing.
+Tingle rescue wait-skip remains disabled; preserve earlier results and failures.

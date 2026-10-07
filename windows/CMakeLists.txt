@@ -660,6 +660,7 @@ target_link_libraries(bluewake_memory_card_io_test PRIVATE bluewake_posix_compat
     target_link_libraries(bluewake_climb_test PRIVATE bluewake_posix_compat)
     include("${BLUEWAKE_REPO_ROOT}/cmake/game_events_test.cmake")
     include("${BLUEWAKE_REPO_ROOT}/cmake/finite_observer_filter_test.cmake")
+    include("${BLUEWAKE_REPO_ROOT}/cmake/host_chassis_precision_test.cmake")
     include("${BLUEWAKE_REPO_ROOT}/cmake/cutscene_wait_test.cmake")
     target_include_directories(bluewake_game_events_test PRIVATE ${BLUEWAKE_COMPAT_INCLUDES})
     target_compile_options(bluewake_game_events_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})

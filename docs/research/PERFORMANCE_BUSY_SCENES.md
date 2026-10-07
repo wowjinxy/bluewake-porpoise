@@ -162,3 +162,88 @@ production predicate sources. Receipt:
 SHA-256 `f04ea0e5368d25e7916f5190be553aeb6311db9bbf076618b2607b19e7a53064`.
 The two earlier sanitizer CRT link failures remain preserved. Windows
 execution is qualified; Apple/Linux platform branches have source review.
+
+
+## Title-intro follow-up (October 7, 2026)
+
+The 12:03 CDT play session still reports 19.4-22.3 displayed FPS in the title
+attract sequence (`sea_T`, room 44), with 92-99% game-thread utilization.
+GPU/present waits and pipeline compilation do not explain that interval.
+A separate hidden native-RIP diagnostic collected 4,691 samples without errors:
+73.5% were in the translated module and 25.8% in the host. These samples locate
+work; they are not exact function CPU-time attribution. Preserve the diagnostic
+and its qualified symbol map in `build/title-intro-20261007/title-current-native1`.
+
+The host chassis guard previously treated every visit to shared restore PC
+`0x80328F84` as requiring observation. GroundCross actually observes that return
+only with LR `0x80246A04`. The guard now includes that caller context, retaining
+the conservative mirror rule and every existing dynamic observation check.
+This admits the existing certified Maya animation helper at its unrelated
+restore return. It does not bypass watched edges or change native arithmetic.
+The game module, SDK libraries, optimization flags and timing rules are unchanged.
+
+The actual old/new predicate oracle passed 50,329 checks in each O3 and ASan
+mode, including 7,199 permitted context refinements. It covers helper entries,
+mirrors, module aliases, census/service/dirty flags, overlap identities and
+interrupt combinations, and verifies unchanged CPU/full authored 32 MiB RAM.
+Receipt: `build/cpu-hotspots-20261007/host-precision1/oracle-actual1/result.json`,
+SHA-256 `0fc1c350473ad7a1d9e51b60d558a05aa28c12ca5c4d1e397c557ba4f72b4a15`.
+This authored-state predicate check alone does not prove native arithmetic.
+
+The selected ordinary O3 host is
+`f3198b536a46a344e915ae648f2a903b3b834de26f3d70b83c9f74a07b9105c9`, with the
+same `976184c6...` game module. Separate native title captures at VI 1100 match
+complete P6 bytes exactly; candidate Maya accepts 163,587 calls versus zero
+in the control. The 3,300-VI Dragon Roost run passes all 22 checks, with the
+same complete capture and parsed checkpoint context as control. Both record
+exactly 70,848 GroundCross returns with no deferred floating-point writes;
+candidate Maya accepts 405,647 calls. Neither image/context comparison claims
+complete guest RAM parity. Comparison receipts:
+`build/title-intro-20261007/title-capture-comparison-v1.json` and
+`build/title-intro-20261007/precision-host-comparison-v1.json`.
+
+Four serialized warmed title runs used no guest input/warp, sampler, capture,
+state save, pipeline compilation, physical input, audio output or presentation.
+They used the same copied native CARD, module, environment and process affinity.
+No owned compiler or other game overlapped these timing runs.
+
+| Run order | Host | Wall seconds | Process CPU seconds |
+| --- | --- | --- | --- |
+| 1 | Control | 35.593 | 52.172 |
+| 2 | Caller-context guard | 33.484 | 49.313 |
+| 3 | Caller-context guard | 34.344 | 49.625 |
+| 4 | Control | 35.234 | 51.328 |
+| Mean | Control / candidate | 35.414 / 33.914 | 51.750 / 49.469 |
+
+Route time fell **4.23%**, process CPU **4.41%**, and cycles **4.31%**.
+Both pairs improved. This is a small accepted route gain, not a resolution of
+the reported 20 FPS dip or proof of full-speed gameplay. Receipt:
+`build/title-intro-20261007/title-timing-summary-v1.json`, SHA-256
+`47bf868b6af65364437a4a4f0a2f4694cfa6ae0a75e8bb3ff100506c13f25a13`.
+
+The separate perfect edge hash and native GX-writer work remain inactive until
+their own current-module correctness and benefit checks pass. Existing negative
+results and failed fixture attempts remain preserved. Tingle rescue wait-skip
+stays disabled and is not a prerequisite for this tester or gameplay work.
+
+
+The repository-relative chassis regression also passes actual standalone CMake
+O3/ASan builds and CTest: 50,329 checks and 7,199 context refinements per mode.
+All eight configure/build/CTest/dependency roles exited zero with preserved
+inputs. Receipt: `build/cpu-hotspots-20261007/host-precision1/cmake-retest/attempt1/result.json`,
+SHA-256 `159f72eacdcd11848747d85dc28cffe5c77ac90ab7ee4f089d4e8d62f5fb45d4`.
+Windows execution is qualified; Apple/Linux branches have source review only.
+
+
+The full animation oracle against the selected translated module also passed
+180,000 cases in each O3 and ASan mode: Basic 37,464 identical / 22,536 unchanged
+declines, Softimage 37,460 / 22,540, and Maya 33,533 / 26,467. Maya includes
+9,285 compensated-scale acceptances. Every accepted reference follows exactly
+one genuine watched-context outer-dispatch continuation; no watch is suppressed
+and complete CPU/protected-RAM results match. All 22 tool roles exited zero,
+with all 361 observed inputs preserved. Receipt:
+`build/title-intro-20261007/native-mtxcalc-attempt4/work/result.json`, SHA-256
+`cec816c62d322e2eb0a58affffa15a5d7f715fbb376a2c5230932633097f9844`.
+The three earlier fixture/link failures remain preserved. Remaining observers
+are authored quiet; this is not all dynamic observer configurations or host
+x87/sticky floating-point equivalence. The production animation C is unchanged.
