@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 11:19 p.m. CDT**. Implementation started from
+Updated **October 6, 2026, 11:28 p.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -81,6 +81,16 @@ and gather text after CRLF-to-LF conversion; every other byte remains certified.
 Fourteen preparer tests pass, including all four runtime/header newline pairs,
 changed-C refusals and lone-CR refusals. The failed preparation and its log are
 preserved under `build/performance-module-candidate-20261006-v4-mods/`.
+
+The next full preparation reaches the source checks and refuses item 29's
+unrecognized guarded continuation. At PC 80003388, the direct-call preparer
+adds a next-PC/readiness guard before the original return; the cache-site
+preparer only certifies an immediate return. It stops while collecting
+proposals, before publishing any helper or chunk writes. That failure is
+preserved under `build/performance-module-candidate-20261006-v5-mods/`.
+The tester leaves item 29 off and retains the existing FIFO drain, mutable
+callback and guarded continuation. Certifying this exact additional template
+remains future work; standalone helper proof does not complete full preparation.
 
 Item 35 private summary: `build/app-profile-cache-20261006/summary.json`,
 SHA-256 `ade5655da120e5f502a9864bb917c89a658792757e17f5ea701625c0db7bfc9e`.
