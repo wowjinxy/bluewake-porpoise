@@ -247,3 +247,58 @@ with all 361 observed inputs preserved. Receipt:
 The three earlier fixture/link failures remain preserved. Remaining observers
 are authored quiet; this is not all dynamic observer configurations or host
 x87/sticky floating-point equivalence. The production animation C is unchanged.
+
+
+## Native GX title experiment - October 7, 2026, 13:23 CDT
+
+Checklist candidate 18 was tested privately against the current module. Its
+certificate admits 29 GX writers in four translated chunks and excludes six
+helpers that do not meet this experiment's watch constraints. The private host
+also conservatively declines these new writers when overlap observation may
+read scene RAM. No experimental host or module was installed or packaged.
+
+The actual module build, host build and O3/ASan admission oracle pass. The oracle
+performs 144,420 checks and 36,096 queries per mode without changing authored
+CPU/full 32 MiB RAM. Separate native title captures match every P6 byte, with
+4,675,053 accepted GX calls in the candidate. Clarification for the earlier title
+capture notes: capture was requested at VI 1100 and completed at VI 1103 in both
+sides, including the accepted animation-only tester. These image comparisons
+do not establish full guest RAM or command-stream parity.
+
+Four serialized, warmed, no-input 1,800-VI title runs used the same private host,
+affinity and environment. Gather batching was enabled on both sides because
+the new native writers require it. Only the module differed. Timing excluded
+captures, sampling, presentation, audio output and pipeline compilation; no
+owned compiler or other game overlapped these measurements.
+
+| Run order | Module | Wall seconds | Process CPU seconds |
+| --- | --- | --- | --- |
+| 1 | Current control | 32.266 | 48.359 |
+| 2 | Native GX candidate | 31.078 | 46.219 |
+| 3 | Native GX candidate | 33.563 | 50.406 |
+| 4 | Current control | 31.985 | 48.203 |
+| Mean | Control / candidate | 32.126 / 32.321 | 48.281 / 48.313 |
+
+The first pair improves CPU by 4.43% and wall time by 3.68%; the reverse pair
+regresses CPU by 4.57% and wall time by 4.93%. Mean CPU is **0.065% higher** and
+wall time **0.607% longer**. Decision: **keep native GX inactive; no repeatable
+title-route gain**. This completed timing check is not a performance pass.
+
+All four runs match guest cycles, VIs, scene counts and native FIFO call totals.
+The final control logs eight fewer draws out of about 8.43 million, and interrupt
+delivery hashes vary even between controls. No complete FIFO digest is exposed.
+Do not claim exact command-work, interrupt-delivery or guest-RAM equality.
+Preserve the complete cohort and prior fixture/build failures. Retest only after
+a concrete mechanism or workload change; normal-builder integration and a
+separate versioned GX capability remain deferred.
+
+Private receipts:
+`build/title-intro-20261007/gx-capture-comparison-v1.json`, SHA-256
+`c8927651140e8c693b88c44c80b2119a9f81362e5a9d56216bb9808ff114d1c4`;
+`build/title-intro-20261007/gx-timing-summary-v1.json`, SHA-256
+`ce48c5dd10029e52445d276de6cf09b7a49cd55c4c1874bfc4bbf56a9148f36f`;
+`build/title-intro-20261007/gx-decision-v1.json`.
+
+The installed, gated tester remains commit 198bde2 with the accepted 4.23%
+animation-route improvement and unchanged game module. The reported 20 FPS dip
+is not fully resolved. Tingle rescue wait-skip remains disabled.

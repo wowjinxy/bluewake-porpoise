@@ -619,3 +619,23 @@ This is a modest host-only improvement; full-speed title/gameplay is unresolved.
 The current module is unchanged. Native GX writers remain a separate candidate
 requiring fresh module admission, native/GPU checks and repeated timing.
 Tingle rescue wait-skip remains disabled; preserve earlier results and failures.
+
+
+## Native GX title result - October 7, 2026, 13:23 CDT
+
+Candidate 18's private current-module experiment admits 29 GX writers. Actual
+builds and the O3/ASan admission oracle pass; a separate native title frame
+matches completely (requested VI 1100, completed VI 1103). Four serialized
+1,800-VI runs show conflicting pairs: CPU -4.43% then +4.57%, wall time -3.68%
+then +4.93%. Mean CPU is +0.065%, wall time +0.607%. Keep the candidate inactive.
+Gather batching was enabled equally on both sides and is not independently
+promoted. See the [complete result and limits](PERFORMANCE_BUSY_SCENES.md#native-gx-title-experiment---october-7-2026-1323-cdt).
+
+Matching clocks, scene counts and FIFO call totals do not imply exact command or
+guest-RAM equality: the final control has eight fewer draws, and interrupt
+delivery hashes vary within controls. Preserve all receipts and failures in
+`build/title-intro-20261007`; the decision is `gx-decision-v1.json`. Retest only
+with a changed mechanism or concrete profile hypothesis. Normal-builder and
+versioned-capability integration stay deferred. The installed gated tester
+retains only the accepted animation guard change; the 20 FPS dip remains
+unresolved, and Tingle rescue wait-skip remains disabled.
