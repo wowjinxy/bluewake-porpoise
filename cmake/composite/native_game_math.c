@@ -13,7 +13,7 @@
  * and every RAM byte against the personal DLL. No identifier may be `ctx`.
  */
 #include "native_game_math.h"
-#include "inline_fp.h"
+#include "native_inline_fp.h"
 
 #include <stdio.h>
 

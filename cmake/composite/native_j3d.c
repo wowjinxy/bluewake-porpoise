@@ -8,7 +8,7 @@
  * memory, inputs and observable deadlines keep their translated bodies.
  */
 #include "native_j3d.h"
-#include "inline_fp.h"
+#include "native_inline_fp.h"
 
 #include <stdio.h>
 

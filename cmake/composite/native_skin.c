@@ -31,7 +31,7 @@
  * (tests/native_skin_test.c, every register and byte against the translation).
  * No identifier here may be `ctx`. */
 #include "native_skin.h"
-#include "inline_fp.h"
+#include "native_inline_fp.h"
 
 #include <stdio.h>
 

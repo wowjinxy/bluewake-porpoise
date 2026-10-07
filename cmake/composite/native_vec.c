@@ -22,7 +22,7 @@
  * tests/native_vec_test.c compares each against the personal module's
  * translation, every CPU byte and the fixture's RAM test area. No identifier here may be `ctx`. */
 #include "native_vec.h"
-#include "inline_fp.h"
+#include "native_inline_fp.h"
 
 #include <stdio.h>
 

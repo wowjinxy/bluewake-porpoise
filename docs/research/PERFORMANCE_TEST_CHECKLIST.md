@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 11:28 p.m. CDT**. Implementation started from
+Updated **October 7, 2026, 12:41 a.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -41,7 +41,7 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 | 27 | Native descriptor-setter donor targets a different frontend from retail FIFO consumption; Swiss maps already present. | Establish a costly corresponding call path before adaptation. |
 | 28 / 30 | Narrow current-C projection passed 264,800 O3/ASan checks each; authored 16-ADDI block reduces CPU-r3 memory operands 19 to 2 while increasing object size. Offline DolIR effect model reviewed. | General callback/memory/FP/mod/observer closure, generation integration and timing. No general residency/scheduler claim. |
 | 31-34 | Frozen backend/stereo/presentation/worker sources reviewed; compatibility findings and concrete requirements recorded. | Separate ABI migration, stereo scope, actual presentation acquire/submit tests, and corresponding completion/layout bottlenecks respectively. No mono/display gain established. |
-| 29 | Callback-preserving dispatcher passed 32,000 full-state cases each O3/ASan, removing 29,536 runtime trampoline calls. Builder now offers default-off inline-cache-callbacks with actual runtime/gather contract hashes and preparation/cache/training/provenance identities. Eleven preparer and four builder tests pass. | Full module/native qualification remains. Donor callback elision is declined; FIFO drain, fresh callback and NULL exception behavior retained. |
+| 29 | Callback-preserving dispatcher passed 32,000 full-state cases each O3/ASan, removing 29,536 runtime trampoline calls. Builder now offers default-off inline-cache-callbacks with actual runtime/gather contract hashes and preparation/cache/training/provenance identities. Fourteen preparer and four builder tests pass. | Full module/native qualification remains. Normal guarded-continuation preparation still refuses the unrecognized source template; the tester leaves this option off. FIFO drain, fresh callback and NULL exception behavior retained. |
 | 35 | Full SHA-256 profile snapshots and compiler/tool readability implemented. Real Clang/Ninja rebuild/fallback checks pass. Latest shared builder regression passed 28 prepared-cache and 14 training tests; other optimizer changes remain unstaged. | Complete for build correctness; no gameplay FPS claim. |
 | 37 | `--module-thinlto` is available, off by default. Seven integrated builder tests, fourteen training tests and real CMake option checks pass. Actual Clang/Ninja OFF/ON/repeat-ON/OFF builds retained nine exports and passed 400,000 cross-TU comparisons. | Full translated module, matching training/profile and native gameplay comparison. Mini DLL size is no game performance prediction. |
 
@@ -91,6 +91,24 @@ preserved under `build/performance-module-candidate-20261006-v5-mods/`.
 The tester leaves item 29 off and retains the existing FIFO drain, mutable
 callback and guarded continuation. Certifying this exact additional template
 remains future work; standalone helper proof does not complete full preparation.
+
+The full item-12 build exposed generated-load interposition in five native
+arithmetic translation units. They now include a native-only FP wrapper that
+temporarily hides and then restores the target-wide load option. The shared
+`inline_fp.h`, gather header and translated include requirements are unchanged.
+Five focused regression tests perform 23 actual Clang compilations; the five
+native objects match the previous disabled implementation with the option off
+and on, excluding only COFF timestamps. Fifteen existing source-certification
+tests pass. This fixes build integration, not full-game qualification.
+
+The isolated source snapshot also omitted the already committed Windows
+`bw_getenv_cache.h`; its CMake path was correct. The failed full build reached
+838 tasks under Ninja's keep-going mode but never linked: thirteen runtime
+objects failed. The original log and completed objects are preserved under
+`build/performance-module-candidate-20261006-v6-mods/`. A same-attempt continuation
+must verify unchanged object dependencies, flags, sources and tools before
+retaining the freshly compiled translated chunks and rebuilding the failed
+runtime objects. No earlier build's objects or PGO profile may be substituted.
 
 Item 35 private summary: `build/app-profile-cache-20261006/summary.json`,
 SHA-256 `ade5655da120e5f502a9864bb917c89a658792757e17f5ea701625c0db7bfc9e`.

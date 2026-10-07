@@ -45,7 +45,7 @@
  * tests/native_mtxcalc_test.c compares all three with the translation, every
  * register and byte. No identifier here may be `ctx`. */
 #include "native_mtxcalc.h"
-#include "inline_fp.h"
+#include "native_inline_fp.h"
 #include "direct_calls.h"
 
 #include <math.h>
