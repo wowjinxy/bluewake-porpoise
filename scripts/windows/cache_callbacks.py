@@ -11,8 +11,9 @@ import hashlib
 from pathlib import Path
 import re
 
-GATHER_SHA = "2edf3c973723acb4735d9aa245a76013ae6207147018fcbcf147c85d515388e5"
-CPU_SHA = "6f6f0251355bcf4e7f4beb45487e504fe6b4148e33719f928756f291068b106b"
+# Exact known contracts in their git LF form; Windows checkouts may use CRLF.
+GATHER_SHA = "6cfbb1d99283e8e273854c9d5ad492e2f826156e21441d591b4b51797a1251b1"
+CPU_SHA = "6dd29354654ac84d64352789dfef0d00907cee98f6f410a8504ecb8b1da80a5c"
 CACHE_XO = frozenset((54, 86, 470, 982))
 SITE = re.compile(r"^    (ppc_fallback_instruction|bw_cache_fallback_instruction)"
                   r"\(ctx, 0x([0-9A-F]{8})u, 0x([0-9A-F]{8})u\);\n"
@@ -24,7 +25,9 @@ HELPER_INCLUDE = '#include "../cache_fallback.h"\n'
 
 
 def sha(data):
-    return hashlib.sha256(data).hexdigest()
+    # Only line-ending pairs are canonicalized. All other bytes, including
+    # lone CRs, whitespace and C tokens, remain part of the strict contract.
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def is_cache(raw):

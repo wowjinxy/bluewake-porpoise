@@ -46,6 +46,66 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual(self.prepare(), (0, 0))
         self.assertEqual(times, [p.stat().st_mtime_ns for p in (self.path, self.root / "cache_fallback.h")])
 
+    def test_lf_and_crlf_runtime_contracts_accept_without_rewriting_inputs(self):
+        cpu_lf = CPU.read_bytes().replace(b"\r\n", b"\n")
+        gather_lf = GATHER.read_bytes().replace(b"\r\n", b"\n")
+        cpu = self.root / "cpu.c"
+        gather = self.root / "gather_pipe.h"
+        for cpu_eol in (b"\n", b"\r\n"):
+            for gather_eol in (b"\n", b"\r\n"):
+                with self.subTest(cpu_eol=cpu_eol, gather_eol=gather_eol):
+                    cpu_bytes = cpu_lf.replace(b"\n", cpu_eol)
+                    gather_bytes = gather_lf.replace(b"\n", gather_eol)
+                    cpu.write_bytes(cpu_bytes)
+                    gather.write_bytes(gather_bytes)
+                    self.path.write_bytes(self.original.encode())
+                    self.assertEqual(self.prepare(cpu=cpu), (4, 1))
+                    self.assertEqual(cpu.read_bytes(), cpu_bytes)
+                    self.assertEqual(gather.read_bytes(), gather_bytes)
+                    self.assertEqual(self.path.read_text().replace(preparation.HELPER_INCLUDE, "").replace(
+                        "bw_cache_fallback_instruction", "ppc_fallback_instruction"), self.original)
+
+    def test_mutated_runtime_tokens_decline_with_either_line_ending(self):
+        cpu_lf = CPU.read_bytes().replace(b"\r\n", b"\n")
+        gather_lf = GATHER.read_bytes().replace(b"\r\n", b"\n")
+        cpu = self.root / "cpu.c"
+        gather = self.root / "gather_pipe.h"
+        for eol in (b"\n", b"\r\n"):
+            for contract in ("CPU fallback", "gather-pipe"):
+                with self.subTest(eol=eol, contract=contract):
+                    cpu_bytes = cpu_lf
+                    gather_bytes = gather_lf
+                    if contract == "CPU fallback":
+                        self.assertIn(b"PPC_PROGRAM_ILLEGAL", cpu_bytes)
+                        cpu_bytes = cpu_bytes.replace(b"PPC_PROGRAM_ILLEGAL", b"PPC_PROGRAM_PRIV", 1)
+                    else:
+                        self.assertIn(b"    bw_gather_pipe_drain();", gather_bytes)
+                        gather_bytes = gather_bytes.replace(b"    bw_gather_pipe_drain();", b"    /* no drain */", 1)
+                    cpu.write_bytes(cpu_bytes.replace(b"\n", eol))
+                    gather.write_bytes(gather_bytes.replace(b"\n", eol))
+                    with self.assertRaisesRegex(ValueError, contract):
+                        self.prepare(cpu=cpu)
+                    self.assertEqual(self.path.read_bytes(), self.original.encode())
+                    self.assertFalse((self.root / "cache_fallback.h").exists())
+
+    def test_lone_cr_contracts_still_decline(self):
+        cpu = self.root / "cpu.c"
+        gather = self.root / "gather_pipe.h"
+        for contract in ("CPU fallback", "gather-pipe"):
+            with self.subTest(contract=contract):
+                cpu_bytes = CPU.read_bytes().replace(b"\r\n", b"\n")
+                gather_bytes = GATHER.read_bytes().replace(b"\r\n", b"\n")
+                if contract == "CPU fallback":
+                    cpu_bytes = cpu_bytes.replace(b"\n", b"\r", 1)
+                else:
+                    gather_bytes = gather_bytes.replace(b"\n", b"\r", 1)
+                cpu.write_bytes(cpu_bytes)
+                gather.write_bytes(gather_bytes)
+                with self.assertRaisesRegex(ValueError, contract):
+                    self.prepare(cpu=cpu)
+                self.assertEqual(self.path.read_bytes(), self.original.encode())
+                self.assertFalse((self.root / "cache_fallback.h").exists())
+
     def test_bad_second_chunk_is_transactional_decline(self):
         bad = self.root / "chunks_0/bad.c"
         bad.write_bytes(('#include "../generated.h"\n' + site(54).replace("    return;", "    goto next;")).encode())

@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 11:11 p.m. CDT**. Implementation started from
+Updated **October 6, 2026, 11:19 p.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -74,6 +74,13 @@ Items 36/38 remain profile-quality work: app counts must be retrained against
 the selected stable runtime/compiler/source, and the existing game-PGO path
 needs matching coverage, held-out routes and a no-tiered comparison. Build-cache
 correctness in 35 does not complete either item.
+
+Full mod-enabled source preparation exposed a newline-only item-29 contract
+failure before any cache-site writes. The certifier now hashes exact known CPU
+and gather text after CRLF-to-LF conversion; every other byte remains certified.
+Fourteen preparer tests pass, including all four runtime/header newline pairs,
+changed-C refusals and lone-CR refusals. The failed preparation and its log are
+preserved under `build/performance-module-candidate-20261006-v4-mods/`.
 
 Item 35 private summary: `build/app-profile-cache-20261006/summary.json`,
 SHA-256 `ade5655da120e5f502a9864bb917c89a658792757e17f5ea701625c0db7bfc9e`.
