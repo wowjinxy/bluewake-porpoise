@@ -302,3 +302,54 @@ Private receipts:
 The installed, gated tester remains commit 198bde2 with the accepted 4.23%
 animation-route improvement and unchanged game module. The reported 20 FPS dip
 is not fully resolved. Tingle rescue wait-skip remains disabled.
+
+
+## Complete GX SDK entry tally - October 7, 2026, 13:45 CDT
+
+A private instrumented copy of the current 976184c6 module ran the same no-input
+title route for 1,800 emulated retraces. It counts all 179 functions in the
+authoritative GZLE01 GX SDK range, including 27 internal/static helpers, plus
+50 separately identified GD/GF/J3D graphics writers. All 229 functions appear
+in the report, including 34 with zero calls. Function names come directly from
+`tww/config/GZLE01/symbols.txt` and its SDK source ranges from `splits.txt`;
+GXBegin is 0x803230C4, GXLoadTexObj 0x80324EE8, GXCallDisplayList 0x80326B80.
+
+Counters run after a successful first-instruction charge and before selecting
+the prepaid copy. Budget retries, observer-eligibility queries and duplicate
+fast/slow bodies do not add entries. Accepted native J3DFifo matrix calls use
+the same IDs once; declined paths count at the translated charged entry. Their
+three full counts (368,454 / 333,116 / 35,338) equal native plus declined totals.
+The O3/ASan counter oracle passes all 229 IDs and phase boundaries, with budget
+resumption checks. Source placement/coverage and native-path audits also pass.
+The diagnostic host only binds the retrace pointer and reports final counters.
+
+| Scope | GX public | GX internal/static | Other cataloged writers |
+| --- | --- | --- | --- |
+| Entire recorded pass, VI 0-1799 | 11,163,526 | 1,806,633 | 3,724,537 |
+| Title portion, VI 333-1799 | 10,838,153 | 1,778,225 | 3,715,075 |
+| Intro diagnostic window, VI 750-1449 | 5,687,702 | 878,185 | 2,130,008 |
+
+The complete pass records **16,694,696** function entries; 363,243 occur before
+title-ready VI 333. The most frequent public GX calls during the title portion
+are GXCallDisplayList 753,061; GXSetArray 585,107; GXSetTevOrder 481,199;
+GXLoadPosMtxImm 470,489; GXSetTevAlphaIn 469,144. Counts include nested helpers
+and do not represent distinct draws, decoded FIFO opcodes or exclusive CPU
+time. Inlined macros/direct stores are not additional API function calls.
+
+All 20 native-run checks pass, with no physical input, presentation, audio output,
+state save or shader compilation. All actual build/oracle/game processes drained.
+The complete captured P6 matches the installed tester at completed VI 1103
+(requested VI 1100). This one-frame comparison does not establish complete guest
+RAM, interrupt or command parity. This instrumented run is not an FPS benchmark
+or a whole-game count; the installed tester and player data are unchanged.
+
+The full per-function CSV, including five retrace intervals and zero entries, is
+`build/gx-call-tally-20261007/intro-gx-tally.csv`, SHA-256
+`cbdf0adb6370140e7138146cf6fdf87ab235e9d82194335d0c3242a141474bc9`.
+The validated JSON and evidence pins are
+`build/gx-call-tally-20261007/intro-gx-tally.json`, SHA-256
+`0008e933420b4d744079f1caacccca19f3238222797b5eb909b6c46ae0e43cd4`.
+Keep the private source, build, counter oracle and failed fixture attempt
+there. Module qualification explicitly records the two added diagnostic exports
+and two private support copies with CRLF-to-LF normalization; original game
+instructions are unchanged. Tingle rescue wait-skip remains disabled.
