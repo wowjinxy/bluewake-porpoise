@@ -1,0 +1,1554 @@
+--- /dev/null
++++ b/tests/performance_native_gx/native5_harness.h
+@@ -0,0 +1,613 @@
++/* The fifth set's comparison harness (tests/native_gx_test.c): the fourth
++ * set's (native4_harness.h) - a Windows game module (gGZLE01_recomp.dll)
++ * loaded read-only, its translation run from a function's entry as in play
++ * (direct calls and the edge filter on, the host's flags quiet, an edge
++ * service that ends the run at the return address and counts any other
++ * question), two RAM images whose every page is read-only but the test's
++ * own - with the gather pipe added: what the module's translation hands the
++ * host and what the native hands it, compared byte for byte and call for
++ * call.
++ *
++ * The pipe. The module's own pipe (its gather_pipe.c) is set to hand every
++ * store to the test one at a time (bluewake_composite_set_gather_pipe, no
++ * batch): that is the translation's stream of stores, in order, each with
++ * its size. The native runs on the test's own pipe (gather_pipe.c, linked
++ * in) in one of its host modes: a batch partly filled with random bytes (so
++ * the function's bytes fit, reach the flush point exactly, or cross it), a
++ * word at a time, or no writer at all. The expected result is the
++ * translation's stores put through the test's pipe in the same mode from the
++ * same state (bw_gather_pipe_put, one by one, exactly as the translation's
++ * out-of-line store puts them): every call the pipe makes to the host - a
++ * word, or a run of bytes when the batch fills - and, at the end, the batch's
++ * contents must match.
++ *
++ * Each test hands harness_load its writable regions. */
++#ifndef BLUEWAKE_NATIVE5_HARNESS_H
++#define BLUEWAKE_NATIVE5_HARNESS_H
++
++#include "direct_calls.h"
++#include "native_entries.h"
++#include "gather_pipe.h"
++#include "StaticRecompABI.h"
++#include "module_cpu_contract.h"
++
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#include <xmmintrin.h>
++
++#ifndef NATIVE5_HOOKED
++/* direct_calls.c, linked in for the edge filter's state the natives read,
++ * names these. */
++BwChunkFn bw_find_chunk(u32 address) {
++    (void)address;
++    return NULL;
++}
++BwChunkFn* const bw_chunk_fns = NULL;
++#endif
++
++/* gather_pipe.c, linked in: the test's own pipe, the one the native uses. */
++void bluewake_composite_set_gather_pipe(BwGatherPipeWrite write);
++void bluewake_composite_set_gather_pipe_bytes(BwGatherPipeBytes bytes);
++
++#define RETURN_ADDRESS 0xFFFFFFFCu
++
++typedef struct Region {
++    u32 start, bytes;
++} Region;
++
++static const Region* REGIONS; /* the test's writable pages */
++static unsigned REGION_COUNT;
++
++/* --- Random numbers. ----------------------------------------------------- */
++
++static u32 seed = 0x5E7A11C3u;
++static u32 next(void) {
++    seed ^= seed << 13;
++    seed ^= seed >> 17;
++    seed ^= seed << 5;
++    return seed;
++}
++static u32 below(u32 n) { return next() % n; }
++
++static void put32(u8* ram, u32 address, u32 value) { write_be32(ram + (address - GC_RAM_BASE), value); }
++static void put8(u8* ram, u32 address, u8 value) { ram[address - GC_RAM_BASE] = value; }
++
++/* A single's bits: mostly ordinary, sometimes a zero, a denormal, a huge
++ * value, an infinity or a NaN. */
++static u32 any_single(unsigned specials_in_64) {
++    const u32 sign = next() & 0x80000000u;
++    if (below(64u) < specials_in_64) {
++        switch (below(6u)) {
++        case 0: return sign;
++        case 1: return sign | (1u + below(0x007FFFFFu));
++        case 2: return sign | 0x7F800000u;
++        case 3: return sign | 0x7FC00000u | (next() & 0x003FFFFFu);
++        case 4: return sign | 0x7F800000u | (1u + below(0x003FFFFFu));
++        default: return sign | ((200u + below(54u)) << 23) | (next() & 0x007FFFFFu);
++        }
++    }
++    return sign | ((110u + below(30u)) << 23) | (next() & 0x007FFFFFu);
++}
++
++/* --- Random machine state. ----------------------------------------------- */
++
++static void random_cpu(CPUState* c, u8* ram) {
++    memset(c, 0, sizeof *c);
++    c->ram = ram;
++    c->ram_size = GC_MAIN_RAM_SIZE;
++    for (unsigned r = 0; r < 32; ++r) {
++        c->gpr[r] = next();
++        c->fpr[r] = f64_value(((u64)next() << 32) | next());
++        c->ps1[r] = f64_value(((u64)next() << 32) | next());
++    }
++    c->lr = RETURN_ADDRESS | (next() & 3u);
++    c->ctr = next();
++    c->cr = next();
++    c->xer = next();
++    c->msr = PPC_MSR_FP | (next() & ~(PPC_MSR_FP | PPC_MSR_EE));
++    c->hid2 = PPC_HID2_LSQE | (next() & 0x0FFFFFFFu);
++    for (unsigned g = 1; g < 8; ++g)
++        c->gqr[g] = next();
++    c->gqr[0] = 0u;
++    c->fpscr = next() & ~(0x60000003u | 0x4u);
++    if (below(4u) == 0u)
++        c->fpscr |= 0x4u;
++    ppc_fpscr_updated(c);
++    c->reserve_valid = below(2u) != 0u;
++    c->reserve_addr = next();
++    c->cycle_observation_suffix = next();
++    c->cycle_budget = 16384;
++    c->downcount = -(s64)below(64u);
++    c->cycle_deadline_budget = below(4u) == 0u ? 0 : 100000;
++}
++
++/* The cycle state at the edges: `cycles` is the function's shortest path. */
++static void clock_edges(CPUState* c, unsigned scenario, s64 cycles) {
++    switch (scenario % 43u) {
++    case 1: c->cycle_deadline_budget = cycles - c->downcount + (s64)below(5u) - 2; break; /* near the end */
++    case 2: c->cycle_deadline_budget = 1 + (s64)below((u32)(cycles > 1 ? cycles : 2)); break; /* inside */
++    case 3: c->cycle_deadline_budget = -(s64)below(100u); break;                            /* none */
++    case 4: c->downcount = -c->cycle_budget; break;                                        /* spent */
++    case 5: c->downcount = -c->cycle_budget + 1 + (s64)below((u32)(cycles > 1 ? cycles : 2)); break; /* inside */
++    case 6: c->cycle_budget = 1 + (s64)below(60u); c->downcount = 0; break;
++    case 7: c->downcount = (s64)below(8u); break;                                           /* positive */
++    case 8: c->exception = 1u; break;
++    case 9: c->cycle_budget = 0; break;
++    case 10: c->cycle_deadline_budget = (s64)below(400u); break;
++    case 11: c->downcount = -c->cycle_budget + (s64)below(400u); break;
++    default: break;
++    }
++}
++
++/* --- The pipe logs. ------------------------------------------------------ */
++
++/* What a pipe hands the host, in order: 'W' size value for a word to the
++ * writer, 'B' length bytes for a run of bytes. */
++typedef struct PipeLog {
++    u8 data[1u << 20];
++    u32 length;
++} PipeLog;
++static PipeLog log_module, log_native, log_model;
++static PipeLog* log_target = &log_native;
++
++static void log_word(PipeLog* log, u64 value, u8 size) {
++    if (log->length + 10u > sizeof log->data) {
++        fprintf(stderr, "pipe log overflow\n");
++        exit(1);
++    }
++    log->data[log->length++] = 'W';
++    log->data[log->length++] = size;
++    memcpy(log->data + log->length, &value, 8);
++    log->length += 8u;
++}
++
++static void log_bytes(PipeLog* log, const u8* bytes, u32 size) {
++    if (log->length + 5u + size > sizeof log->data) {
++        fprintf(stderr, "pipe log overflow\n");
++        exit(1);
++    }
++    log->data[log->length++] = 'B';
++    memcpy(log->data + log->length, &size, 4);
++    memcpy(log->data + log->length + 4u, bytes, size);
++    log->length += 4u + size;
++}
++
++static void module_word(u64 value, u8 size) { log_word(&log_module, value, size); }
++static void native_word(u64 value, u8 size) { log_word(log_target, value, size); }
++static void native_bytes(const u8* bytes, u32 size) { log_bytes(log_target, bytes, size); }
++static void sink_word(u64 value, u8 size) { (void)value; (void)size; }
++static void sink_bytes(const u8* bytes, u32 size) { (void)bytes; (void)size; }
++
++enum { PIPE_BATCH, PIPE_WORDS, PIPE_NONE };
++
++static void set_test_pipe(unsigned mode) {
++    bluewake_composite_set_gather_pipe(mode == PIPE_NONE ? NULL : native_word);
++    bluewake_composite_set_gather_pipe_bytes(mode == PIPE_BATCH ? native_bytes : NULL);
++}
++
++static void prefill_test_pipe(u32 count) {
++    for (u32 i = 0; i < count; ++i)
++        bw_gather_pipe_buffer[i] = (u8)(i * 37u + 11u);
++    bw_gather_pipe_length = count;
++}
++
++/* The bytes a log's entries carry, in order (a word's big-endian). */
++static u32 log_stream(const PipeLog* log, u8* out) {
++    u32 n = 0;
++    for (u32 i = 0; i < log->length;) {
++        if (log->data[i] == 'W') {
++            const u8 size = log->data[i + 1];
++            u64 value;
++            memcpy(&value, log->data + i + 2, 8);
++            for (u8 b = 0; b < size; ++b)
++                out[n++] = (u8)(value >> (8u * (size - 1u - b)));
++            i += 10u;
++        } else {
++            u32 size;
++            memcpy(&size, log->data + i + 1, 4);
++            memcpy(out + n, log->data + i + 5, size);
++            n += size;
++            i += 5u + size;
++        }
++    }
++    return n;
++}
++
++/* The same stream of bytes handed to the host: the natives hand a run of
++ * bytes to the batch writer in pieces that may differ from the
++ * translation's (gather_pipe_batch.h: a run of bytes through the batch entry
++ * point is the same stream). */
++static bool same_logs(const PipeLog* a, const PipeLog* b) {
++    static u8 sa[1u << 20], sb[1u << 20];
++    const u32 na = log_stream(a, sa), nb = log_stream(b, sb);
++    return na == nb && memcmp(sa, sb, na) == 0;
++}
++
++static u32 log_words(const PipeLog* log) { return log->length / 10u; }
++
++static void copy_log(PipeLog* to, const PipeLog* from) {
++    to->length = from->length;
++    memcpy(to->data, from->data, from->length);
++}
++
++/* --- The module. --------------------------------------------------------- */
++
++typedef void (*SetPipeFn)(BwGatherPipeWrite);
++typedef void (*SetPipeBytesFn)(BwGatherPipeBytes);
++
++typedef struct Harness {
++    HMODULE lib;
++    const StaticRecompModuleDesc* mod;
++    CPUState fallback;
++    BlueWakeModuleStorage storage;
++    SetPipeFn set_pipe;
++    SetPipeBytesFn set_pipe_bytes;
++    u8* reference_ram;
++    u8* native_ram;
++    u8* before;
++} Harness;
++
++static unsigned long long s_resumed_save29;
++static unsigned s_unexpected_service;
++static u32 s_unexpected_at;
++static int edge_service(void* user, CPUState* cpu, u32 address) {
++    (void)user;
++    (void)cpu;
++    if ((address & ~3u) != RETURN_ADDRESS) {
++        s_unexpected_service++;
++        s_unexpected_at = address;
++    }
++    return 1;
++}
++
++static void journal(u32 offset, u32 size, void* user) {
++    (void)offset;
++    (void)size;
++    (void)user;
++    abort();
++}
++
++static u8* protect_image(u8* p) {
++    DWORD old;
++    if (p == NULL || !VirtualProtect(p, GC_MAIN_RAM_SIZE, PAGE_READONLY, &old))
++        return NULL;
++    for (unsigned i = 0; i < REGION_COUNT; ++i)
++        if (!VirtualProtect(p + (REGIONS[i].start - GC_RAM_BASE), REGIONS[i].bytes, PAGE_READWRITE, &old))
++            return NULL;
++    return p;
++}
++
++static u8* module_image(HMODULE lib) {
++    u8* (*mem1)(u32*) = (u8* (*)(u32*))(void*)GetProcAddress(lib, "bluewake_composite_guest_mem1");
++    u32 size = 0;
++    u8* ram = mem1 != NULL ? mem1(&size) : NULL;
++    if (ram == NULL)
++        ram = VirtualAlloc(NULL, GC_MAIN_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
++    else if (size < GC_MAIN_RAM_SIZE)
++        return NULL;
++    else
++        memset(ram, 0, GC_MAIN_RAM_SIZE);
++    return protect_image(ram);
++}
++
++/* The test's own host flags and watch list: the ones the natives read. */
++static bool s_sources_dirty, s_decrementer_pending;
++static u32 s_pi_cause, s_pi_mask;
++
++static void watch(u32 address) {
++    const u32 canonical = address & ~0x40000000u;
++    u32 slot = (canonical * 0x9E3779B1u) >> 20;
++    while (bw_edge_watch_table[slot] != 0u && bw_edge_watch_table[slot] != canonical)
++        slot = (slot + 1u) & (BW_EDGE_WATCH_SLOTS - 1u);
++    bw_edge_watch_table[slot] = canonical;
++}
++
++static bool authored_can_skip(void* user,const CPUState* cpu,u32 address) {
++    (void)user;(void)address;return cpu!=NULL;
++}
++static void reset_host(void) {
++    memset(bw_edge_watch_table, 0, sizeof bw_edge_watch_table);
++    watch(0x80006000u); /* a few unrelated addresses, so the table is not empty */
++    watch(0x802F5000u);
++    watch(0x8030D000u);
++    bw_edge_watch_ready = true;
++    bw_edge_filter_enabled = true;
++    bw_direct_enabled = true;
++    s_sources_dirty = s_decrementer_pending = false;
++    s_pi_cause = s_pi_mask = 0u;
++    bw_host_sources_dirty = &s_sources_dirty;
++    bw_host_decrementer_pending = &s_decrementer_pending;
++    bw_host_pi_cause = &s_pi_cause;
++    bw_host_pi_mask = &s_pi_mask;
++    bw_host_can_skip=authored_can_skip;bw_host_can_skip_user=NULL;
++}
++
++static int harness_load(Harness* h, const char* path, bool module_natives, const Region* regions,
++                        unsigned region_count) {
++    REGIONS = regions;
++    REGION_COUNT = region_count;
++    _putenv_s("BLUEWAKE_NATIVE_MATH", module_natives ? "1" : "0");
++    h->lib = LoadLibraryA(path);
++    if (h->lib == NULL) {
++        fprintf(stderr, "cannot load %s (%lu)\n", path, GetLastError());
++        return 0;
++    }
++    StaticRecompGetModuleFn get =
++        (StaticRecompGetModuleFn)(void*)GetProcAddress(h->lib, STATICRECOMP_GET_MODULE_SYMBOL);
++    BlueWakeModuleCPUFn guest_cpu=(BlueWakeModuleCPUFn)(void*)GetProcAddress(h->lib,"bluewake_composite_guest_cpu");
++    BlueWakeModuleMEM1Fn mem1=(BlueWakeModuleMEM1Fn)(void*)GetProcAddress(h->lib,"bluewake_composite_guest_mem1");
++    void (*set_edge)(int (*)(void*, CPUState*, u32), void*) =
++        (void (*)(int (*)(void*, CPUState*, u32), void*))(void*)GetProcAddress(h->lib, "bluewake_set_edge_service");
++    int (*direct)(bool,const bool*,const bool*,const u32*,const u32*,BwHostCanSkipFn,void*) =
++        (int (*)(bool,const bool*,const bool*,const u32*,const u32*,BwHostCanSkipFn,void*))(void*)GetProcAddress(
++            h->lib,"bluewake_composite_direct_calls_v2");
++    int (*filter)(bool) = (int (*)(bool))(void*)GetProcAddress(h->lib, "bluewake_composite_edge_filter");
++    h->set_pipe = (SetPipeFn)(void*)GetProcAddress(h->lib, "bluewake_composite_set_gather_pipe");
++    h->set_pipe_bytes = (SetPipeBytesFn)(void*)GetProcAddress(h->lib, "bluewake_composite_set_gather_pipe_bytes");
++    if (get == NULL || set_edge == NULL || direct == NULL || filter == NULL ||
++        h->set_pipe == NULL || h->set_pipe_bytes == NULL) {
++        fprintf(stderr, "not a BlueWake Windows module\n");
++        return 0;
++    }
++    h->mod = get();
++    const char* storage_error=bw_module_select_storage(h->mod,guest_cpu,mem1,&h->fallback,&h->storage);
++    if(storage_error){fprintf(stderr,"%s\n",storage_error);return 0;}
++    if (h->mod->cpu_state_size != sizeof(CPUState) || strcmp(h->mod->game_id, "GZLE01") != 0) {
++        fprintf(stderr, "CPU state size %u, expected %u\n", h->mod->cpu_state_size, (unsigned)sizeof(CPUState));
++        return 0;
++    }
++    /* The module reads the test's own host flags, so a case that makes the
++     * host busy makes it busy for the translation too. */
++    if (!direct(true, &s_sources_dirty, &s_decrementer_pending, &s_pi_cause, &s_pi_mask, authored_can_skip, NULL) || !filter(true)) {
++        fprintf(stderr, "the module's direct calls or edge filter are unavailable\n");
++        return 0;
++    }
++    set_edge(edge_service, NULL);
++    /* The translation's stores, one by one. */
++    h->set_pipe(module_word);
++    h->set_pipe_bytes(NULL);
++    h->reference_ram=h->storage.mem1 ? protect_image(h->storage.mem1) : module_image(h->lib);
++    h->native_ram = protect_image(VirtualAlloc(NULL, GC_MAIN_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
++    h->before = VirtualAlloc(NULL, GC_MAIN_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
++    if (h->reference_ram == NULL || h->native_ram == NULL || h->before == NULL) {
++        fprintf(stderr, "cannot set up the RAM images\n");
++        return 0;
++    }
++    reset_host();
++    return 1;
++}
++
++static void copy_regions(u8* to, const u8* from) {
++    for (unsigned i = 0; i < REGION_COUNT; ++i)
++        memcpy(to + (REGIONS[i].start - GC_RAM_BASE), from + (REGIONS[i].start - GC_RAM_BASE), REGIONS[i].bytes);
++}
++
++static bool same_regions(const u8* a, const u8* b) {
++    for (unsigned i = 0; i < REGION_COUNT; ++i)
++        if (memcmp(a + (REGIONS[i].start - GC_RAM_BASE), b + (REGIONS[i].start - GC_RAM_BASE), REGIONS[i].bytes) != 0)
++            return false;
++    return true;
++}
++
++static void report_cpu(const CPUState* got, const CPUState* want) {
++    for (unsigned b = 0; b < sizeof *got; ++b)
++        if (((const u8*)got)[b] != ((const u8*)want)[b])
++            fprintf(stderr, "  CPU byte %u: got %02X want %02X\n", b, ((const u8*)got)[b], ((const u8*)want)[b]);
++    fprintf(stderr, "  (gpr at %u, fpr %u, ps1 %u, pc %u, cr %u, fpscr %u, downcount %u, suffix %u)\n",
++            (unsigned)offsetof(CPUState, gpr), (unsigned)offsetof(CPUState, fpr), (unsigned)offsetof(CPUState, ps1),
++            (unsigned)offsetof(CPUState, pc), (unsigned)offsetof(CPUState, cr), (unsigned)offsetof(CPUState, fpscr),
++            (unsigned)offsetof(CPUState, downcount), (unsigned)offsetof(CPUState, cycle_observation_suffix));
++}
++
++static void report_ram(const u8* got, const u8* want) {
++    int differ = 0;
++    for (unsigned r = 0; r < REGION_COUNT; ++r)
++        for (u32 i = 0; i < REGIONS[r].bytes; ++i) {
++            const u32 at = REGIONS[r].start + i - GC_RAM_BASE;
++            if (got[at] != want[at] && differ++ < 48)
++                fprintf(stderr, "  RAM %08X: got %02X want %02X\n", at + GC_RAM_BASE, got[at], want[at]);
++        }
++}
++
++static void report_logs(const PipeLog* got, const PipeLog* want) {
++    fprintf(stderr, "  pipe: got %u bytes of log, want %u\n", got->length, want->length);
++    const u32 n = got->length < want->length ? got->length : want->length;
++    for (u32 i = 0; i < n; ++i)
++        if (got->data[i] != want->data[i]) {
++            fprintf(stderr, "  first difference at log byte %u\n", i);
++            break;
++        }
++}
++
++/* The host's floating-point mode as the module arms it for the guest's FPSCR
++ * (NI gives FTZ and DAZ). In a case, sometimes. */
++static unsigned s_mxcsr_default;
++static void host_fp_mode(bool flush) {
++    if (s_mxcsr_default == 0u)
++        s_mxcsr_default = _mm_getcsr();
++    _mm_setcsr(flush ? (s_mxcsr_default | 0x8040u) : s_mxcsr_default);
++}
++
++/* The translation from `entry` on the module's own CPU state and RAM image
++ * (its regions as `before`), its pipe stores in log_module: its state at the
++ * end, with the native's RAM pointer. */
++static CPUState harness_translate(Harness* h, const CPUState* start, u32 entry) {
++    copy_regions(h->reference_ram, h->before);
++    CPUState* g = h->storage.cpu;
++    *g = *start;
++    g->ram = h->reference_ram;
++    h->mod->on_state_loaded(g);
++    s_unexpected_service = 0;
++    log_module.length = 0;
++    if (!h->mod->dispatch(g, entry)) {
++        fprintf(stderr, "the translation did not run at %08X\n", entry);
++        exit(1);
++    }
++    /* The old unhooked module permanently watches save29. Preserve its
++     * genuine edge return, then resume ordinary translated dispatch only
++     * for this authored semantic oracle's exact J3D fog call boundary.
++     * This does not admit skipping that watch in a production host. */
++    if (entry==0x802D85F8u && g->pc==0x80328F40u && g->lr==0x802D860Cu &&
++        s_unexpected_service==1u && s_unexpected_at==0x80328F40u) {
++        const CPUState returned=*g;
++        const u32 alias_generation=g_ppc_guest_alias_generation;
++        const u32 pipe_length=bw_gather_pipe_length;
++        const BwGatherPipeWrite word_writer=bw_gather_pipe_write;
++        const BwGatherPipeBytes byte_writer=bw_gather_pipe_bytes;
++        if (g==h->storage.cpu && g->ram==h->reference_ram && g->ram_size==GC_MAIN_RAM_SIZE &&
++            !g->exception && g->cycle_budget>0 && g->cycle_budget<=INT32_MAX &&
++            g->downcount<=0 && g->downcount>-g->cycle_budget &&
++            !g_mem_write_journal && !g_ppc_guest_aliases_overlap_mem1 &&
++            bw_edge_filter_enabled && bw_edge_watch_ready && bw_edge_unwatched(g->pc) &&
++            bw_host_can_skip!=NULL && bw_host_quiet(g) &&
++            bluewake_native_entries_ready(g,g->pc) &&
++            memcmp(g,&returned,sizeof returned)==0 &&
++            alias_generation==g_ppc_guest_alias_generation && !g_mem_write_journal &&
++            !g_ppc_guest_aliases_overlap_mem1 &&
++            bw_host_can_skip(bw_host_can_skip_user,g,g->pc) &&
++            memcmp(g,&returned,sizeof returned)==0 && bw_host_quiet(g) &&
++            alias_generation==g_ppc_guest_alias_generation && !g_mem_write_journal &&
++            !g_ppc_guest_aliases_overlap_mem1 && bw_gather_pipe_length==pipe_length &&
++            bw_gather_pipe_write==word_writer && bw_gather_pipe_bytes==byte_writer) {
++            ++s_resumed_save29;
++            s_unexpected_service=0; /* retained separately in s_resumed_save29 */
++            /* No state-load hook, register write, synthetic callee or edge
++             * suppression: the unchanged module executes its real helper. */
++            if (!h->mod->dispatch(g,g->pc)) {
++                fprintf(stderr,"ordinary save29 continuation did not dispatch\n");exit(1);
++            }
++        }
++    }
++    CPUState reference = *g;
++    reference.ram = start->ram;
++    return reference;
++}
++
++/* The translation's stores through the test's pipe in `mode` from the state
++ * the case started it in: log_model. */
++static void pipe_model(unsigned mode, u32 prefill) {
++    set_test_pipe(mode);
++    if (mode == PIPE_BATCH)
++        prefill_test_pipe(prefill);
++    log_target = &log_model;
++    log_model.length = 0;
++    for (u32 j = 0; j < log_module.length; j += 10u) {
++        u64 value;
++        memcpy(&value, log_module.data + j + 2, 8);
++        bw_gather_pipe_put(value, log_module.data[j + 1]);
++    }
++    bw_gather_pipe_flush();
++    log_target = &log_native;
++}
++
++static double now_ns(void) {
++    static LARGE_INTEGER freq;
++    LARGE_INTEGER t;
++    if (freq.QuadPart == 0)
++        QueryPerformanceFrequency(&freq);
++    QueryPerformanceCounter(&t);
++    return (double)t.QuadPart * 1e9 / (double)freq.QuadPart;
++}
++
++/* A case's pipe: the mode, and the batch's bytes before it. */
++typedef struct PipeCase {
++    unsigned mode;
++    u32 prefill;
++} PipeCase;
++
++static PipeCase random_pipe(unsigned scenario) {
++    PipeCase p;
++    p.mode = scenario % 23u == 4u ? PIPE_NONE : scenario % 19u == 1u ? PIPE_WORDS : PIPE_BATCH;
++    p.prefill = scenario % 7u == 0u ? 0u : below(BW_GATHER_PIPE_BATCH);
++    return p;
++}
++
++static unsigned long long s_flushed_inside;
++
++#ifdef NATIVE5_HOOKED
++static void hooked_case(const Harness* h, u32 entry, const char* name, unsigned index, const CPUState* start,
++                        const CPUState* reference, const PipeCase* pipe, bool flush, bool declined);
++#endif
++
++/* One case: the native on `start` (in the native image, regions saved in
++ * `before`), then - where it ran - the translation, and every byte compared,
++ * the pipe's included. Returns 1 identical, 0 declined unchanged; a mismatch
++ * exits. */
++typedef int (*NativeFn)(CPUState* cpu, u32 address);
++static int harness_case(Harness* h, NativeFn native_fn, u32 entry, const char* name, unsigned index,
++                        const CPUState* start, const PipeCase* pipe, bool must_decline, bool with_journal,
++                        bool with_aliases, bool flush) {
++    copy_regions(h->before, h->native_ram);
++    set_test_pipe(pipe->mode);
++    if (pipe->mode == PIPE_BATCH)
++        prefill_test_pipe(pipe->prefill);
++    else
++        bw_gather_pipe_length = 0;
++    u8 pipe_before[BW_GATHER_PIPE_BATCH + 8u];
++    memcpy(pipe_before, bw_gather_pipe_buffer, sizeof pipe_before);
++    const u32 length_before = bw_gather_pipe_length;
++    log_native.length = 0;
++    log_target = &log_native;
++    CPUState native = *start;
++    const CPUState untouched = native;
++    host_fp_mode(flush);
++    if (with_journal)
++        g_mem_write_journal = journal;
++    if (with_aliases)
++        g_ppc_guest_aliases_overlap_mem1 = true;
++    const unsigned mxcsr_before=_mm_getcsr();
++    const int accepted = native_fn(&native, entry);
++    const unsigned mxcsr_after=_mm_getcsr();
++    if(((mxcsr_before^mxcsr_after)&~0x3Fu)!=0u || (!accepted && mxcsr_before!=mxcsr_after)) {
++        fprintf(stderr,"case %u (%s): SSE environment changed on decline/control path\n",index,name);exit(1);
++    }
++    g_mem_write_journal = NULL;
++    g_ppc_guest_aliases_overlap_mem1 = false;
++    host_fp_mode(false);
++    if (!accepted) {
++        if (memcmp(&native, &untouched, sizeof native) != 0 || !same_regions(h->before, h->native_ram) ||
++            log_native.length != 0u || bw_gather_pipe_length != length_before ||
++            memcmp(pipe_before, bw_gather_pipe_buffer, sizeof pipe_before) != 0) {
++            fprintf(stderr, "case %u (%s): declined but changed state\n", index, name);
++            report_cpu(&native, &untouched);
++            exit(1);
++        }
++        return 0;
++    }
++    if (must_decline || pipe->mode != PIPE_BATCH) {
++        fprintf(stderr, "case %u (%s): ran where it must decline\n", index, name);
++        exit(1);
++    }
++    if (pipe->mode == PIPE_BATCH && log_native.length != 0u)
++        s_flushed_inside++;
++    bw_gather_pipe_flush();
++    host_fp_mode(flush);
++    const CPUState reference = harness_translate(h, start, entry);
++    host_fp_mode(false);
++    if (s_unexpected_service != 0u || (reference.pc & ~3u) != RETURN_ADDRESS ||
++        memcmp(&native, &reference, sizeof native) != 0 || !same_regions(h->native_ram, h->reference_ram)) {
++        fprintf(stderr, "case %u (%s, seed %08X): mismatch (service asked %u times, last at %08X; pc %08X)\n", index,
++                name, seed, s_unexpected_service, s_unexpected_at, reference.pc);
++        report_cpu(&native, &reference);
++        report_ram(h->native_ram, h->reference_ram);
++        exit(1);
++    }
++    static PipeLog native_log;
++    copy_log(&native_log, &log_native);
++    pipe_model(pipe->mode, pipe->prefill);
++    if (!same_logs(&native_log, &log_model)) {
++        fprintf(stderr, "case %u (%s, seed %08X, mode %u, prefill %u): the pipe differs (%u translation stores)\n",
++                index, name, seed, pipe->mode, pipe->prefill, log_words(&log_module));
++        report_logs(&native_log, &log_model);
++        exit(1);
++    }
++#ifdef NATIVE5_HOOKED
++    hooked_case(h, entry, name, index, start, &reference, pipe, flush, false);
++#endif
++    return 1;
++}
++
++#endif
+--- /dev/null
++++ b/tests/performance_native_gx/native_gx_test.c
+@@ -0,0 +1,730 @@
++/* cmake/composite/native_gx.c (the fifth set: the GX SDK's FIFO writers)
++ * against the translations it stands in for.
++ *
++ * Build and run from the worktree root (x64; the Visual Studio environment):
++ *
++ *   clang -O2 -march=x86-64-v3 -ffp-contract=off -Icmake/composite -Itests
++ *     -IE:\Github\Wind-Waker-Recomp\ref\recompcore\GXRuntime\include
++ *     -IE:\Github\Wind-Waker-Recomp\ref\recompcore\Source\Core\Core\PowerPC\StaticRecomp
++ *     tests/native_gx_test.c cmake/composite/native_gx.c cmake/composite/direct_calls.c
++ *     cmake/composite/gather_pipe.c
++ *     E:\Github\Wind-Waker-Recomp\build\windows\app\gxruntime_build\gxruntime.lib -o native_gx_test.exe
++ *   native_gx_test MODULE.dll [CASES_PER_FUNCTION=60000] [BENCH_CALLS=1000000] [NAME_PREFIX,...]
++ *
++ * The hooked build (-DNATIVE5_HOOKED=1, with the hooked chunks: the recipe
++ * is in native_gx_hooked.h) also runs every case the native runs through the
++ * hooked chunks from the function's entry, natives on and off.
++ *
++ * MODULE.dll is a Windows game module (gGZLE01_recomp.dll); the test reads it
++ * and writes nothing but its own memory. For each function: random registers,
++ * flags, FPSCR, reservation (sometimes on a granule the function stores to)
++ * and cycle state; __GXData, the texture objects, the colours, the matrices,
++ * the small-data areas, the current GD list and the table GXSetTevOrder reads
++ * filled with random bytes, with the fields that choose paths biased toward
++ * the ones play takes (the dirty state clear or set, the region callbacks the
++ * SDK's own, the first word nonzero, the GD list with room, the fog's
++ * constants and a scene's fog distances) and sometimes not; pointers in RAM, sometimes not
++ * (unaligned, a mirror, the hardware, past MEM1); the turn's budget spent or
++ * not; deadlines near and inside the work; a write journal, aliases over
++ * MEM1, an exception pending; the host busy (the module then asks its edge
++ * service at every boundary it crosses, so a native that ran across one fails
++ * the comparison), the edge filter off and a boundary watched (for
++ * GXLoadTexObj, which always crosses one: it must decline); and the gather
++ * pipe in each of its host modes (native5_harness.h). Every byte of the CPU
++ * state, of the writable pages and of what the pipe hands the host must
++ * match - or, where the native declines, nothing may have changed. */
++#include "native_gx.h"
++#include "native5_harness.h"
++#include "native_entries.h"
++
++#define STACK 0x80F00000u /* 0x2000: the frames */
++#define SDA2 0x80F10000u  /* 0x8000: r2's small data (the __GXData pointer at r2 - 12848) */
++#define R2 (SDA2 + 0x4000u)
++#define GXD 0x80F20000u   /* 0x4000: __GXData (and what indices past its tables reach) */
++#define SDA 0x80F2C000u   /* 0x8000: r13's small data (GXLoadTexObjPreLoaded's register tables, the GD list) */
++#define R13 (SDA + 0x8000u)
++#define OBJ 0x80F38000u   /* 0x2000: texture objects, colours, matrices */
++#define TABLE 0x803A1000u /* 0x2000: GXSetTevOrder's channel table (0x803A1E80) */
++#define CONSTS 0x80370000u /* 0x2000: __cvt_fp2unsigned's constants (0x80370FC8) */
++#define GDL (OBJ + 0x1F00u) /* the current display list (GDLObj: start, length, ptr, top) */
++
++static const Region k_regions[] = {
++    {STACK, 0x2000u}, {SDA2, 0x8000u}, {GXD, 0x4000u}, {SDA, 0x8000u}, {OBJ, 0x2000u}, {TABLE, 0x2000u}, {CONSTS, 0x2000u},
++};
++
++typedef struct Native {
++    u32 entry;
++    const char* name;
++    s64 shortest;    /* cycles on the shortest path */
++    bool boundaries; /* every path crosses a boundary between chunks */
++} Native;
++
++static const Native k_natives[] = {
++    {BLUEWAKE_GX_LOAD_POS_MTX_IMM, "GXLoadPosMtxImm", 20, false},
++    {BLUEWAKE_GX_LOAD_NRM_MTX_IMM, "GXLoadNrmMtxImm", 22, false},
++    {BLUEWAKE_GX_SET_TEV_COLOR, "GXSetTevColor", 29, false},
++    {BLUEWAKE_GX_SET_TEV_COLOR_S10, "GXSetTevColorS10", 29, false},
++    {BLUEWAKE_GX_SET_TEV_KCOLOR, "GXSetTevKColor", 29, false},
++    {BLUEWAKE_GX_SET_ARRAY, "GXSetArray", 24, false},
++    {BLUEWAKE_GX_SET_TEV_ORDER, "GXSetTevOrder", 50, false},
++    {BLUEWAKE_GX_CALL_DISPLAY_LIST, "GXCallDisplayList", 27, false},
++    {BLUEWAKE_GX_BEGIN, "GXBegin", 29, false},
++    {BLUEWAKE_GX_LOAD_TEX_OBJ_PRELOADED, "GXLoadTexObjPreLoaded", 89, false},
++    {BLUEWAKE_GX_LOAD_TEX_OBJ, "GXLoadTexObj", 120, true},
++    {BLUEWAKE_GX_SET_SU_TEX_REGS, "__GXSetSUTexRegs", 34, false},
++    {BLUEWAKE_GX_SET_VAT, "__GXSetVAT", 12, false},
++    {BLUEWAKE_GX_SET_MATRIX_INDEX, "__GXSetMatrixIndex", 19, false},
++    {0x80325CD4u, "__GXUpdateBPMask", 9, false},
++    {0x803233B0u, "__GXSetGenMode", 9, false},
++    {0x80321958u, "__GXSetVCD", 17, true},
++    {0x803214B0u, "__GXXfVtxSpecs", 10, false},
++    {0x803219ACu, "__GXCalculateVLim", 10, false},
++    {0x80322604u, "GXSetTexCoordGen2", 20, false},
++    {0x803228D4u, "GXSetNumTexGens", 10, false},
++    {0x80324390u, "GXSetChanAmbColor", 6, false},
++    {0x80324484u, "GXSetChanMatColor", 6, false},
++    {0x80324578u, "GXSetNumChans", 10, false},
++    {0x803245BCu, "GXSetChanCtrl", 20, false},
++    {0x80326FD8u, "GXSetCurrentMtx", 10, false},
++    {0x803265A8u, "GXSetFog", 30, false},
++    {0x80326758u, "GXSetFogRangeAdj", 10, false},
++    {0x80324B68u, "GXInitTexObjLOD", 30, false},
++    {0x80325810u, "GXSetIndTexMtx", 30, false},
++    {0x802D85F8u, "J3DGDSetFog", 30, true},
++    {0x802D80D0u, "J3DGDSetTevOrder", 30, true},
++    {0x802AFDDCu, "GFSetTevColor", 20, false},
++    {0x802AFE38u, "GFSetTevColorS10", 20, false},
++    {0x802AFBD4u, "GFSetFog", 30, true},
++};
++#define NATIVE_COUNT (sizeof k_natives / sizeof k_natives[0])
++
++#include "native_gx_leaders.h"
++
++/* The jump tables (in the game's .data), filled with the function's own
++ * block leaders mostly: {table, entries, the leaders}. */
++typedef struct JumpTable {
++    u32 entry, table, count;
++    u32 after; /* the cases follow the bctr (none loops back before it) */
++    const u32* leaders;
++    u32 leader_count;
++} JumpTable;
++#define LEADERS(x) x, (u32)(sizeof x / sizeof x[0])
++static const JumpTable k_jump_tables[] = {
++    {0x80322604u, 0x803A1A60u, 21u, 0x80322638u, LEADERS(k_leaders_80322604)}, /* GXSetTexCoordGen2: src */
++    {0x80322604u, 0x803A1A44u, 7u, 0x803227C4u, LEADERS(k_leaders_80322604)},  /* and dst */
++};
++
++/* A case of a jump table: one of the leaders after its bctr. */
++static u32 jump_case(const JumpTable* j) {
++    for (;;) {
++        const u32 at = j->leaders[below(j->leader_count)];
++        if (at > j->after && at - j->entry < 0x1000u)
++            return at;
++    }
++}
++
++#ifdef NATIVE5_HOOKED
++#include "native_gx_hooked.h"
++#endif
++
++typedef struct Case {
++    CPUState cpu;
++    PipeCase pipe;
++    bool must_decline, journal, aliases, flush, positive_texture;
++} Case;
++
++static void fill(u8* ram, u32 start, u32 bytes) {
++    for (u32 i = 0; i < bytes; i += 4u)
++        put32(ram, start + i, next());
++}
++
++/* A pointer: in the area mostly; sometimes unaligned, a mirror, the
++ * hardware, across or past MEM1's end, or anything but MEM1 (whose pages
++ * outside the test's areas are read-only: a store there would fault). */
++static u32 pointer(u32 area, u32 span, u32 align) {
++    const u32 at = area + (below(span) & ~(align - 1u));
++    switch (below(64u)) {
++    case 0: return at + 1u + below(3u);
++    case 1: return at | 0x40000000u;
++    case 2: return 0xCC000000u + 4u * below(64u);
++    case 3: return GC_RAM_BASE + GC_MAIN_RAM_SIZE - 2u + 4u * below(4u);
++    case 4: {
++        const u32 any = next();
++        return any - GC_RAM_BASE < 0x02000000u ? any ^ 0x10000000u : any;
++    }
++    default: return at;
++    }
++}
++
++/* A pointer that is not plain MEM1: a mirror, the hardware, past MEM1, or
++ * anything else outside it. */
++static u32 bad_pointer(u32 area) {
++    switch (below(4u)) {
++    case 0: return area | 0x40000000u;
++    case 1: return 0xCC000000u + 4u * below(64u);
++    case 2: return GC_RAM_BASE + GC_MAIN_RAM_SIZE + 4u * below(64u);
++    default: {
++        const u32 any = next();
++        return any - GC_RAM_BASE < 0x02000000u ? any ^ 0x10000000u : any;
++    }
++    }
++}
++
++static Case build(u8* ram, unsigned which, unsigned scenario) {
++    Case k;
++    memset(&k, 0, sizeof k);
++    for (unsigned r = 0; r < sizeof k_regions / sizeof k_regions[0]; ++r)
++        fill(ram, k_regions[r].start, k_regions[r].bytes);
++    /* r2's small data: the constants the FP code loads, singles mostly. */
++    for (u32 i = 0; i < 0x8000u; i += 4u)
++        if (below(8u) != 0u)
++            put32(ram, SDA2 + i, any_single(2u));
++    CPUState* c = &k.cpu;
++    random_cpu(c, ram);
++    const Native* n = &k_natives[which];
++    c->pc = n->entry;
++    c->gpr[1] = STACK + 0x1000u + 8u * below(256u);
++    c->gpr[2] = below(128u) == 0u ? (0x90000000u | (next() & 0x0FFFFFFFu)) : R2;
++    c->gpr[13] = below(128u) == 0u ? (0x90000000u | (next() & 0x0FFFFFFFu)) : R13;
++    /* __GXData: its pointer, the first word (vNumNot, bpSentNot: zero sends a
++     * flush primitive first), the dirty state and the region callbacks. */
++    put32(ram, R2 - 12848u, below(64u) == 0u ? (below(2u) ? bad_pointer(GXD) : GXD + 4u * below(0x100u)) : GXD);
++    if (below(32u) == 0u)
++        put32(ram, GXD, 0u);
++    /* GXCallDisplayList and GXBegin decline where the dirty state needs a call. */
++    const u32 clean = n->entry == BLUEWAKE_GX_CALL_DISPLAY_LIST || n->entry == BLUEWAKE_GX_BEGIN ? 8u : 2u;
++    const u32 dirty = below(clean) != 0u ? 0u : below(3u) == 0u ? next() : (next() & 0x3Fu);
++    put32(ram, GXD + 1268u, dirty);
++    /* The TEV stages' texture maps (indices into __GXData's tables): small,
++     * or 0xFF (none), the 0x100 flag sometimes; sometimes anything. */
++    for (u32 i = 0; i < 16u; ++i)
++        if (below(64u) != 0u)
++            put32(ram, GXD + 1180u + 4u * i, (below(4u) == 0u ? 0xFFu : below(8u)) | (below(4u) == 0u ? 0x100u : 0u));
++    put32(ram, GXD + 1040u, below(32u) == 0u ? next() : 0x8031FA48u); /* __GXDefaultTexRegionCallback */
++    put32(ram, GXD + 1044u, below(32u) == 0u ? next() : 0x8031FAC4u); /* __GXDefaultTlutRegionCallback */
++    /* Arguments: small values mostly (enumerations, counts, flags). */
++    for (unsigned r = 3; r <= 10; ++r)
++        c->gpr[r] = below(4u) == 0u ? below(256u) : below(4u) == 0u ? 0xFFu : below(16u);
++    for (unsigned t = 0; t < sizeof k_jump_tables / sizeof k_jump_tables[0]; ++t) {
++        const JumpTable* j = &k_jump_tables[t];
++        if (j->entry == n->entry)
++            for (u32 i = 0; i < j->count; ++i)
++                put32(ram, j->table + 4u * i,
++                      below(16u) == 0u ? next() : jump_case(j));
++    }
++    /* FP arguments: singles mostly (the inline paths take them), sometimes
++     * any double. */
++    for (unsigned r = 1; r <= 8; ++r)
++        if (below(16u) != 0u)
++            c->fpr[r] = f64_value(convert_to_double(any_single(2u)));
++    /* The fog functions' constants (GXSetFog, J3DGDSetFog, GFSetFog: the
++     * SDK's 0.0f, 0.5f, 1.0, 2.0f, 0.5, 8388638.0f and the int conversion's
++     * magic double, each set's at its own place in r2's data); sometimes not. */
++    if (below(16u) != 0u) {
++        static const s32 bases[] = {-12696, -13404, -14056};
++        for (unsigned b = 0; b < 3u; ++b) {
++            const u32 at = R2 + (u32)bases[b];
++            put32(ram, at, 0x00000000u);
++            put32(ram, at + 4u, 0x3F000000u);
++            put32(ram, at + 8u, 0x3FF00000u);
++            put32(ram, at + 12u, 0u);
++            put32(ram, at + 16u, 0x40000000u);
++            put32(ram, at + 24u, 0x3FE00000u);
++            put32(ram, at + 28u, 0u);
++            put32(ram, at + 32u, 0x4B00001Eu);
++            put32(ram, at + 40u, 0x43300000u);
++            put32(ram, at + 44u, 0x80000000u);
++        }
++    }
++    /* __cvt_fp2unsigned's constants: 0, 2^32, 2^31 (sometimes not). */
++    if (below(16u) != 0u) {
++        put32(ram, 0x80370FC8u, 0u);
++        put32(ram, 0x80370FCCu, 0u);
++        put32(ram, 0x80370FD0u, 0x41F00000u);
++        put32(ram, 0x80370FD4u, 0u);
++        put32(ram, 0x80370FD8u, 0x41E00000u);
++        put32(ram, 0x80370FDCu, 0u);
++    }
++    /* The current GD list (r13 - 25656): its write pointer in OBJ with room
++     * mostly, sometimes near or past its top (GDOverflowed). */
++    put32(ram, R13 - 25656u, below(64u) == 0u ? bad_pointer(GDL) : GDL);
++    {
++        const u32 start = OBJ + 0x1000u + below(0x400u);
++        put32(ram, GDL, start);
++        put32(ram, GDL + 4u, 0x400u);
++        put32(ram, GDL + 8u, start);
++        put32(ram, GDL + 12u, below(16u) == 0u ? start + below(64u) : start + 0x400u);
++    }
++    switch (n->entry) {
++    case BLUEWAKE_GX_LOAD_POS_MTX_IMM:
++    case BLUEWAKE_GX_LOAD_NRM_MTX_IMM:
++        c->gpr[3] = pointer(OBJ, 0x1F00u, 4u);
++        c->gpr[4] = below(4u) == 0u ? next() : 3u * below(10u);
++        /* Zeros, denormals (which the paired store flushes), infinities, NaNs. */
++        if (c->gpr[3] - OBJ < 0x1F00u)
++            for (u32 i = 0; i < 12u; ++i)
++                if (below(4u) == 0u)
++                    put32(ram, (c->gpr[3] & ~3u) + 4u * i, any_single(24u));
++        break;
++    case BLUEWAKE_GX_SET_TEV_COLOR:
++    case BLUEWAKE_GX_SET_TEV_COLOR_S10:
++    case BLUEWAKE_GX_SET_TEV_KCOLOR:
++        c->gpr[3] = below(8u) == 0u ? below(256u) : below(4u);
++        c->gpr[4] = pointer(OBJ, 0x1F00u, below(2u) ? 4u : 1u);
++        break;
++    case BLUEWAKE_GX_SET_ARRAY:
++        c->gpr[3] = below(8u) == 0u ? below(256u) : 9u + below(17u);
++        c->gpr[5] = below(4u) == 0u ? next() : below(64u);
++        break;
++    case BLUEWAKE_GX_SET_TEV_ORDER:
++        c->gpr[3] = below(8u) == 0u ? below(256u) : below(16u);
++        c->gpr[4] = below(4u) == 0u ? 0xFFu : below(4u) == 0u ? next() : below(8u);
++        c->gpr[5] = below(4u) == 0u ? 0xFFu : below(4u) == 0u ? (0x100u | below(8u)) : below(8u);
++        c->gpr[6] = below(4u) == 0u ? 0xFFu : below(16u) == 0u ? next() : below(9u);
++        break;
++    case BLUEWAKE_GX_BEGIN:
++        c->gpr[3] = below(8u) == 0u ? below(256u) : 0x80u + 8u * below(8u);
++        c->gpr[4] = below(8u) == 0u ? below(256u) : below(8u);
++        c->gpr[5] = next() & 0xFFFFu;
++        break;
++    case BLUEWAKE_GX_LOAD_TEX_OBJ_PRELOADED:
++        c->gpr[3] = pointer(OBJ, 0x1000u, 4u);
++        c->gpr[4] = pointer(OBJ + 0x1000u, 0x0F00u, 4u);
++        c->gpr[5] = below(8u) == 0u ? below(256u) : below(8u);
++        break;
++    case BLUEWAKE_GX_LOAD_TEX_OBJ:
++        c->gpr[3] = pointer(OBJ, 0x1000u, 4u);
++        c->gpr[4] = below(8u) == 0u ? below(256u) : below(8u);
++        break;
++    case BLUEWAKE_GX_SET_MATRIX_INDEX:
++        c->gpr[3] = below(8u) == 0u ? below(256u) : below(12u);
++        break;
++    case 0x80322604u: /* GXSetTexCoordGen2(dst, func, src, mtx, normalize, postmtx) */
++        c->gpr[3] = below(8u) == 0u ? below(256u) : below(9u);
++        c->gpr[4] = below(8u) == 0u ? below(256u) : below(12u);
++        c->gpr[5] = below(8u) == 0u ? below(256u) : below(22u);
++        c->gpr[6] = below(4u) == 0u ? 60u : 30u + 3u * below(12u);
++        c->gpr[8] = below(4u) == 0u ? 125u : 64u + 3u * below(21u);
++        break;
++    case 0x80324390u: /* GXSetChanAmbColor(chan, color) */
++    case 0x80324484u: /* GXSetChanMatColor */
++        c->gpr[3] = below(8u) == 0u ? below(256u) : below(7u);
++        c->gpr[4] = pointer(OBJ, 0x1F00u, below(2u) ? 4u : 1u);
++        break;
++    case 0x80324B68u: /* GXInitTexObjLOD(obj, ...) */
++        c->gpr[3] = pointer(OBJ, 0x1F00u, 4u);
++        break;
++    case 0x803265A8u: /* GXSetFog(type, startz, endz, nearz, farz, color) */
++    case 0x802D85F8u: /* J3DGDSetFog */
++    case 0x802AFBD4u: /* GFSetFog */
++        /* A scene's fog mostly: start before end, near before far. */
++        if (below(4u) != 0u) {
++            const f32 start = (f32)(next() % 100000u) * 0.01f, end = start + 1.0f + (f32)(next() % 500000u) * 0.01f;
++            const f32 nearz = 0.1f + (f32)(next() % 10000u) * 0.01f, farz = nearz + 10.0f + (f32)(next() % 5000000u) * 0.01f;
++            c->fpr[1] = start;
++            c->fpr[2] = end;
++            c->fpr[3] = nearz;
++            c->fpr[4] = farz;
++        }
++        /* fall through: the colour */
++    case 0x802AFDDCu: /* GFSetTevColor(reg, color) */
++    case 0x802AFE38u: /* GFSetTevColorS10 */
++        c->gpr[4] = pointer(OBJ, 0x1F00u, below(2u) ? 4u : 1u);
++        break;
++    case 0x80326758u: /* GXSetFogRangeAdj(enable, center, table) */
++        c->gpr[5] = pointer(OBJ, 0x1F00u, 2u);
++        break;
++    case 0x80325810u: /* GXSetIndTexMtx(id, offset matrix, scale) */
++        c->gpr[4] = pointer(OBJ, 0xF00u, 4u);
++        if (c->gpr[4] - OBJ < 0xF00u)
++            for (u32 i = 0; i < 6u; ++i)
++                put32(ram, (c->gpr[4] & ~3u) + 4u * i, any_single(2u));
++        break;
++    default:
++        break;
++    }
++    /* Texture objects: the TLUT name small mostly, so the callback's region is in __GXData. */
++    if (n->entry == BLUEWAKE_GX_LOAD_TEX_OBJ || n->entry == BLUEWAKE_GX_LOAD_TEX_OBJ_PRELOADED) {
++        const u32 obj = c->gpr[3] & ~3u;
++        if (obj >= OBJ && obj + 32u <= OBJ + 0x2000u) {
++            put32(ram, obj + 24u, below(16u) == 0u ? (below(2u) ? next() : 20u + below(4u)) : below(20u));
++            if (below(2u) != 0u)
++                put8(ram, obj + 31u, (u8)(next() & ~2u)); /* the TLUT path */
++        }
++    }
++    /* A reservation, sometimes on a granule the function stores to. */
++    if (c->reserve_valid) {
++        switch (below(4u)) {
++        case 0: c->reserve_addr = c->gpr[1] - 8u * below(8u); break;
++        case 1: c->reserve_addr = GXD + 4u * below(0x140u); break;
++        case 2: c->reserve_addr = OBJ + 4u * below(0x800u); break;
++        default: break;
++        }
++        if (below(4u) == 0u)
++            c->reserve_addr |= 0x40000000u;
++    }
++    clock_edges(c, scenario, n->shortest);
++    k.pipe = random_pipe(scenario);
++    k.journal = scenario % 41u == 7u;
++    k.aliases = scenario % 43u == 8u;
++    k.flush = below(4u) == 0u;
++    k.must_decline = k.journal || k.aliases || c->exception != 0u || k.pipe.mode != PIPE_BATCH;
++    if(scenario>=48000u && scenario<60000u &&
++       (n->entry==BLUEWAKE_GX_LOAD_TEX_OBJ || n->entry==BLUEWAKE_GX_LOAD_TEX_OBJ_PRELOADED)) {
++        /* Explicit ordinary positives complement48k unchanged random cases.
++         * Vary all8 maps and all20 valid TLUT IDs; both texture paths retain
++         * random object/register contents outside their validated fields. */
++        c->gpr[1]=STACK+0x1000u;c->gpr[2]=R2;c->gpr[13]=R13;
++        c->gpr[3]=OBJ;c->gpr[4]=n->entry==BLUEWAKE_GX_LOAD_TEX_OBJ ? scenario%8u : OBJ+0x1000u;
++        c->gpr[5]=scenario%8u;c->cycle_budget=100000;c->downcount=0;
++        c->cycle_deadline_budget=0;c->exception=0;c->msr|=PPC_MSR_FP;
++        put32(ram,R2-12848u,GXD);put32(ram,GXD+1040u,0x8031FA48u);
++        put32(ram,GXD+1044u,0x8031FAC4u);put32(ram,OBJ+24u,scenario%20u);
++        put8(ram,OBJ+31u,(u8)((scenario&1u) ? 2u : 0u));
++        k.pipe.mode=PIPE_BATCH;k.pipe.prefill=0;k.journal=k.aliases=k.flush=k.must_decline=false;
++        k.positive_texture=true;
++    }
++    return k;
++}
++
++/* Host scenarios: busy (the module asks its edge service at every boundary
++ * too), the filter off or a boundary watched (the natives' own view only). */
++enum { HOST_QUIET, HOST_BUSY, HOST_FILTER_OFF, HOST_WATCHED };
++
++static unsigned host_scenario(unsigned scenario) {
++    switch (scenario % 37u) {
++    case 5: return HOST_BUSY;
++    case 11: return HOST_FILTER_OFF;
++    case 17: return HOST_WATCHED;
++    default: return HOST_QUIET;
++    }
++}
++
++static void set_host(unsigned host) {
++    reset_host();
++    if (host == HOST_BUSY)
++        s_sources_dirty = true;
++    if (host == HOST_FILTER_OFF)
++        bw_edge_filter_enabled = false;
++    if (host == HOST_WATCHED) {
++        watch(0x8031FA48u); /* GXLoadTexObj's region callback */
++        watch(0x80324F14u);
++        watch(0x8031FAC4u); /* PreLoaded's TLUT callback */
++        watch(0x80325CD4u); /* GXBegin's __GXUpdateBPMask */
++        watch(0x803214B0u); /* and __GXXfVtxSpecs */
++    }
++}
++
++static bool gate_allow=true;
++static unsigned gate_queries;
++static u32 gate_refuse_at, gate_change_alias_at;
++static u32 gate_reenter_at;
++static unsigned gate_reentry_refusals;
++static bool gate_probe_active;
++static CPUState gate_probe_initial;
++static unsigned gate_probe_seen;
++static const u32 gate_probe_pcs[4]={0x80328F30u,0x802D80E4u,0x80328F7Cu,0x802D824Cu};
++static s64 gate_probe_previous_count;
++static bool gate_callback(void* user,const CPUState* cpu,u32 address) {
++    (void)user;++gate_queries;
++    if(gate_probe_active) {
++        for(unsigned i=0;i<4;++i) if(address==gate_probe_pcs[i]) {
++            if(i!=gate_probe_seen || cpu->pc!=address ||
++               cpu->gpr[1]!=gate_probe_initial.gpr[1]-48u ||
++               cpu->gpr[11]!=gate_probe_initial.gpr[1]) abort();
++            if(i==0 && (cpu->downcount!=-5 || cpu->lr!=0x802D80E4u)) abort();
++            if(i==1 && (cpu->downcount!=gate_probe_previous_count-8 || cpu->cycle_observation_suffix!=0)) abort();
++            if(i==2 && cpu->lr!=0x802D824Cu) abort();
++            if(i==3 && (cpu->downcount!=gate_probe_previous_count-8 || cpu->cycle_observation_suffix!=0)) abort();
++            if(i<2 || i==3) for(unsigned r=25;r<32;++r)
++                if(cpu->gpr[r]!=gate_probe_initial.gpr[r]) abort();
++            gate_probe_previous_count=cpu->downcount;++gate_probe_seen;
++        }
++    }
++    if(address==gate_reenter_at) {
++        if(bluewake_native_gx((CPUState*)(uintptr_t)1,BLUEWAKE_GX_SET_ARRAY)) abort();
++        ++gate_reentry_refusals;
++    }
++    if(address==gate_change_alias_at) ++g_ppc_guest_alias_generation;
++    return gate_allow && address!=gate_refuse_at;
++}
++static int native_gx(CPUState* cpu,u32 address) {
++    if(!bluewake_composite_native_entries_v1(true,gate_callback,NULL)) abort();
++    return bluewake_native_entries_try(cpu,address);
++}
++static void admission_checks(void) {
++    gate_queries=0;
++    if(bluewake_composite_native_entries_v1(false,gate_callback,NULL) ||
++       bluewake_native_entries_try((CPUState*)(uintptr_t)1,BLUEWAKE_GX_SET_ARRAY) || gate_queries) abort();
++    if(bluewake_composite_native_entries_v1(true,NULL,NULL) ||
++       bluewake_native_entries_try((CPUState*)(uintptr_t)1,BLUEWAKE_GX_SET_ARRAY) || gate_queries) abort();
++    gate_allow=false;
++    if(!bluewake_composite_native_entries_v1(true,gate_callback,NULL) ||
++       bluewake_native_entries_try((CPUState*)(uintptr_t)1,BLUEWAKE_GX_SET_ARRAY) || gate_queries!=1) abort();
++    gate_allow=true;
++}
++static void targeted_checks(Harness* h) {
++    CPUState c;memset(&c,0,sizeof c);c.ram=h->native_ram;c.ram_size=GC_MAIN_RAM_SIZE;
++    c.gpr[1]=STACK+0x1000u;c.gpr[2]=R2;c.gpr[13]=R13;
++    c.gpr[3]=0;c.gpr[4]=OBJ;c.gpr[5]=16;
++    c.pc=BLUEWAKE_GX_SET_ARRAY;c.lr=RETURN_ADDRESS;c.cycle_budget=100000;
++    put32(c.ram,R2-12848u,GXD);reset_host();
++    PipeCase pipe={PIPE_BATCH,0};
++    if(!harness_case(h,native_gx,c.pc,"GXSetArray finite control",0,&c,&pipe,false,false,false,false)) abort();
++    static const s64 budgets[8]={0,-1,INT64_MIN,INT64_MAX,(s64)INT32_MAX+1,1000,1000,1000};
++    static const s64 counts[8]={0,0,0,-INT64_MAX+1,-(s64)INT32_MAX,INT64_MIN,1,-1000};
++    for(unsigned i=0;i<8;++i) {
++        CPUState p=c;p.cycle_budget=budgets[i];p.downcount=counts[i];
++        if(harness_case(h,native_gx,p.pc,"extreme/spent counter refusal",i,&p,&pipe,true,false,false,false)) abort();
++    }
++    pipe.prefill=BW_GATHER_PIPE_BATCH-1u;
++    if(harness_case(h,native_gx,c.pc,"partial RAM store before FIFO-capacity refusal",0,&c,&pipe,true,false,false,false)) abort();
++    pipe.prefill=0;
++    u8 alias[32];memset(alias,0x5A,sizeof alias);
++    if(!ppc_guest_alias_add_shared(0xCC008000u,sizeof alias,alias)) abort();
++    if(harness_case(h,native_gx,c.pc,"registered pipe alias refusal",0,&c,&pipe,true,false,false,false)) abort();
++    for(unsigned i=0;i<sizeof alias;++i) if(alias[i]!=0x5A) abort();
++    if(!ppc_guest_alias_remove(0xCC008000u,sizeof alias)) abort();
++    CPUState p=c;p.ram=(u8*)&p;p.ram_size=sizeof p;CPUState before=p;
++    if(native_gx(&p,p.pc)||memcmp(&p,&before,sizeof p)) abort();
++    const unsigned old_mxcsr=_mm_getcsr();_mm_setcsr(old_mxcsr&~0x80u);
++    CPUState unmasked=c,unmasked_before=c;copy_regions(h->before,c.ram);
++    if(native_gx(&unmasked,c.pc) || memcmp(&unmasked,&unmasked_before,sizeof unmasked) ||
++       !same_regions(h->before,c.ram)) abort();
++    if(_mm_getcsr()!=(old_mxcsr&~0x80u)) abort();_mm_setcsr(old_mxcsr);
++    CPUState gd=c;gd.pc=0x802D80D0u;gd.gpr[3]=0;gd.gpr[4]=0;gd.gpr[5]=1;
++    gd.gpr[6]=0;gd.gpr[7]=1;gd.gpr[8]=0;gd.gpr[9]=0;
++    for(unsigned r=25;r<32;++r)gd.gpr[r]=0xA0000000u+r;
++    put32(gd.ram,R13-25656u,GDL);
++    put32(gd.ram,GDL,OBJ+0x1000u);put32(gd.ram,GDL+4u,0x400u);
++    put32(gd.ram,GDL+8u,OBJ+0x1000u);put32(gd.ram,GDL+12u,OBJ+0x1400u);
++    gate_probe_initial=gd;gate_probe_seen=0;gate_probe_active=true;
++    if(!harness_case(h,native_gx,gd.pc,"original save/restore finite control",0,&gd,&pipe,false,false,false,false) || gate_probe_seen!=4) abort();
++    gate_probe_active=false;
++    gate_reentry_refusals=0;gate_reenter_at=gate_probe_pcs[0];
++    if(!harness_case(h,native_gx,gd.pc,"reentry rejects inaccessible CPU before fields",0,&gd,&pipe,false,false,false,false) || gate_reentry_refusals!=1) abort();
++    gate_reenter_at=0;
++    for(unsigned i=0;i<4;++i) {
++        gate_refuse_at=gate_probe_pcs[i];
++        if(harness_case(h,native_gx,gd.pc,"fresh save/restore boundary refusal",i,&gd,&pipe,true,false,false,false)) abort();
++    }
++    gate_refuse_at=0;
++    for(unsigned i=0;i<4;++i) {
++        reset_host();watch(gate_probe_pcs[i]);
++        if(harness_case(h,native_gx,gd.pc,"actual watched save/restore boundary refusal",i,&gd,&pipe,true,false,false,false)) abort();
++    }
++    reset_host();
++    const u32 alias_before=g_ppc_guest_alias_generation;gate_change_alias_at=gate_probe_pcs[0];
++    if(harness_case(h,native_gx,gd.pc,"changed alias generation after true query",0,&gd,&pipe,true,false,false,false)) abort();
++    gate_change_alias_at=0;g_ppc_guest_alias_generation=alias_before;
++    printf("GX guards: 3 exact finite controls (one inaccessible-CPU reentry), 8 counter refusals, partial-store rollback, pipe-alias/CPU-overlap/unmasked-SSE refusals, 4 current save/restore probes, 4 boundary predicate refusals, 4 actual watched-boundary refusals, true-query alias-change refusal\n");
++}
++
++static const char* s_only;
++static bool skip(const Native* n) {
++    if (s_only == NULL)
++        return false;
++    if (s_only[0]=='0' && s_only[1]=='x') {
++        char* end=NULL;const unsigned long selected=strtoul(s_only+2,&end,16);
++        if(end!=s_only+10 || *end!='\0') abort();
++        return n->entry!=(u32)selected;
++    }
++    for (const char* p = s_only; *p != 0;) { /* name prefixes, comma-separated */
++        const char* end = strchr(p, ',');
++        const size_t length = end != NULL ? (size_t)(end - p) : strlen(p);
++        if (length != 0u && strncmp(n->name, p, length) == 0)
++            return false;
++        p += length + (end != NULL);
++    }
++    return true;
++}
++
++/* --- The microbenchmark: ordinary inputs, the budget large. -------------- */
++
++/* The J3DGD natives write a GD list: each benchmark call starts on the case's
++ * list again (both sides), so the list never fills. */
++static u8 s_bench_gdl[16];
++static bool s_bench_gd;
++static void bench_gd_reset(u8* ram) {
++    if (s_bench_gd)
++        memcpy(ram + (GDL - GC_RAM_BASE), s_bench_gdl, sizeof s_bench_gdl);
++}
++
++static void bench(Harness* h, unsigned calls) {
++    h->set_pipe(sink_word);
++    h->set_pipe_bytes(sink_bytes);
++    bluewake_composite_set_gather_pipe(sink_word);
++    bluewake_composite_set_gather_pipe_bytes(sink_bytes);
++    reset_host();
++    u8* ram = h->native_ram;
++    for (unsigned which = 0; which < NATIVE_COUNT; ++which) {
++        const Native* n = &k_natives[which];
++        if (skip(n))
++            continue;
++        for (unsigned variant = 0; variant < 1u; ++variant) {
++            Case k;
++            unsigned tries = 0;
++            /* A case the native runs, quiet. */
++            do {
++                k = build(ram, which, 6u * (tries + 1u));
++                k.cpu.exception = 0;
++                k.cpu.downcount = 0;
++                k.cpu.cycle_budget = (s64)1 << 40;
++                k.cpu.cycle_deadline_budget = 0;
++                k.cpu.reserve_valid = false;
++                put32(ram, GXD + 1268u, variant ? 0x3Fu : 0u);
++                if (n->entry == BLUEWAKE_GX_LOAD_TEX_OBJ || n->entry == BLUEWAKE_GX_LOAD_TEX_OBJ_PRELOADED)
++                    put8(ram, (k.cpu.gpr[3] & ~3u) + 31u, 2u); /* no TLUT */
++                CPUState probe = k.cpu;
++                copy_regions(h->before, ram);
++                set_test_pipe(PIPE_BATCH);
++                bw_gather_pipe_length = 0;
++                const int ran = bluewake_native_gx(&probe, n->entry);
++                copy_regions(ram, h->before);
++                if (ran)
++                    break;
++            } while (++tries < 1000u);
++            if (tries == 1000u) {
++                printf("%08X %s: no benchmark case\n", n->entry, n->name);
++                continue;
++            }
++            const CPUState base = k.cpu;
++            s_bench_gd = n->entry - 0x802D0000u < 0x20000u;
++            memcpy(s_bench_gdl, ram + (GDL - GC_RAM_BASE), sizeof s_bench_gdl);
++            bluewake_composite_set_gather_pipe(sink_word); /* the probe set the logging pipe */
++            bluewake_composite_set_gather_pipe_bytes(sink_bytes);
++            bw_gather_pipe_length = 0;
++            copy_regions(h->before, ram);
++            double best_t = 1e30, best_n = 1e30;
++            for (unsigned round = 0; round < 5u; ++round) {
++                copy_regions(h->reference_ram, h->before);
++                CPUState* g = h->storage.cpu;
++                *g = base;
++                g->ram = h->reference_ram;
++                h->mod->on_state_loaded(g);
++                double t0 = now_ns();
++                for (unsigned i = 0; i < calls; ++i) {
++                    g->gpr[1] = base.gpr[1];
++                    memcpy(&g->gpr[3], &base.gpr[3], 4u * sizeof(u32));
++                    memcpy(&g->fpr[1], &base.fpr[1], 4u * sizeof base.fpr[0]); /* the FP arguments */
++                    g->lr = RETURN_ADDRESS;
++                    if (variant)
++                        put32(h->reference_ram, GXD + 1268u, 0x3Fu);
++                    bench_gd_reset(h->reference_ram);
++                    g->pc = n->entry;
++                    h->mod->dispatch(g, n->entry);
++                }
++                const double t = (now_ns() - t0) / calls;
++                CPUState native = base;
++                t0 = now_ns();
++                for (unsigned i = 0; i < calls; ++i) {
++                    native.gpr[1] = base.gpr[1];
++                    memcpy(&native.gpr[3], &base.gpr[3], 4u * sizeof(u32));
++                    memcpy(&native.fpr[1], &base.fpr[1], 4u * sizeof base.fpr[0]);
++                    native.lr = RETURN_ADDRESS;
++                    if (variant)
++                        put32(ram, GXD + 1268u, 0x3Fu);
++                    bench_gd_reset(ram);
++                    native.pc = n->entry;
++                    if (!bluewake_native_gx(&native, n->entry)) {
++                        printf("%08X %s: the benchmark case declined\n", n->entry, n->name);
++                        break;
++                    }
++                    bw_gather_pipe_drain();
++                }
++                const double d = (now_ns() - t0) / calls;
++                if (t < best_t)
++                    best_t = t;
++                if (d < best_n)
++                    best_n = d;
++            }
++            copy_regions(ram, h->before);
++            printf("%08X %s%s: translation %.1f ns/call through the dispatcher, native %.1f ns/call (%.2fx)\n",
++                   n->entry, n->name, variant ? " (dirty: every callee)" : "", best_t, best_n, best_t / best_n);
++#ifdef NATIVE5_HOOKED
++            hooked_bench(h, ram, n->entry, &base, calls, n->name, variant);
++#endif
++            fflush(stdout);
++        }
++    }
++}
++
++int main(int argc, char** argv) {
++    admission_checks();
++    bluewake_native_gate_enabled = 0; /* every call tried */
++    if (argc < 2) {
++        fprintf(stderr, "usage: native_gx_test MODULE.dll [CASES_PER_FUNCTION] [BENCH_CALLS]\n");
++        return 2;
++    }
++    const unsigned cases = argc > 2 ? (unsigned)strtoul(argv[2], NULL, 10) : 60000u;
++    const unsigned bench_calls = argc > 3 ? (unsigned)strtoul(argv[3], NULL, 10) : 1000000u;
++    /* A fourth argument: only the natives whose names start with one of its
++     * comma-separated prefixes. */
++    s_only = argc > 4 ? argv[4] : NULL;
++    Harness h;
++    if (!harness_load(&h, argv[1], false, k_regions, sizeof k_regions / sizeof k_regions[0]))
++        return 1;
++    targeted_checks(&h);
++    int failed = 0;
++    for (unsigned which = 0; which < NATIVE_COUNT; ++which) {
++        const Native* n = &k_natives[which];
++        if (skip(n))
++            continue;
++        unsigned ran = 0, declined = 0, positive_texture = 0;
++        s_flushed_inside = 0;
++        for (unsigned i = 0; i < cases; ++i) {
++            Case k = build(h.native_ram, which, i);
++            const unsigned host = k.positive_texture ? HOST_QUIET : host_scenario(i);
++            set_host(host);
++            const bool must = k.must_decline || (n->boundaries && (host == HOST_BUSY || host == HOST_FILTER_OFF));
++            const int r = harness_case(&h, native_gx, n->entry, n->name, i, &k.cpu, &k.pipe, must, k.journal,
++                                       k.aliases, k.flush);
++            if(k.positive_texture) {
++                if(!r) { fprintf(stderr,"explicit finite texture positive declined at%u\n",i);return 1; }
++                ++positive_texture;
++            }
++            if (r && (host == HOST_FILTER_OFF || host == HOST_WATCHED)) {
++                /* It ran with the filter off (its path must have crossed no
++                 * boundary) or with the callbacks' and callees' boundaries
++                 * watched (it must have crossed none of those). With the host
++                 * busy, the translation asks its edge service at the first
++                 * boundary it crosses. */
++                s_sources_dirty = true;
++                (void)harness_translate(&h, &k.cpu, n->entry);
++                s_sources_dirty = false;
++                if (s_unexpected_service != 0u &&
++                    (host == HOST_FILTER_OFF || !bw_edge_unwatched(s_unexpected_at))) {
++                    fprintf(stderr, "case %u (%s): ran across a boundary (%08X) with the filter off or it watched\n",
++                            i, n->name, s_unexpected_at);
++                    return 1;
++                }
++            }
++            ran += (unsigned)r;
++            declined += (unsigned)(r == 0);
++        }
++        reset_host();
++        printf("%08X %s: %u cases, %u identical (%llu handing the batch over before its bytes), "
++               "%u declined unchanged, 0 mismatches\n",
++               n->entry, n->name, cases, ran, s_flushed_inside, declined);
++        fflush(stdout);
++        if(n->entry==BLUEWAKE_GX_LOAD_TEX_OBJ || n->entry==BLUEWAKE_GX_LOAD_TEX_OBJ_PRELOADED) {
++            if(positive_texture!=12000u) { fprintf(stderr,"finite texture positive count mismatch\n");return 1; }
++            printf("Explicit finite texture variants compared: %u (48k random cases retained)\n",positive_texture);
++        }
++        if(n->entry==0x802D85F8u) {
++            if(s_resumed_save29!=ran) { fprintf(stderr,"save29 continuation count mismatch\n");return 1; }
++            printf("J3D fog genuine save29 edge returns resumed by ordinary dispatch: %llu\n",s_resumed_save29);
++        }
++        if (ran < 30000u && cases >= 60000u) {
++            printf("  fewer than 30,000 compared cases\n");
++            failed = 1;
++        }
++    }
++#ifdef NATIVE5_HOOKED
++    hooked_summary();
++#endif
++    /* Per-entry accepted/declined counts above are the fixture receipt. */
++    if (bench_calls != 0u)
++        bench(&h, bench_calls);
++    return failed;
++}
+--- /dev/null
++++ b/tests/performance_native_gx/native_gx_leaders.h
+@@ -0,0 +1,13 @@
++/* Generated by scripts/windows/native_gx_gen.py: the block leaders a native's
++ * jumps through CTR may reach, for tests/native_gx_test.c's jump tables. */
++
++static const u32 k_leaders_80322604[] = {
++    0x80322604u, 0x80322624u, 0x8032263Cu, 0x80322648u, 0x80322654u, 0x80322660u,
++    0x8032266Cu, 0x80322674u, 0x8032267Cu, 0x80322684u, 0x8032268Cu, 0x80322694u,
++    0x8032269Cu, 0x803226A4u, 0x803226ACu, 0x803226B4u, 0x803226B8u, 0x803226C0u,
++    0x803226C4u, 0x803226CCu, 0x803226D0u, 0x803226D8u, 0x803226DCu, 0x803226E0u,
++    0x803226F4u, 0x8032270Cu, 0x80322748u, 0x80322754u, 0x80322760u, 0x80322768u,
++    0x80322770u, 0x803227B0u, 0x803227C8u, 0x803227E8u, 0x80322808u, 0x80322828u,
++    0x80322848u, 0x80322860u, 0x80322880u, 0x803228A0u, 0x803228BCu, 0x803228C4u,
++    0x80327364u, 0x8032736Cu, 0x803273A4u, 0x803273D8u,
++};
+--- /dev/null
++++ b/tests/performance_native_gx/versioned_gate.c
+@@ -0,0 +1,21 @@
++#include "native_entries.h"
++#include "native_gx.h"
++#define BW_ENTRIES_EXPORT
++static BluewakeNativeEntriesReady s_ready;
++static void* s_user;
++
++BW_ENTRIES_EXPORT int bluewake_composite_native_entries_v1(
++    bool enabled, BluewakeNativeEntriesReady ready, void* user) {
++    s_ready = enabled ? ready : NULL;
++    s_user = s_ready != NULL ? user : NULL;
++    return s_ready != NULL;
++}
++
++bool bluewake_native_entries_ready(const CPUState* cpu, u32 address) {
++    return cpu != NULL && s_ready != NULL && s_ready(s_user, cpu, address);
++}
++
++int bluewake_native_entries_try(CPUState* cpu,u32 address) {
++    if(!bluewake_native_entries_ready(cpu,address)) return 0;
++    return bluewake_native_gx(cpu,address);
++}
+--- /dev/null
++++ b/tests/performance_native_gx/certifier_test.py
+@@ -0,0 +1,46 @@
++"""Exercise a patched certifier using an existing original translation tree.
++
++Only hashes/fixture outputs are distributable; generated game source stays local.
++"""
++from pathlib import Path
++import argparse, contextlib, hashlib, importlib.util, io, json, shutil, sys
++
++parser=argparse.ArgumentParser()
++parser.add_argument('project',type=Path)
++parser.add_argument('translations',type=Path)
++parser.add_argument('output',type=Path)
++parser.add_argument('entries',nargs='+',type=lambda s:int(s,16))
++args=parser.parse_args()
++assert not args.output.exists();args.output.mkdir(parents=True)
++script=args.project/'scripts/windows/native_entries.py'
++sys.path.insert(0,str(script.parent))
++spec=importlib.util.spec_from_file_location('selected_entry_certifier',script)
++m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
++paths=[];pins=[]
++for chunk in sorted({v[0] for v in m.FRAGMENTS.values()}):
++    originals=list(args.translations.glob('*_'+f'{chunk:08X}.c'));assert len(originals)==1
++    p=originals[0];q=args.output/p.name;shutil.copy2(p,q);paths.append(q)
++    pins.append(dict(source=str(p),copy=str(q),sha256=hashlib.sha256(p.read_bytes()).hexdigest()))
++watched=set();expected=set(m.ENTRIES) # Explicit authored no-watch certificate; production watches remain strict.
++assert m.certify(paths,watched)==expected
++negative_count=0
++for entry in args.entries:
++    names=m.ENTRIES[entry];internal=m.FRAGMENTS[names[0]][1]+4
++    for observation in (internal,internal|0x40000000):
++        with contextlib.redirect_stdout(io.StringIO()):accepted=m.certify(paths,watched|{observation})
++        assert entry not in accepted;negative_count+=1
++    # Every certified nested fragment is required for this entry as well.
++    for name in names:
++        chunk,start,_,_=m.FRAGMENTS[name]
++        p=next(p for p in paths if p.name.endswith(f'_{chunk:08X}.c'))
++        t=p.read_text();mod=args.output/('mod_'+p.name)
++        label='\nlabel_'+f'{start:08X}:\n';assert t.count(label)==1
++        mod.write_text(t.replace(label,label+'    ctx->gpr[3] ^= 1u;\n',1),newline='\n')
++        with contextlib.redirect_stdout(io.StringIO()):accepted=m.certify(paths+[mod],watched)
++        assert entry not in accepted;negative_count+=1;mod.unlink()
++record=dict(status='PASS_ORIGINAL_STAGE_CERTIFIER_AND_MUTATION_OBSERVATION_NEGATIVES',
++            entries=args.entries,negatives=negative_count,inputs=pins,
++            certifier_sha256=hashlib.sha256(script.read_bytes()).hexdigest(),
++            scope='Preparation certificates and strict fallback only; no game/module execution')
++(args.output/'result.json').write_text(json.dumps(record,indent=2)+'\n')
++print(json.dumps(dict(status=record['status'],entries=[f'{e:08X}' for e in args.entries],negatives=negative_count)))
+--- /dev/null
++++ b/tests/performance_native_gx/helper_watch_test.py
+@@ -0,0 +1,12 @@
++from pathlib import Path
++import argparse,contextlib,importlib.util,io,json,sys
++p=argparse.ArgumentParser();p.add_argument('project',type=Path);p.add_argument('certified_chunks',type=Path);a=p.parse_args()
++script=a.project/'scripts/windows/native_entries.py';sys.path.insert(0,str(script.parent))
++s=importlib.util.spec_from_file_location('gx_watch_certifier',script);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
++chunks=list(a.certified_chunks.glob('chunk_*.c'));assert chunks
++selected={0x802D85F8,0x802D80D0,0x802AFBD4};assert selected<=m.certify(chunks,set())
++for at in (0x80328F30,0x80328F3C,0x80328F40,0x80328F7C,0x80328F88,0x80328F8C):
++ for watched in (at,at|0x40000000):
++  with contextlib.redirect_stdout(io.StringIO()):accepted=m.certify(chunks,{watched})
++  assert selected.isdisjoint(accepted)
++print(json.dumps({'status':'PASS_AUTHORED_HELPER_ALIAS_WATCH_REFUSALS','observations':12,'native_authority':False}))
+--- /dev/null
++++ b/tests/performance_native_gx/CMakeLists.txt
+@@ -0,0 +1,98 @@
++cmake_minimum_required(VERSION 3.20)
++project(native_gx_cpu_oracle C)
++if(NOT WIN32 OR NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
++  message(FATAL_ERROR "This protected-page selected-function oracle requires Windows Clang")
++endif()
++set(BLUEWAKE_ROOT "" CACHE PATH "Patched BlueWake project root")
++set(GX_RUNTIME "" CACHE PATH "Matching GXRuntime source")
++set(GX_CORE_ARCHIVE "" CACHE FILEPATH "Matching CPU core archive; separately instrumented in ASan mode")
++set(ORACLE_MODULE "" CACHE FILEPATH "Existing unhooked personal translated module matching the qualified boundary contract")
++if(NOT EXISTS "${BLUEWAKE_ROOT}/cmake/composite/native_gx.c" OR NOT EXISTS "${GX_CORE_ARCHIVE}" OR NOT EXISTS "${ORACLE_MODULE}")
++  message(FATAL_ERROR "Provide patched source, matching CPU archive and existing unhooked module")
++endif()
++option(NATIVE_ORACLE_ASAN "Instrument fixture, versioned seam and native body" OFF)
++add_executable(native_gx_test native_gx_test.c versioned_gate.c
++  "${BLUEWAKE_ROOT}/cmake/composite/native_gx.c" "${BLUEWAKE_ROOT}/cmake/composite/gather_pipe.c"
++  "${BLUEWAKE_ROOT}/cmake/composite/direct_calls.c")
++target_compile_features(native_gx_test PRIVATE c_std_17)
++target_include_directories(native_gx_test PRIVATE "${BLUEWAKE_ROOT}/cmake/composite" "${GX_RUNTIME}/include"
++  "${BLUEWAKE_ROOT}/ref/recompcore/Source/Core/Core/PowerPC/StaticRecomp")
++target_compile_options(native_gx_test PRIVATE -O3 -UNDEBUG -ffp-contract=off -fms-compatibility-version=19.44
++  -fms-runtime-lib=dll -fno-slp-vectorize)
++target_link_options(native_gx_test PRIVATE -fms-runtime-lib=dll)
++target_link_libraries(native_gx_test PRIVATE "${GX_CORE_ARCHIVE}")
++if(NATIVE_ORACLE_ASAN)
++  target_compile_options(native_gx_test PRIVATE -fsanitize=address -shared-libasan -fno-omit-frame-pointer)
++  target_link_options(native_gx_test PRIVATE -fsanitize=address -shared-libasan)
++endif()
++enable_testing()
++add_test(NAME protected_gx_802AFBD4 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x802AFBD4)
++set_tests_properties(protected_gx_802AFBD4 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_802AFDDC COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x802AFDDC)
++set_tests_properties(protected_gx_802AFDDC PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_802AFE38 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x802AFE38)
++set_tests_properties(protected_gx_802AFE38 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_802D80D0 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x802D80D0)
++set_tests_properties(protected_gx_802D80D0 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_802D85F8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x802D85F8)
++set_tests_properties(protected_gx_802D85F8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803214B0 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803214B0)
++set_tests_properties(protected_gx_803214B0 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80321958 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80321958)
++set_tests_properties(protected_gx_80321958 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803219AC COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803219AC)
++set_tests_properties(protected_gx_803219AC PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803221D8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803221D8)
++set_tests_properties(protected_gx_803221D8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80322568 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80322568)
++set_tests_properties(protected_gx_80322568 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80322604 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80322604)
++set_tests_properties(protected_gx_80322604 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803228D4 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803228D4)
++set_tests_properties(protected_gx_803228D4 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803230C4 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803230C4)
++set_tests_properties(protected_gx_803230C4 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803233B0 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803233B0)
++set_tests_properties(protected_gx_803233B0 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80324390 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80324390)
++set_tests_properties(protected_gx_80324390 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80324484 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80324484)
++set_tests_properties(protected_gx_80324484 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80324578 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80324578)
++set_tests_properties(protected_gx_80324578 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803245BC COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803245BC)
++set_tests_properties(protected_gx_803245BC PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80324B68 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80324B68)
++set_tests_properties(protected_gx_80324B68 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80324D50 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80324D50)
++set_tests_properties(protected_gx_80324D50 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80324EE8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80324EE8)
++set_tests_properties(protected_gx_80324EE8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803253B8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803253B8)
++set_tests_properties(protected_gx_803253B8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80325810 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80325810)
++set_tests_properties(protected_gx_80325810 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80325CD4 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80325CD4)
++set_tests_properties(protected_gx_80325CD4 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80325FA8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80325FA8)
++set_tests_properties(protected_gx_80325FA8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_8032601C COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x8032601C)
++set_tests_properties(protected_gx_8032601C PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80326090 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80326090)
++set_tests_properties(protected_gx_80326090 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803263A0 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803263A0)
++set_tests_properties(protected_gx_803263A0 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_803265A8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x803265A8)
++set_tests_properties(protected_gx_803265A8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80326758 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80326758)
++set_tests_properties(protected_gx_80326758 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80326B80 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80326B80)
++set_tests_properties(protected_gx_80326B80 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80326F38 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80326F38)
++set_tests_properties(protected_gx_80326F38 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80326F88 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80326F88)
++set_tests_properties(protected_gx_80326F88 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80326FD8 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80326FD8)
++set_tests_properties(protected_gx_80326FD8 PROPERTIES TIMEOUT 120)
++add_test(NAME protected_gx_80327364 COMMAND native_gx_test "${ORACLE_MODULE}" 60000 0 0x80327364)
++set_tests_properties(protected_gx_80327364 PROPERTIES TIMEOUT 120)

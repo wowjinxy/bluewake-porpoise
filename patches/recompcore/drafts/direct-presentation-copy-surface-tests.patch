@@ -1,0 +1,712 @@
+diff --git a/GXRuntime/graphics/aurora/lib/aurora.cpp b/GXRuntime/graphics/aurora/lib/aurora.cpp
+--- a/GXRuntime/graphics/aurora/lib/aurora.cpp
++++ b/GXRuntime/graphics/aurora/lib/aurora.cpp
+@@ -1,4 +1,7 @@
+ #include <aurora/aurora.h>
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++#include "direct_present_probe.hpp"
++#endif
+ 
+ #ifdef AURORA_ENABLE_GX
+ #include "gfx/common.hpp"
+@@ -363,7 +366,12 @@
+     auto surfaceStatus = wgpu::SurfaceGetCurrentTextureStatus::Error;
+     // Read once: a suppressed present takes no texture, and its status (left
+     // at Error) must not be taken for the surface's.
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++    const bool suppressed = (g_config.noninteractive && !surface_probe::allow_hidden_acquire()) ||
++                            g_presentSuppressed.load(std::memory_order_relaxed);
++#else
+     const bool suppressed = g_config.noninteractive || g_presentSuppressed.load(std::memory_order_relaxed);
++#endif
+     // Out of sight, no texture is asked for either (window::is_occluded).
+     const bool occluded = window::is_occluded();
+     {
+@@ -390,6 +398,9 @@
+     }
+ 
+     const bool canPresent = currentTexture && currentView;
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++    surface_probe::note_acquire(surfaceStatus, canPresent);
++#endif
+     if (canPresent) {
+       wgpu::BindGroup presentBindGroup;
+       bool directCopy = false;
+@@ -401,7 +412,11 @@
+         // completed surface below, after either this copy or the normal blit.
+         if (!rmlBindGroup) {
+           directCopy = encode_direct_present_copy(encoder, resampledSource, currentTexture, viewport,
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++                                                   surface_probe::copy_opt_in(webgpu::presentation::enabled()));
++#else
+                                                    webgpu::presentation::enabled());
++#endif
+         }
+         if (!directCopy) {
+           presentBindGroup = webgpu::create_copy_bind_group(resampledSource);
+@@ -456,6 +471,9 @@
+         imgui::render(pass, imguiDrawData);
+         pass.End();
+       }
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++      surface_probe::encode_capture(encoder, currentTexture, directCopy, viewport);
++#endif
+     } else if (!suppressed) {
+       Log.info("Skipping present; window not presentable");
+     }
+@@ -467,13 +485,20 @@
+       g_queue.Submit(1, &buffer);
+     }
+     webgpu::gpu_prof::after_submit();
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++    if (canPresent && g_surface && !surface_probe::suppress_present()) {
++#else
+     if (canPresent && g_surface) {
++#endif
+       ZoneScopedN("Present");
+       wgpu::ConvertibleStatus status = wgpu::Status::Error;
+       {
+         window::SurfaceLock surfaceLock;
+         if (window::is_presentable()) {
+           const auto presentStart = std::chrono::steady_clock::now();
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++          surface_probe::note_present_call();
++#endif
+           status = g_surface.Present();
+           const auto presentMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now() - presentStart)
+@@ -488,7 +513,11 @@
+         Log.warn("Surface present failed");
+         webgpu::release_surface();
+       }
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++    } else if (g_surface && !suppressed && !occluded && !surface_probe::suppress_present()) {
++#else
+     } else if (g_surface && !suppressed && !occluded) {
++#endif
+       // With the present suppressed (or the window out of sight) the status is
+       // not the surface's: taking it for Error dropped a working surface, and
+       // on Direct3D 12 the swapchain made in its place for the same window
+diff --git a/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp b/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp
+--- a/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp
++++ b/GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp
+@@ -1,4 +1,7 @@
+ #include "gpu.hpp"
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++#include "direct_present_probe.hpp"
++#endif
+ #include "presentation_copy.hpp"
+ 
+ #include <algorithm>
+@@ -1204,6 +1207,44 @@
+ }
+ } // namespace aurora::webgpu
+ 
++#if defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) && AURORA_DIRECT_PRESENT_SURFACE_TEST == 1
++namespace aurora::surface_probe {
++ConfigureStatus configure_surface_readback() {
++  const gfx::render_worker::Pause pause{gfx::flush_deferred_presents};
++  if (!enabled() || !webgpu::g_surface || !webgpu::g_device) return ConfigureStatus::Failed;
++  wgpu::SurfaceCapabilities capabilities;
++  {
++    window::SurfaceLock surfaceLock;
++    if (webgpu::g_surface.GetCapabilities(webgpu::g_adapter, &capabilities) != wgpu::Status::Success)
++      return ConfigureStatus::Failed;
++  }
++  constexpr wgpu::TextureUsage required = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopyDst |
++                            wgpu::TextureUsage::CopySrc;
++  if ((capabilities.usages & required) != required) return ConfigureStatus::Unsupported;
++  bool opaque_supported = false;
++  for (size_t i = 0; i < capabilities.alphaModeCount; ++i)
++    opaque_supported |= capabilities.alphaModes[i] == wgpu::CompositeAlphaMode::Opaque;
++  auto& config = webgpu::g_graphicsConfig.surfaceConfiguration;
++  if (!opaque_supported || config.alphaMode != wgpu::CompositeAlphaMode::Opaque ||
++      (config.usage & wgpu::TextureUsage::CopyDst) == wgpu::TextureUsage::None ||
++      (config.format != wgpu::TextureFormat::RGBA8Unorm && config.format != wgpu::TextureFormat::BGRA8Unorm))
++    return ConfigureStatus::Unsupported;
++  // The only added usage is readback. Do not manufacture CopyDst/Opaque support.
++  if (!config.width || !config.height) return ConfigureStatus::Failed;
++  config.usage |= wgpu::TextureUsage::CopySrc;
++  auto configured = config;
++  configured.device = webgpu::g_device;
++  {
++    window::SurfaceLock surfaceLock;
++    webgpu::g_surface.Configure(&configured);
++  }
++  // Reconfigure only the surface. Replacing the EFB here would detach the
++  // already-open frame packet from the source used by end_frame.
++  return ConfigureStatus::Ready;
++}
++} // namespace aurora::surface_probe
++#endif
++
+ void aurora_enable_vsync(const bool enabled) {
+   aurora::webgpu::g_graphicsConfig.surfaceConfiguration.presentMode = aurora::webgpu::best_present_mode(enabled);
+   aurora::window::push_custom_event(aurora::window::CustomEvent::RefreshSurface);
+diff --git a/GXRuntime/graphics/aurora/lib/direct_present_probe.hpp b/GXRuntime/graphics/aurora/lib/direct_present_probe.hpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/direct_present_probe.hpp
+@@ -0,0 +1,43 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Private authored GPU test seam. Not part of the public Aurora API.
++#pragma once
++#if !defined(AURORA_DIRECT_PRESENT_SURFACE_TEST) || AURORA_DIRECT_PRESENT_SURFACE_TEST != 1
++#error "This private seam requires AURORA_DIRECT_PRESENT_SURFACE_TEST=1"
++#endif
++
++#include "webgpu/gpu.hpp"
++#include <cstdint>
++#include <string>
++#include <vector>
++
++namespace aurora::surface_probe {
++struct Capture {
++  bool ok = false;
++  bool direct_copy = false;
++  uint32_t acquire_count = 0;
++  uint32_t capture_count = 0;
++  uint32_t width = 0, height = 0;
++  wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
++  webgpu::Viewport viewport{};
++  std::string error;
++  std::vector<uint8_t> rgba;
++};
++
++// Exact explicit opt-in AND the already selected noninteractive mode.
++bool enabled() noexcept;
++bool allow_hidden_acquire() noexcept;
++bool suppress_present() noexcept;
++void note_present_call() noexcept;
++uint32_t present_calls() noexcept;
++bool copy_opt_in(bool production_value) noexcept;
++bool begin_capture(bool force_direct_copy);
++void note_acquire(wgpu::SurfaceGetCurrentTextureStatus status, bool acquired);
++void encode_capture(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
++                    bool direct_copy, const webgpu::Viewport& viewport);
++Capture finish_capture(); // Main thread, bounded map wait, no SDL input pump.
++
++// Defined in the private gpu.cpp projection to query its real adapter.
++// Adds CopySrc only; requires existing production CopyDst/Opaque selection.
++enum class ConfigureStatus { Ready, Unsupported, Failed };
++ConfigureStatus configure_surface_readback();
++} // namespace aurora::surface_probe
+diff --git a/GXRuntime/graphics/aurora/lib/direct_present_probe.cpp b/GXRuntime/graphics/aurora/lib/direct_present_probe.cpp
+new file mode 100644
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/direct_present_probe.cpp
+@@ -0,0 +1,165 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored test-only capture of the actual acquired surface, after ImGui.
++#include "direct_present_probe.hpp"
++#include "gfx/common.hpp"
++#include "internal.hpp"
++
++#include <atomic>
++#include <chrono>
++#include <cstdlib>
++#include <memory>
++#include <mutex>
++#include <thread>
++
++namespace aurora::surface_probe {
++namespace {
++constexpr uint32_t MaxDimension = 4096;
++constexpr uint64_t MaxReadbackBytes = 64ull * 1024 * 1024;
++struct State {
++  Capture result;
++  bool force_direct = false;
++  wgpu::Buffer buffer;
++  uint32_t pitch = 0;
++  uint64_t bytes = 0;
++  std::atomic_bool map_done{false};
++  std::atomic_bool map_ok{false};
++};
++std::mutex state_mutex;
++std::shared_ptr<State> current;
++std::atomic_uint32_t observed_present_calls{0};
++
++std::shared_ptr<State> get_state() {
++  const std::lock_guard lock{state_mutex};
++  return current;
++}
++bool exact_one(const char* value) noexcept {
++  return value && value[0] == '1' && value[1] == '\0';
++}
++void fail(State& state, const char* message) {
++  if (state.result.error.empty()) state.result.error = message;
++}
++} // namespace
++
++bool enabled() noexcept {
++  return g_config.noninteractive && exact_one(std::getenv("DOL_AURORA_HIDDEN_SURFACE_PROBE"));
++}
++bool allow_hidden_acquire() noexcept { return enabled() && bool(get_state()); }
++bool suppress_present() noexcept { return enabled(); }
++void note_present_call() noexcept { observed_present_calls.fetch_add(1, std::memory_order_relaxed); }
++uint32_t present_calls() noexcept { return observed_present_calls.load(std::memory_order_relaxed); }
++bool copy_opt_in(bool production_value) noexcept {
++  if (enabled()) {
++    if (const auto state = get_state()) return state->force_direct;
++  }
++  return production_value;
++}
++bool begin_capture(bool force_direct_copy) {
++  if (!enabled()) return false;
++  gfx::gpu_synchronize();
++  const std::lock_guard lock{state_mutex};
++  if (current) return false; // Never overlap or silently replace a capture.
++  current = std::make_shared<State>();
++  current->force_direct = force_direct_copy;
++  return true;
++}
++void note_acquire(wgpu::SurfaceGetCurrentTextureStatus status, bool acquired) {
++  if (const auto state = get_state()) {
++    if (++state->result.acquire_count != 1) fail(*state, "More than one acquired frame");
++    if (!acquired || status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal)
++      fail(*state, "Actual hidden surface acquisition was not SuccessOptimal");
++  }
++}
++void encode_capture(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
++                    bool direct_copy, const webgpu::Viewport& viewport) {
++  const auto state = get_state();
++  if (!state) return;
++  if (++state->result.capture_count != 1) {
++    fail(*state, "More than one surface capture");
++    return;
++  }
++  auto& out = state->result;
++  out.direct_copy = direct_copy;
++  out.viewport = viewport;
++  out.width = texture.GetWidth();
++  out.height = texture.GetHeight();
++  out.format = texture.GetFormat();
++  if (!out.width || !out.height || out.width > MaxDimension || out.height > MaxDimension ||
++      texture.GetDepthOrArrayLayers() != 1 || texture.GetSampleCount() != 1 ||
++      texture.GetDimension() != wgpu::TextureDimension::e2D ||
++      (texture.GetUsage() & wgpu::TextureUsage::CopySrc) == wgpu::TextureUsage::None ||
++      (out.format != wgpu::TextureFormat::RGBA8Unorm && out.format != wgpu::TextureFormat::BGRA8Unorm)) {
++    fail(*state, "Actual surface properties cannot be read back by this bounded oracle");
++    return;
++  }
++  state->pitch = (out.width * 4u + 255u) & ~255u;
++  state->bytes = uint64_t(state->pitch) * out.height;
++  if (state->bytes > MaxReadbackBytes) {
++    fail(*state, "Readback byte limit");
++    return;
++  }
++  const wgpu::BufferDescriptor descriptor{
++      .label = "Private post-ImGui hidden surface readback",
++      .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
++      .size = state->bytes,
++  };
++  state->buffer = webgpu::g_device.CreateBuffer(&descriptor);
++  if (!state->buffer) {
++    fail(*state, "Actual readback buffer creation failed");
++    return;
++  }
++  const wgpu::TexelCopyTextureInfo source{.texture = texture};
++  const wgpu::TexelCopyBufferInfo target{
++      .layout = {.offset = 0, .bytesPerRow = state->pitch, .rowsPerImage = out.height},
++      .buffer = state->buffer,
++  };
++  const wgpu::Extent3D extent{out.width, out.height, 1};
++  encoder.CopyTextureToBuffer(&source, &target, &extent);
++}
++Capture finish_capture() {
++  gfx::gpu_synchronize(); // Actual end-frame callback/Submit must have finished.
++  const auto state = get_state();
++  if (!state) return {.error = "No active capture"};
++  auto& out = state->result;
++  if (out.acquire_count != 1 || out.capture_count != 1 || !state->buffer)
++    fail(*state, "Missing actual acquire/capture/buffer");
++  if (out.error.empty()) {
++    // The callback owns State/Buffer, so timeout cannot leave a stack capture.
++    state->buffer.MapAsync(wgpu::MapMode::Read, 0, state->bytes, wgpu::CallbackMode::AllowSpontaneous,
++      [state](wgpu::MapAsyncStatus status, wgpu::StringView) {
++        state->map_ok.store(status == wgpu::MapAsyncStatus::Success, std::memory_order_relaxed);
++        state->map_done.store(true, std::memory_order_release);
++      });
++    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
++    while (!state->map_done.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
++      webgpu::g_instance.ProcessEvents(); // Dawn only, no SDL/physical input.
++      std::this_thread::sleep_for(std::chrono::milliseconds{1});
++    }
++    if (!state->map_done.load(std::memory_order_acquire)) fail(*state, "Readback deadline expired");
++    else if (!state->map_ok.load(std::memory_order_relaxed)) fail(*state, "Actual readback mapping failed");
++    else {
++      const auto* bytes = static_cast<const uint8_t*>(state->buffer.GetConstMappedRange(0, state->bytes));
++      if (!bytes) fail(*state, "Actual mapped range unavailable");
++      else {
++        out.rgba.resize(size_t(out.width) * out.height * 4u);
++        const bool bgra = out.format == wgpu::TextureFormat::BGRA8Unorm;
++        for (uint32_t y = 0; y < out.height; ++y) {
++          for (uint32_t x = 0; x < out.width; ++x) {
++            const auto* from = bytes + size_t(y) * state->pitch + size_t(x) * 4;
++            auto* to = out.rgba.data() + (size_t(y) * out.width + x) * 4;
++            to[0] = from[bgra ? 2 : 0]; to[1] = from[1];
++            to[2] = from[bgra ? 0 : 2]; to[3] = from[3];
++          }
++        }
++      }
++    }
++    // Also cancels an outstanding map on timeout. The shared callback stays safe.
++    state->buffer.Unmap();
++  }
++  out.ok = out.error.empty();
++  {
++    const std::lock_guard lock{state_mutex};
++    current.reset();
++  }
++  return std::move(out);
++}
++} // namespace aurora::surface_probe
+diff --git a/tests/direct_presentation_surface_pixels_test.cpp b/tests/direct_presentation_surface_pixels_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/direct_presentation_surface_pixels_test.cpp
+@@ -0,0 +1,260 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Private authored hidden-surface oracle. No game or physical input/audio.
++// FIFO/VAT/TEV setup derives from public tests/efb_color_pixels_test.cpp.
++#include "direct_present_probe.hpp"
++#include "gxruntime/aurora_backend.h"
++#include "gxruntime/platform.h"
++#include "gfx/common.hpp"
++#include "window.hpp"
++#include <aurora/aurora.h>
++#include <SDL3/SDL.h>
++#include <imgui.h>
++
++#include <array>
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <vector>
++
++namespace {
++unsigned checks = 0, failures = 0;
++bool overlay_enabled = false;
++#ifdef CHECK
++#undef CHECK
++#endif
++#define CHECK(c) do { ++checks; if (!(c)) { ++failures; \
++  std::fprintf(stderr, "SURFACE GPU FAIL line %d: %s\n", __LINE__, #c); } } while (0)
++
++bool environment(const char* name, const char* value) {
++#ifdef _WIN32
++  return _putenv_s(name, value) == 0;
++#else
++  return setenv(name, value, 1) == 0;
++#endif
++}
++void u32(std::vector<uint8_t>& out, uint32_t word) {
++  out.push_back(uint8_t(word >> 24)); out.push_back(uint8_t(word >> 16));
++  out.push_back(uint8_t(word >> 8)); out.push_back(uint8_t(word));
++}
++void f32(std::vector<uint8_t>& out, float value) {
++  uint32_t word; std::memcpy(&word, &value, sizeof word); u32(out, word);
++}
++void cp(std::vector<uint8_t>& out, uint8_t reg, uint32_t word) {
++  out.push_back(8); out.push_back(reg); u32(out, word);
++}
++void bp(std::vector<uint8_t>& out, uint8_t reg, uint32_t word) {
++  out.push_back(0x61); u32(out, uint32_t(reg) << 24 | (word & 0xFFFFFF));
++}
++void xf(std::vector<uint8_t>& out, uint16_t reg, const std::vector<uint32_t>& words) {
++  out.push_back(0x10); u32(out, uint32_t(words.size() - 1) << 16 | reg);
++  for (auto word : words) u32(out, word);
++}
++void xf_floats(std::vector<uint8_t>& out, uint16_t reg, const std::vector<float>& values) {
++  std::vector<uint32_t> words;
++  for (float value : values) { uint32_t word; std::memcpy(&word, &value, sizeof word); words.push_back(word); }
++  xf(out, reg, words);
++}
++void setup(std::vector<uint8_t>& out) {
++  cp(out, 0x50, (1u << 9) | (1u << 13)); cp(out, 0x60, 0);
++  cp(out, 0x70, 1u | (4u << 1) | (5u << 14)); cp(out, 0x80, 0); cp(out, 0x90, 0);
++  xf_floats(out, 0, {1,0,0,0, 0,1,0,0, 0,0,1,0}); xf(out, 0x1018, {0});
++  xf_floats(out, 0x101A, {320,-240,16777215,662,582,16777215});
++  xf_floats(out, 0x1020, {1,0,1,0,-1,0}); xf(out, 0x1026, {1});
++  xf(out, 0x1009, {1}); xf(out, 0x100E, {1}); xf(out, 0x1010, {1});
++  bp(out, 0, 1u << 4); bp(out, 0x40, 0); bp(out, 0x41, (1u << 3) | (1u << 4));
++  // Opaque RGB8 source: no destination-alpha override/quantized alpha ambiguity.
++  bp(out, 0x42, 0); bp(out, 0x43, 0);
++  bp(out, 0x20, (342u << 12) | 342u); bp(out, 0x21, (981u << 12) | 821u);
++  bp(out, 0x59, 171u | (171u << 10));
++  bp(out, 0xC0, 15u | (15u << 4) | (15u << 8) | (10u << 12) | (1u << 19));
++  bp(out, 0xC1, (7u << 4) | (7u << 7) | (7u << 10) | (5u << 13) | (1u << 19));
++  bp(out, 0xF6, 4); bp(out, 0xF7, 14); bp(out, 0xF3, (7u << 16) | (7u << 19));
++}
++void rectangle(std::vector<uint8_t>& out, float left, float top, float right, float bottom,
++               std::array<uint8_t,4> color) {
++  out.push_back(0x80); out.push_back(0); out.push_back(4);
++  const float positions[4][2]{{left,top},{right,top},{right,bottom},{left,bottom}};
++  for (auto& p : positions) {
++    f32(out, p[0]/320.f-1); f32(out, 1-p[1]/240.f); f32(out, 0);
++    out.insert(out.end(), color.begin(), color.end());
++  }
++}
++void draw_pattern() {
++  std::vector<uint8_t> fifo;
++  setup(fifo);
++  rectangle(fifo, 0,0,640,480, {0,0,255,255});
++  rectangle(fifo, 80,120,240,360, {255,0,0,255});
++  rectangle(fifo, 400,120,560,360, {0,255,0,255});
++  // One-logical-pixel opaque stripes also compare resampler/copy ordering.
++  for (unsigned x = 0; x < 16; ++x)
++    rectangle(fifo, 64.f+x,112,65.f+x,128, x & 1 ? std::array<uint8_t,4>{0,0,0,255}
++                                                : std::array<uint8_t,4>{255,255,255,255});
++  CHECK(fifo.size() < 16384);
++  if (dol_platform_gx_write_bytes_available()) dol_platform_gx_write_bytes(fifo.data(), uint32_t(fifo.size()));
++  else for (auto byte : fifo) dol_platform_gx_write(byte, 1);
++  dol_platform_gx_flush();
++}
++void overlay(void*) {
++  if (overlay_enabled)
++    ImGui::GetForegroundDrawList()->AddRectFilled({24,24}, {72,72}, IM_COL32(255,255,0,255));
++}
++bool hidden_contract() {
++  auto* window = aurora::window::get_sdl_window();
++  if (!window || SDL_GetWindowFromID(SDL_GetWindowID(window)) != window) return false;
++  const auto flags = SDL_GetWindowFlags(window);
++  return (flags & SDL_WINDOW_HIDDEN) && !(flags & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_FULLSCREEN)) &&
++         !SDL_WasInit(SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD) && aurora_get_shown_frames() == 0 &&
++         aurora::surface_probe::present_calls() == 0;
++}
++void pixel(const aurora::surface_probe::Capture& image, uint32_t x, uint32_t y,
++           std::array<uint8_t,4> expected) {
++  CHECK(x < image.width && y < image.height);
++  if (x >= image.width || y >= image.height) return;
++  const auto* at = image.rgba.data() + (size_t(y)*image.width+x)*4;
++  CHECK(std::memcmp(at, expected.data(), 4) == 0);
++}
++uint64_t hash(const std::vector<uint8_t>& data) {
++  uint64_t value = 14695981039346656037ull;
++  for (auto byte : data) value = (value ^ byte) * 1099511628211ull;
++  return value;
++}
++aurora::surface_probe::Capture frame(bool direct, bool with_overlay) {
++  CHECK(hidden_contract());
++  if (failures || !aurora::surface_probe::begin_capture(direct)) return {.error = "Hidden contract or capture start"};
++  overlay_enabled = with_overlay;
++  draw_pattern();
++  // Ordinary backend frame boundary. It owns the open/close/next-frame flags.
++  // The private seam inhibits the underlying wgpu::Surface::Present call.
++  dol_platform_present();
++  auto result = aurora::surface_probe::finish_capture();
++  CHECK(hidden_contract());
++  CHECK(result.ok);
++  if (!result.ok) std::fprintf(stderr, "SURFACE GPU capture: %s\n", result.error.c_str());
++  return result;
++}
++bool pair(const char* name, bool with_overlay, bool eligible) {
++  // Reconfigure between acquisitions, releasing an unpresented acquired image.
++  // No acquired handle is retained by the seam after its submitted copy.
++  CHECK(hidden_contract());
++  if (failures) return false;
++  CHECK(aurora::surface_probe::configure_surface_readback() == aurora::surface_probe::ConfigureStatus::Ready);
++  if (failures) return false;
++  auto shader = frame(false, with_overlay);
++  if (!shader.ok || failures) return false;
++  CHECK(aurora::surface_probe::configure_surface_readback() == aurora::surface_probe::ConfigureStatus::Ready);
++  if (failures) return false;
++  auto copy = frame(true, with_overlay);
++  if (!copy.ok || failures) return false;
++  CHECK(!shader.direct_copy && copy.direct_copy == eligible);
++  CHECK(shader.acquire_count == 1 && shader.capture_count == 1 && copy.acquire_count == 1 && copy.capture_count == 1);
++  CHECK(shader.width == copy.width && shader.height == copy.height && shader.format == copy.format);
++  CHECK(shader.viewport == copy.viewport);
++  if (shader.rgba != copy.rgba && shader.rgba.size() == copy.rgba.size()) {
++    size_t pixels=0; size_t changed[4]{}; unsigned maximum[4]{};
++    for (size_t at=0; at<copy.rgba.size(); at+=4) {
++      bool differs=false;
++      for (unsigned channel=0; channel<4; ++channel) {
++        const int delta=int(shader.rgba[at+channel])-int(copy.rgba[at+channel]);
++        if (delta) { differs=true; ++changed[channel]; maximum[channel]=std::max(maximum[channel],unsigned(delta<0?-delta:delta)); }
++      }
++      if (differs && pixels++<16) {
++        std::fprintf(stderr,"SURFACE DIFFERENCE xy=%zu,%zu shader=%u,%u,%u,%u copy=%u,%u,%u,%u\n",
++          (at/4)%copy.width,(at/4)/copy.width,shader.rgba[at],shader.rgba[at+1],shader.rgba[at+2],shader.rgba[at+3],
++          copy.rgba[at],copy.rgba[at+1],copy.rgba[at+2],copy.rgba[at+3]);
++      }
++    }
++    std::fprintf(stderr,"SURFACE DIFFERENCE pixels=%zu channels=%zu,%zu,%zu,%zu max=%u,%u,%u,%u shader_hash=%016llx copy_hash=%016llx\n",
++      pixels,changed[0],changed[1],changed[2],changed[3],maximum[0],maximum[1],maximum[2],maximum[3],
++      static_cast<unsigned long long>(hash(shader.rgba)),static_cast<unsigned long long>(hash(copy.rgba)));
++  }
++  CHECK(shader.rgba == copy.rgba); // Actual post-ImGui full-surface byte equality.
++  const auto& v = copy.viewport;
++  pixel(copy, uint32_t(v.left + v.width/4), uint32_t(v.top + v.height/2), {255,0,0,255});
++  pixel(copy, uint32_t(v.left + v.width*3/4), uint32_t(v.top + v.height/2), {0,255,0,255});
++  pixel(copy, uint32_t(v.left + v.width/2), uint32_t(v.top + v.height/2), {0,0,255,255});
++  if (with_overlay) pixel(copy, 48,48, {255,255,0,255});
++  if (!eligible) {
++    CHECK(v.left > 0 || v.top > 0 || v.width != copy.width || v.height != copy.height);
++    const size_t bar = v.top > 0 ? size_t(copy.width/2) : size_t(copy.height/2)*copy.width;
++    const auto* at = copy.rgba.data() + bar*4;
++    CHECK(at[0] == 0 && at[1] == 0 && at[2] == 0);
++  }
++  std::printf("surface case=%s size=%ux%u format=%u shader=%d selected=%d rgba=%016llx bytes=%zu\n",
++              name, copy.width, copy.height, unsigned(copy.format), int(shader.direct_copy), int(copy.direct_copy),
++              static_cast<unsigned long long>(hash(copy.rgba)), copy.rgba.size());
++  return failures == 0;
++}
++bool resize_owned(uint32_t width, uint32_t height, bool recreate) {
++  CHECK(hidden_contract());
++  if (failures) return false;
++  aurora::gfx::gpu_synchronize();
++  if (recreate) aurora::webgpu::release_surface();
++  aurora::window::set_window_size(width, height); // Never restore/show/raise under noninteractive.
++  CHECK(aurora::window::push_custom_event(aurora::window::CustomEvent::RefreshSurface));
++  CHECK(hidden_contract());
++  if (failures) return false;
++  // With no capture armed, this boundary acquires/presents no surface. Its
++  // normal lifecycle event pump resizes/recreates before it opens the next
++  // frame packet, preserving attachment ownership. No direct mid-packet resize.
++  dol_platform_present();
++  aurora::gfx::gpu_synchronize();
++  CHECK(aurora::webgpu::g_surface && hidden_contract());
++  return bool(aurora::webgpu::g_surface) && failures == 0;
++}
++} // namespace
++
++int main() {
++  // The runner must additionally have this opt-in; never enable it in source.
++  const char* probe = std::getenv("DOL_AURORA_HIDDEN_SURFACE_PROBE");
++  if (!probe || std::strcmp(probe, "1")) return 2;
++  if (!environment("DOL_AURORA_DIRECT_PRESENT_COPY", "1") || !environment("DOL_GX_CORE", "1") ||
++      !environment("AURORA_SYNC_PIPELINES", "1") || !environment("DOL_AURORA_FRAME_INTERP", "0") ||
++      !environment("DOL_AURORA_CACHE_DIR", "cache") || !environment("DOL_AURORA_ASPECT_FIT", "1")) return 2;
++  aurora_set_frame_interpolation(false);
++  aurora_set_fps_overlay(false);
++  aurora_set_frame_buffer_scale(1.f);
++  aurora::window::set_frame_buffer_aspect_fit(true);
++  const AuroraBackendConfig config{
++      .app_name = "BlueWake hidden surface copy oracle", .window_width = 640, .window_height = 480,
++      .vsync = false, .allow_texture_dumps = false, .info_logging = true, .graphics_logging = false,
++      .force_untextured = false, .noninteractive = true};
++  char name[] = "surface_copy_pixels_test"; char* argv[]{name, nullptr};
++  if (!dol_aurora_initialize(1, argv, &config)) return 2;
++  CHECK(hidden_contract());
++  CHECK(!aurora_get_frame_interpolation());
++  dol_aurora_set_overlay(overlay, nullptr);
++  if (!failures) {
++    const auto configured = aurora::surface_probe::configure_surface_readback();
++    if (configured != aurora::surface_probe::ConfigureStatus::Ready) {
++      std::fprintf(stderr, configured == aurora::surface_probe::ConfigureStatus::Unsupported
++        ? "UNSUPPORTED: actual surface capability/configuration lacks CopySrc/CopyDst/Opaque/linear format\n"
++        : "FAILED: actual surface capability query or test precondition failed\n");
++      dol_aurora_shutdown();
++      return configured == aurora::surface_probe::ConfigureStatus::Unsupported ? 77 : 1;
++    }
++  }
++  // The unchanged backend intentionally has no audio stream in noninteractive
++  // mode, so its ordinary Audio unavailable ImGui window needs initial sizing.
++  // Build two identical, unarmed frames before comparing shader and copy; no
++  // surface is acquired or presented during these warmup boundaries.
++  for (unsigned warmup = 0; warmup < 2 && !failures; ++warmup) {
++    CHECK(hidden_contract());
++    if (failures) break;
++    draw_pattern();
++    dol_platform_present();
++    aurora::gfx::gpu_synchronize();
++    CHECK(hidden_contract());
++  }
++  bool ok = !failures && pair("full", false, true) && pair("imgui", true, true);
++  if (ok) ok = resize_owned(800,600,false) && pair("resized", true, true);
++  if (ok) ok = resize_owned(800,480,false) && pair("letterbox", true, false);
++  if (ok) {
++    ok = resize_owned(640,480,true) && pair("recreated", true, true);
++  }
++  CHECK(hidden_contract());
++  dol_aurora_set_overlay(nullptr, nullptr);
++  dol_aurora_shutdown();
++  std::printf("hidden surface copy: %u checks, %u failures, shown=0, Present suppressed; pixel evidence only\n", checks, failures);
++  return ok && failures == 0 ? 0 : 1;
++}
+diff --git a/tests/direct_presentation_output_guard.py b/tests/direct_presentation_output_guard.py
+new file mode 100644
+--- /dev/null
++++ b/tests/direct_presentation_output_guard.py
+@@ -0,0 +1,79 @@
++"""Pre-launch write-target checks for the concrete private compile/link recipe."""
++from pathlib import Path
++import ntpath
++
++def canonical(p):
++    return ntpath.normpath(str(p)).casefold()
++
++def output_paths(argv):
++    # Flatten linker forwarding first; never rely on the spelling/case of -Wl.
++    tokens=[];i=0
++    while i<len(argv):
++        a=argv[i];low=a.casefold()
++        if low=='-xlinker':
++            if i+1>=len(argv):raise RuntimeError('Missing -Xlinker operand')
++            tokens.append(argv[i+1]);i+=2;continue
++        if low.startswith('-wl,'):tokens.extend(a[4:].split(','))
++        else:tokens.append(a)
++        i+=1
++    exact={'-o','-mf','-mt','/out','/pdb','/implib','/reproduce','/manifestfile','/fo'}
++    colon=('/out:','/pdb:','/implib:','/reproduce:','/manifestfile:','/fo:')
++    outputs=[];i=0
++    while i<len(tokens):
++        a=tokens[i];low=a.casefold()
++        if low in exact:
++            if i+1>=len(tokens) or not tokens[i+1]:raise RuntimeError('Missing write operand')
++            outputs.append(tokens[i+1]);i+=2;continue
++        found=False
++        for prefix in colon:
++            if low.startswith(prefix):
++                if not a[len(prefix):]:raise RuntimeError('Empty write operand')
++                outputs.append(a[len(prefix):]);found=True;break
++        if not found:
++            if low.startswith('--output='):outputs.append(a.split('=',1)[1])
++            elif low.startswith(('-mf','-mt')) and len(a)>3:outputs.append(a[3:])
++            elif low.startswith(('/fo','-fo','/fd','/fi','/fa')) and len(a)>3:outputs.append(a[3:])
++        i+=1
++    return outputs
++
++def check_outputs(argv,owned,historical=()):
++    root=canonical(owned).rstrip('\\')+'\\'
++    forbidden={canonical(p) for p in historical}
++    outputs=output_paths(argv)
++    if not outputs:raise RuntimeError('No declared compile/link write targets')
++    for value in outputs:
++        p=Path(value)
++        if not ntpath.isabs(str(p)) or not canonical(p).startswith(root):raise RuntimeError('Write outside fresh owned case: '+value)
++        if canonical(p) in forbidden or p.exists():raise RuntimeError('Pre-existing/historical write target: '+value)
++        # Inspect existing parents without following a reparse directory.
++        for parent in (p,*p.parents):
++            try:s=parent.lstat()
++            except FileNotFoundError:continue
++            if parent.is_symlink() or getattr(s,'st_file_attributes',0)&0x400:raise RuntimeError('Reparse write target/parent')
++    return outputs
++
++def self_test(owned):
++    root=Path(owned);checks=0
++    for prefix in ('/pdb:','/PDB:','/implib:','/IMPLIB:','/reproduce:','/REPRODUCE:','/manifestfile:','/MANIFESTFILE:','/fo:','/FO:'):
++        for form in ('bare','xlinker','wl','WL'):
++            target=str(root/'fresh.bin');flag=prefix+target
++            args=['clang',flag] if form=='bare' else ['clang','-Xlinker',flag] if form=='xlinker' else ['clang','-'+('Wl' if form=='wl' else 'WL')+','+flag]
++            if check_outputs(args,root)!=[target]:raise RuntimeError('Positive output guard specimen')
++            bad=flag.replace(target,str(root.parent/'historical.bin'))
++            badargs=['clang',bad] if form=='bare' else ['clang','-Xlinker',bad] if form=='xlinker' else ['clang','-'+('Wl' if form=='wl' else 'WL')+','+bad]
++            try:check_outputs(badargs,root)
++            except RuntimeError:pass
++            else:raise RuntimeError('Outside output guard specimen')
++            checks+=2
++    for flag in ('-o','-MF','-MT','/FO','/MANIFESTFILE'):
++        p=str(root/'fresh.obj');check_outputs(['clang',flag,p],root);checks+=1
++        try:check_outputs(['clang',flag,p],root,[p])
++        except RuntimeError:pass
++        else:raise RuntimeError('Historical output guard specimen')
++        checks+=1
++    for args in (['clang','-Xlinker'],['clang','-o'],['clang','-Wl,/PDB:']):
++        try:check_outputs(args,root)
++        except RuntimeError:pass
++        else:raise RuntimeError('Missing operand guard specimen')
++        checks+=1
++    return checks

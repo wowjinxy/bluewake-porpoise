@@ -195,7 +195,7 @@ def prepare(root, bg_minmax=False, quaternion=False, game_atan=False, plane=Fals
     FRAGMENTS.pop('plane_restore', None)
     if plane:
         FRAGMENTS['plane'] = (0x802496E0, 0x8024A6F0, 0x8024A7BC,
-            'd0a5789e0976289d30ca43be72334239af64a0f8b0161a1b7e814e0f4690a36c')
+            '98d0eadcf5bef0b61bac9bd92b2fb24eebde7f74d865876a0daa4d9047ec6c15')
         FRAGMENTS['plane_cross'] = (0x8030D6E0, 0x8030DECC, 0x8030DF08,
             'a1eedeef0d07eb445d5d0b52313325a54945cb299e4abc81b058c2107676fe04')
         FRAGMENTS['plane_mag'] = (0x8030D6E0, 0x8030DE68, 0x8030DEAC,

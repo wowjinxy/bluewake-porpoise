@@ -1,0 +1,2514 @@
+--- a/cmake/composite/native_game_math.c
++++ b/cmake/composite/native_game_math.c
+@@ -7663,8 +7663,2469 @@
+ }
+ #endif
+ 
++/* Elliott Tate (elliotttate), donor app944a1f3c.
++ * Bounded exact TOscillator::calc replay, retaining fresh native boundaries. */
++#if defined(BLUEWAKE_NATIVE_OSC_CALC) && BLUEWAKE_NATIVE_OSC_CALC == 1
++#include <fenv.h>
++#include <limits.h>
++#include <xmmintrin.h>
++enum { GO_TABLE=0x803688A8u, GO_CVT=0x80370FC8u, GO_RECORD_BYTES=1536u, GO_STEPS=2048u };
++typedef struct GoReplay {
++    CPUState initial;
++    u32 frame,object,config,records,sda,sda13,aliases;
++    unsigned steps;
++    bool bad;
++    u8 old_frame[120],old_object[32];
++} GoReplay;
++static bool go_in(u32 at,u32 n,u32 begin,u32 extent) { return n<=extent && at-begin<=extent-n; }
++static bool go_live(CPUState* cpu,const GoReplay* s) {
++    return cpu->ram==s->initial.ram && cpu->ram_size==s->initial.ram_size &&
++        cpu->cycle_budget==s->initial.cycle_budget && cpu->cycle_deadline_budget==s->initial.cycle_deadline_budget &&
++        g_ppc_guest_alias_generation==s->aliases && !g_ppc_guest_aliases_overlap_mem1 && !g_mem_write_journal;
++}
++static bool go_boundary(CPUState* cpu,u32 at,const GoReplay* s) {
++    return !s->bad && go_live(cpu,s) && s_ready && s_ready(s_ready_user,cpu,at) && go_live(cpu,s);
++}
++static bool go_block(CPUState* cpu,u32 cycles,GoReplay* s) {
++    if(s->bad || ++s->steps>GO_STEPS || !go_live(cpu,s) || cpu->exception ||
++       cpu->cycle_budget<=0 || cpu->cycle_budget>INT32_MAX || cpu->downcount>0 ||
++       cpu->downcount<=-cpu->cycle_budget) return false;
++    if(cpu->cycle_deadline_budget>0 && cpu->cycle_deadline_budget+cpu->downcount<(s64)cycles)return false;
++    cpu->downcount-=(s64)cycles;return true;
++}
++static bool go_readable(const GoReplay* s,u32 at,u32 n) {
++    return go_in(at,n,s->frame,120) || go_in(at,n,s->object,32) || go_in(at,n,s->config,24) ||
++        go_in(at,n,s->records,GO_RECORD_BYTES) || go_in(at,n,s->sda,72) ||
++        go_in(at,n,s->sda13,84) || go_in(at,n,GO_TABLE,204) || go_in(at,n,GO_CVT,24);
++}
++static u64 go_read(CPUState* cpu,GoReplay* s,u32 at,unsigned n) {
++    if((at&(n-1u)) || !go_readable(s,at,n)){s->bad=true;return 0;}
++    const u8* p=cpu->ram+at-GC_RAM_BASE;
++    switch(n){case 1:return *p;case 2:return read_be16(p);case 4:return read_be32(p);case 8:return read_be64(p);default:s->bad=true;return 0;}
++}
++static bool go_store(CPUState* cpu,GoReplay* s,u32 at,u64 value,unsigned n) {
++    if((at&(n-1u)) || (!go_in(at,n,s->frame,120) && !go_in(at,n,s->object,32)))return false;
++    clear_matching_reservation(cpu,at);u8* p=cpu->ram+at-GC_RAM_BASE;
++    switch(n){case 1:*p=(u8)value;break;case 2:write_be16(p,(u16)value);break;case 4:write_be32(p,(u32)value);break;case 8:write_be64(p,value);break;default:return false;}
++    return true;
++}
++static bool go_pair_store(CPUState* cpu,GoReplay* s,unsigned r,u32 at) {
++    return go_store(cpu,s,at,convert_to_single_ftz(f64_bits(cpu->fpr[r])),4) &&
++           go_store(cpu,s,at+4u,convert_to_single_ftz(f64_bits(cpu->ps1[r])),4);
++}
++static bool go_pair_load(CPUState* cpu,GoReplay* s,unsigned r,u32 at) {
++    cpu->fpr[r]=gm_single((u32)go_read(cpu,s,at,4));
++    cpu->ps1[r]=gm_single((u32)go_read(cpu,s,at+4u,4));return !s->bad;
++}
++static int game_osc_calc(CPUState* cpu) {
++    if(!cpu || !cpu->ram || cpu->exception || !(cpu->msr&PPC_MSR_FP) || (cpu->fpscr&3u) ||
++       !(cpu->hid2&PPC_HID2_LSQE) || (cpu->gqr[0]&0x00070007u) ||
++       cpu->cycle_budget<=0 || cpu->cycle_budget>INT32_MAX || cpu->downcount>0 ||
++       cpu->downcount<=-cpu->cycle_budget || g_mem_write_journal || g_ppc_guest_aliases_overlap_mem1)return 0;
++    const uintptr_t cp=(uintptr_t)cpu,rp=(uintptr_t)cpu->ram;
++    if(cp>UINTPTR_MAX-sizeof *cpu || rp>UINTPTR_MAX-cpu->ram_size ||
++       !(cp+sizeof *cpu<=rp || rp+cpu->ram_size<=cp))return 0;
++    GoReplay state={0},*s=&state;s->initial=*cpu;s->frame=cpu->gpr[1]-112u;
++    s->object=cpu->gpr[3];s->records=cpu->gpr[4];s->sda=cpu->gpr[2]-14992u;s->sda13=cpu->gpr[13]-31992u;
++    if(!ram_ok(cpu,s->frame,120) || !ram_ok(cpu,s->object,32))return 0;
++    s->config=word(cpu,s->object);
++    const u32 addresses[]={s->frame,s->object,s->config,s->records,s->sda,s->sda13,GO_TABLE,GO_CVT};
++    const u32 sizes[]={120,32,24,GO_RECORD_BYTES,72,84,204,24};
++    for(unsigned i=0;i<8;++i){
++        if(!ram_ok(cpu,addresses[i],sizes[i]))return 0;
++        for(unsigned j=0;j<i;++j)if(!apart(addresses[i],sizes[i],addresses[j],sizes[j]))return 0;
++    }
++    if((s->frame&7u) || (s->records&1u))return 0;
++    const unsigned mxcsr=_mm_getcsr();if((mxcsr&0x1F80u)!=0x1F80u)return 0;
++    fenv_t environment;if(fegetenv(&environment))return 0;
++    s->aliases=g_ppc_guest_alias_generation;
++    memcpy(s->old_frame,cpu->ram+s->frame-GC_RAM_BASE,120);
++    memcpy(s->old_object,cpu->ram+s->object-GC_RAM_BASE,32);
++    goto label_8028E238;
++
++label_8028E238:
++    cpu->pc = 0x8028E238u;
++    if (!go_block(cpu,9u,s)) goto decline;
++    cpu->cycle_observation_suffix = 8u;
++    // 8028E238: stwu     r1, -96(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(-96);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[1],4))goto decline;
++        cpu->gpr[1] = ea;
++    }
++
++label_8028E23C:
++    cpu->pc = 0x8028E23Cu;
++    cpu->cycle_observation_suffix = 7u;
++    // 8028E23C: mflr    r0
++    cpu->gpr[0] = cpu->lr;
++
++label_8028E240:
++    cpu->pc = 0x8028E240u;
++    cpu->cycle_observation_suffix = 6u;
++    // 8028E240: stw     r0, 100(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(100);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E244:
++    cpu->pc = 0x8028E244u;
++    cpu->cycle_observation_suffix = 5u;
++    // 8028E244: stfd     f31, 80(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(80);
++        if(!go_store(cpu,s,ea,f64_bits(cpu->fpr[31]),8))goto decline;
++    }
++
++label_8028E248:
++    cpu->pc = 0x8028E248u;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E248: psq_st   f31, 88(r1), 0, 0
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(88);
++        if(!go_pair_store(cpu,s,31u,ea))goto decline;
++        if (cpu->exception) goto decline;
++    }
++
++label_8028E24C:
++    cpu->pc = 0x8028E24Cu;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E24C: stfd     f30, 64(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(64);
++        if(!go_store(cpu,s,ea,f64_bits(cpu->fpr[30]),8))goto decline;
++    }
++
++label_8028E250:
++    cpu->pc = 0x8028E250u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E250: psq_st   f30, 72(r1), 0, 0
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(72);
++        if(!go_pair_store(cpu,s,30u,ea))goto decline;
++        if (cpu->exception) goto decline;
++    }
++
++label_8028E254:
++    cpu->pc = 0x8028E254u;
++    // 8028E254: addi    r11, r1, 64
++    cpu->gpr[11] = cpu->gpr[1] + (u32)(s32)(64);
++
++label_8028E258:
++    cpu->pc = 0x8028E258u;
++    // 8028E258: bl exact separately certified callee
++    cpu->lr=0x8028E25Cu;cpu->pc=0x80328F38u;
++    if(!go_boundary(cpu,cpu->pc,s))goto decline;
++    goto label_80328F38;
++
++label_8028E25C:
++    cpu->pc = 0x8028E25Cu;
++    if (!go_block(cpu,6u,s)) goto decline;
++    // 8028E25C: or   r29, r3, r3
++    {
++        cpu->gpr[29] = cpu->gpr[3] | cpu->gpr[3];
++    }
++
++label_8028E260:
++    cpu->pc = 0x8028E260u;
++    // 8028E260: or   r30, r4, r4
++    {
++        cpu->gpr[30] = cpu->gpr[4] | cpu->gpr[4];
++    }
++
++label_8028E264:
++    cpu->pc = 0x8028E264u;
++    // 8028E264: lis     r3, -32713
++    cpu->gpr[3] = ((u32)(s32)(-32713) << 16);
++
++label_8028E268:
++    cpu->pc = 0x8028E268u;
++    // 8028E268: addi    r31, r3, -30552
++    cpu->gpr[31] = cpu->gpr[3] + (u32)(s32)(-30552);
++
++label_8028E26C:
++    cpu->pc = 0x8028E26Cu;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E26C: lfs     f31, -14976(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14976);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[31] = value;
++        cpu->ps1[31] = value;
++    }
++
++label_8028E270:
++    cpu->pc = 0x8028E270u;
++    // 8028E270: b       0x8028E408
++    {
++            goto label_8028E408;
++    }
++
++label_8028E274:
++    cpu->pc = 0x8028E274u;
++    if (!go_block(cpu,9u,s)) goto decline;
++    cpu->cycle_observation_suffix = 8u;
++    // 8028E274: lhz     r0, 6(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(6);
++        cpu->gpr[0] = go_read(cpu,s,ea,2);
++    }
++
++label_8028E278:
++    // 8028E278: mulli   r3, r0, 3
++    cpu->gpr[3] = (u32)((s64)(s32)cpu->gpr[0] * (s64)(s32)3);
++
++label_8028E27C:
++    cpu->pc = 0x8028E27Cu;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E27C: lfs     f0, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E280:
++    cpu->pc = 0x8028E280u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E280: stfs     f0, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E284:
++    cpu->pc = 0x8028E284u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E284: lbz     r0, 4(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(4);
++        cpu->gpr[0] = go_read(cpu,s,ea,1);
++    }
++
++label_8028E288:
++    // 8028E288: cmplwi  r0, 0x0006
++    {
++        u32 val_a = (u32)(cpu->gpr[0]);
++        u32 val_b = (u32)(0x0006u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E28C:
++    // 8028E28C: bc    4, 2, 0x8028E29C
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E29C;
++        }
++    }
++
++label_8028E290:
++    if (!go_block(cpu,3u,s)) goto decline;
++    // 8028E290: li      r0, 0
++    cpu->gpr[0] = (u32)(s32)(0);
++
++label_8028E294:
++    cpu->pc = 0x8028E294u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E294: stb     r0, 4(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(4);
++        if(!go_store(cpu,s,ea,(u8)cpu->gpr[0],1))goto decline;
++    }
++
++label_8028E298:
++    // 8028E298: b       0x8028E418
++    {
++            goto label_8028E418;
++    }
++
++label_8028E29C:
++    if (!go_block(cpu,7u,s)) goto decline;
++    // 8028E29C: rlwinm r0, r3, 1, 0, 30
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[3], 1u) & 0xFFFFFFFEu;
++    }
++
++label_8028E2A0:
++    // 8028E2A0: add   r3, r30, r0
++    {
++        u32 a = cpu->gpr[30];
++        u32 b = cpu->gpr[0];
++        u32 res = a + b;
++        cpu->gpr[3] = res;
++    }
++
++label_8028E2A4:
++    cpu->pc = 0x8028E2A4u;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E2A4: lha     r0, 0(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(0);
++        cpu->gpr[0] = (u32)(s32)(s16)go_read(cpu,s,ea,2);
++    }
++
++label_8028E2A8:
++    cpu->pc = 0x8028E2A8u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E2A8: lha     r28, 2(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(2);
++        cpu->gpr[28] = (u32)(s32)(s16)go_read(cpu,s,ea,2);
++    }
++
++label_8028E2AC:
++    cpu->pc = 0x8028E2ACu;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E2AC: lha     r27, 4(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(4);
++        cpu->gpr[27] = (u32)(s32)(s16)go_read(cpu,s,ea,2);
++    }
++
++label_8028E2B0:
++    // 8028E2B0: cmpwi   r0, 13
++    {
++        s32 val_a = (s32)(cpu->gpr[0]);
++        s32 val_b = (s32)(13);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E2B4:
++    // 8028E2B4: bc    4, 2, 0x8028E2C0
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E2C0;
++        }
++    }
++
++label_8028E2B8:
++    cpu->pc = 0x8028E2B8u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E2B8: sth     r27, 6(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(6);
++        if(!go_store(cpu,s,ea,(u16)cpu->gpr[27],2))goto decline;
++    }
++
++label_8028E2BC:
++    // 8028E2BC: b       0x8028E408
++    {
++            goto label_8028E408;
++    }
++
++label_8028E2C0:
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E2C0: cmpwi   r0, 15
++    {
++        s32 val_a = (s32)(cpu->gpr[0]);
++        s32 val_b = (s32)(15);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E2C4:
++    // 8028E2C4: bc    4, 2, 0x8028E2D4
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E2D4;
++        }
++    }
++
++label_8028E2C8:
++    if (!go_block(cpu,3u,s)) goto decline;
++    // 8028E2C8: li      r0, 0
++    cpu->gpr[0] = (u32)(s32)(0);
++
++label_8028E2CC:
++    cpu->pc = 0x8028E2CCu;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E2CC: stb     r0, 4(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(4);
++        if(!go_store(cpu,s,ea,(u8)cpu->gpr[0],1))goto decline;
++    }
++
++label_8028E2D0:
++    // 8028E2D0: b       0x8028E418
++    {
++            goto label_8028E418;
++    }
++
++label_8028E2D4:
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E2D4: cmpwi   r0, 14
++    {
++        s32 val_a = (s32)(cpu->gpr[0]);
++        s32 val_b = (s32)(14);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E2D8:
++    // 8028E2D8: bc    4, 2, 0x8028E300
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E300;
++        }
++    }
++
++label_8028E2DC:
++    if (!go_block(cpu,9u,s)) goto decline;
++    // 8028E2DC: li      r0, 3
++    cpu->gpr[0] = (u32)(s32)(3);
++
++label_8028E2E0:
++    cpu->pc = 0x8028E2E0u;
++    cpu->cycle_observation_suffix = 7u;
++    // 8028E2E0: stb     r0, 4(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(4);
++        if(!go_store(cpu,s,ea,(u8)cpu->gpr[0],1))goto decline;
++    }
++
++label_8028E2E4:
++    cpu->pc = 0x8028E2E4u;
++    cpu->cycle_observation_suffix = 6u;
++    // 8028E2E4: lwz     r3, 0(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(0);
++        cpu->gpr[3] = go_read(cpu,s,ea,4);
++    }
++
++label_8028E2E8:
++    cpu->pc = 0x8028E2E8u;
++    cpu->cycle_observation_suffix = 5u;
++    // 8028E2E8: lfs     f2, 20(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(20);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[2] = value;
++        cpu->ps1[2] = value;
++    }
++
++label_8028E2EC:
++    cpu->pc = 0x8028E2ECu;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E2EC: lfs     f1, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E2F0:
++    cpu->pc = 0x8028E2F0u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E2F0: lfs     f0, 16(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E2F4:
++    cpu->pc = 0x8028E2F4u;
++    // 8028E2F4: fmuls   f0, f1, f0
++    ppc_fmuls(cpu, 0, 1, 0);
++
++label_8028E2F8:
++    cpu->pc = 0x8028E2F8u;
++    // 8028E2F8: fadds   f1, f2, f0
++    ppc_fadds(cpu, 1, 2, 0);
++
++label_8028E2FC:
++    // 8028E2FC: b       0x8028E5C4
++    {
++            goto label_8028E5C4;
++    }
++
++label_8028E300:
++    cpu->pc = 0x8028E300u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E300: stb     r0, 5(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(5);
++        if(!go_store(cpu,s,ea,(u8)cpu->gpr[0],1))goto decline;
++    }
++
++label_8028E304:
++    // 8028E304: extsh. r0, r28
++    {
++        cpu->gpr[0] = (u32)(s32)(s16)cpu->gpr[28];
++        u32 cr_bits = 0;
++        s32 cr_value = (s32)cpu->gpr[0];
++        if (cr_value < 0)  cr_bits |= 0x8u;
++        if (cr_value > 0)  cr_bits |= 0x4u;
++        if (cr_value == 0) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & 0x0FFFFFFFu) | (cr_bits << 28);
++    }
++
++label_8028E308:
++    // 8028E308: bc    4, 2, 0x8028E344
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E344;
++        }
++    }
++
++label_8028E30C:
++    cpu->pc = 0x8028E30Cu;
++    if (!go_block(cpu,30u,s)) goto decline;
++    cpu->cycle_observation_suffix = 29u;
++    // 8028E30C: lfd     f1, -14960(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14960);
++        cpu->fpr[1] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E310:
++    // 8028E310: xoris   r0, r27, 0x8000
++    cpu->gpr[0] = cpu->gpr[27] ^ (0x8000u << 16);
++
++label_8028E314:
++    cpu->pc = 0x8028E314u;
++    cpu->cycle_observation_suffix = 27u;
++    // 8028E314: stw     r0, 12(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E318:
++    // 8028E318: lis     r0, 17200
++    cpu->gpr[0] = ((u32)(s32)(17200) << 16);
++
++label_8028E31C:
++    cpu->pc = 0x8028E31Cu;
++    cpu->cycle_observation_suffix = 25u;
++    // 8028E31C: stw     r0, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E320:
++    cpu->pc = 0x8028E320u;
++    cpu->cycle_observation_suffix = 24u;
++    // 8028E320: lfd     f0, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E324:
++    cpu->pc = 0x8028E324u;
++    // 8028E324: fsubs   f1, f0, f1
++    ppc_fsubs(cpu, 1, 0, 1);
++
++label_8028E328:
++    cpu->pc = 0x8028E328u;
++    cpu->cycle_observation_suffix = 22u;
++    // 8028E328: lfs     f0, -14944(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14944);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E32C:
++    cpu->pc = 0x8028E32Cu;
++    // 8028E32C: fdivs   f0, f1, f0
++    ppc_fdivs(cpu, 0, 1, 0);
++
++label_8028E330:
++    cpu->pc = 0x8028E330u;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E330: stfs     f0, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E334:
++    cpu->pc = 0x8028E334u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E334: lhz     r3, 6(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(6);
++        cpu->gpr[3] = go_read(cpu,s,ea,2);
++    }
++
++label_8028E338:
++    // 8028E338: addi    r0, r3, 1
++    cpu->gpr[0] = cpu->gpr[3] + (u32)(s32)(1);
++
++label_8028E33C:
++    cpu->pc = 0x8028E33Cu;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E33C: sth     r0, 6(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(6);
++        if(!go_store(cpu,s,ea,(u16)cpu->gpr[0],2))goto decline;
++    }
++
++label_8028E340:
++    // 8028E340: b       0x8028E408
++    {
++            goto label_8028E408;
++    }
++
++label_8028E344:
++    cpu->pc = 0x8028E344u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E344: lfs     f30, -31992(r13)
++    {
++        u32 ea = cpu->gpr[13] + (u32)(s32)(-31992);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[30] = value;
++        cpu->ps1[30] = value;
++    }
++
++label_8028E348:
++    // 8028E348: bl exact separately certified callee
++    cpu->lr=0x8028E34Cu;cpu->pc=0x8028AAE4u;
++    if(!go_boundary(cpu,cpu->pc,s))goto decline;
++    goto label_8028AAE4;
++
++label_8028E34C:
++    if (!go_block(cpu,97u,s)) goto decline;
++    // 8028E34C: rlwinm r0, r3, 0, 24, 31
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[3], 0u) & 0x000000FFu;
++    }
++
++label_8028E350:
++    cpu->pc = 0x8028E350u;
++    cpu->cycle_observation_suffix = 95u;
++    // 8028E350: lfd     f1, -14952(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14952);
++        cpu->fpr[1] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E354:
++    cpu->pc = 0x8028E354u;
++    cpu->cycle_observation_suffix = 94u;
++    // 8028E354: stw     r0, 12(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E358:
++    // 8028E358: lis     r3, 17200
++    cpu->gpr[3] = ((u32)(s32)(17200) << 16);
++
++label_8028E35C:
++    cpu->pc = 0x8028E35Cu;
++    cpu->cycle_observation_suffix = 92u;
++    // 8028E35C: stw     r3, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[3],4))goto decline;
++    }
++
++label_8028E360:
++    cpu->pc = 0x8028E360u;
++    cpu->cycle_observation_suffix = 91u;
++    // 8028E360: lfd     f0, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E364:
++    cpu->pc = 0x8028E364u;
++    // 8028E364: fsubs   f4, f0, f1
++    ppc_fsubs(cpu, 4, 0, 1);
++
++label_8028E368:
++    cpu->pc = 0x8028E368u;
++    cpu->cycle_observation_suffix = 89u;
++    // 8028E368: lfd     f3, -14960(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14960);
++        cpu->fpr[3] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E36C:
++    // 8028E36C: xoris   r0, r28, 0x8000
++    cpu->gpr[0] = cpu->gpr[28] ^ (0x8000u << 16);
++
++label_8028E370:
++    cpu->pc = 0x8028E370u;
++    cpu->cycle_observation_suffix = 87u;
++    // 8028E370: stw     r0, 20(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(20);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E374:
++    cpu->pc = 0x8028E374u;
++    cpu->cycle_observation_suffix = 86u;
++    // 8028E374: stw     r3, 16(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(16);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[3],4))goto decline;
++    }
++
++label_8028E378:
++    cpu->pc = 0x8028E378u;
++    cpu->cycle_observation_suffix = 85u;
++    // 8028E378: lfd     f0, 16(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(16);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E37C:
++    cpu->pc = 0x8028E37Cu;
++    // 8028E37C: fsubs   f2, f0, f3
++    ppc_fsubs(cpu, 2, 0, 3);
++
++label_8028E380:
++    cpu->pc = 0x8028E380u;
++    cpu->cycle_observation_suffix = 83u;
++    // 8028E380: lfs     f0, -14968(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14968);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E384:
++    cpu->pc = 0x8028E384u;
++    // 8028E384: fdivs   f1, f30, f0
++    ppc_fdivs(cpu, 1, 30, 0);
++
++label_8028E388:
++    cpu->pc = 0x8028E388u;
++    cpu->cycle_observation_suffix = 65u;
++    // 8028E388: lfs     f0, -14964(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14964);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E38C:
++    cpu->pc = 0x8028E38Cu;
++    // 8028E38C: fdivs   f0, f1, f0
++    ppc_fdivs(cpu, 0, 1, 0);
++
++label_8028E390:
++    cpu->pc = 0x8028E390u;
++    // 8028E390: fmuls   f0, f2, f0
++    ppc_fmuls(cpu, 0, 2, 0);
++
++label_8028E394:
++    cpu->pc = 0x8028E394u;
++    // 8028E394: fdivs   f0, f0, f4
++    ppc_fdivs(cpu, 0, 0, 4);
++
++label_8028E398:
++    cpu->pc = 0x8028E398u;
++    cpu->cycle_observation_suffix = 29u;
++    // 8028E398: stfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E39C:
++    cpu->pc = 0x8028E39Cu;
++    cpu->cycle_observation_suffix = 28u;
++    // 8028E39C: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E3A0:
++    cpu->pc = 0x8028E3A0u;
++    cpu->cycle_observation_suffix = 27u;
++    // 8028E3A0: stfs     f0, 28(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(28);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E3A4:
++    // 8028E3A4: xoris   r0, r27, 0x8000
++    cpu->gpr[0] = cpu->gpr[27] ^ (0x8000u << 16);
++
++label_8028E3A8:
++    cpu->pc = 0x8028E3A8u;
++    cpu->cycle_observation_suffix = 25u;
++    // 8028E3A8: stw     r0, 28(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(28);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E3AC:
++    cpu->pc = 0x8028E3ACu;
++    cpu->cycle_observation_suffix = 24u;
++    // 8028E3AC: stw     r3, 24(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(24);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[3],4))goto decline;
++    }
++
++label_8028E3B0:
++    cpu->pc = 0x8028E3B0u;
++    cpu->cycle_observation_suffix = 23u;
++    // 8028E3B0: lfd     f0, 24(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(24);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E3B4:
++    cpu->pc = 0x8028E3B4u;
++    // 8028E3B4: fsubs   f1, f0, f3
++    ppc_fsubs(cpu, 1, 0, 3);
++
++label_8028E3B8:
++    cpu->pc = 0x8028E3B8u;
++    cpu->cycle_observation_suffix = 21u;
++    // 8028E3B8: lfs     f0, -14944(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14944);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E3BC:
++    cpu->pc = 0x8028E3BCu;
++    // 8028E3BC: fdivs   f0, f1, f0
++    ppc_fdivs(cpu, 0, 1, 0);
++
++label_8028E3C0:
++    cpu->pc = 0x8028E3C0u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E3C0: stfs     f0, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E3C4:
++    cpu->pc = 0x8028E3C4u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E3C4: lbz     r0, 5(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(5);
++        cpu->gpr[0] = go_read(cpu,s,ea,1);
++    }
++
++label_8028E3C8:
++    // 8028E3C8: cmplwi  r0, 0x0000
++    {
++        u32 val_a = (u32)(cpu->gpr[0]);
++        u32 val_b = (u32)(0x0000u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E3CC:
++    // 8028E3CC: bc    4, 2, 0x8028E3EC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E3EC;
++        }
++    }
++
++label_8028E3D0:
++    cpu->pc = 0x8028E3D0u;
++    if (!go_block(cpu,23u,s)) goto decline;
++    cpu->cycle_observation_suffix = 22u;
++    // 8028E3D0: lfs     f1, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E3D4:
++    cpu->pc = 0x8028E3D4u;
++    cpu->cycle_observation_suffix = 21u;
++    // 8028E3D4: lfs     f0, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E3D8:
++    cpu->pc = 0x8028E3D8u;
++    // 8028E3D8: fsubs   f1, f1, f0
++    ppc_fsubs(cpu, 1, 1, 0);
++
++label_8028E3DC:
++    cpu->pc = 0x8028E3DCu;
++    cpu->cycle_observation_suffix = 19u;
++    // 8028E3DC: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E3E0:
++    cpu->pc = 0x8028E3E0u;
++    // 8028E3E0: fdivs   f0, f1, f0
++    ppc_fdivs(cpu, 0, 1, 0);
++
++label_8028E3E4:
++    cpu->pc = 0x8028E3E4u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E3E4: stfs     f0, 20(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(20);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E3E8:
++    // 8028E3E8: b       0x8028E3FC
++    {
++            goto label_8028E3FC;
++    }
++
++label_8028E3EC:
++    cpu->pc = 0x8028E3ECu;
++    if (!go_block(cpu,4u,s)) goto decline;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E3EC: lfs     f1, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E3F0:
++    cpu->pc = 0x8028E3F0u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E3F0: lfs     f0, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E3F4:
++    cpu->pc = 0x8028E3F4u;
++    // 8028E3F4: fsubs   f0, f1, f0
++    ppc_fsubs(cpu, 0, 1, 0);
++
++label_8028E3F8:
++    cpu->pc = 0x8028E3F8u;
++    cpu->cycle_observation_suffix = 0u;
++    // 8028E3F8: stfs     f0, 20(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(20);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E3FC:
++    cpu->pc = 0x8028E3FCu;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E3FC: lhz     r3, 6(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(6);
++        cpu->gpr[3] = go_read(cpu,s,ea,2);
++    }
++
++label_8028E400:
++    // 8028E400: addi    r0, r3, 1
++    cpu->gpr[0] = cpu->gpr[3] + (u32)(s32)(1);
++
++label_8028E404:
++    cpu->pc = 0x8028E404u;
++    cpu->cycle_observation_suffix = 0u;
++    // 8028E404: sth     r0, 6(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(6);
++        if(!go_store(cpu,s,ea,(u16)cpu->gpr[0],2))goto decline;
++    }
++
++label_8028E408:
++    cpu->pc = 0x8028E408u;
++    if (!go_block(cpu,4u,s)) goto decline;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E408: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E40C:
++    cpu->pc = 0x8028E40Cu;
++    // 8028E40C: fcmpo   cr0, f0, f31
++    ppc_fcmp(cpu, 0, cpu->fpr[0], cpu->fpr[31], true);
++
++label_8028E410:
++    // 8028E410: cror    2, 0, 2
++    {
++        u32 a = (cpu->cr >> (31u - 0u)) & 1u;
++        u32 b = (cpu->cr >> (31u - 2u)) & 1u;
++        u32 mask = 0x80000000u >> 2;
++        u32 value = (a | b) & 1u;
++        cpu->cr = (cpu->cr & ~mask) | (value ? mask : 0u);
++    }
++
++label_8028E414:
++    // 8028E414: bc    12, 2, 0x8028E274
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8028E274u;
++                goto decline;
++            }
++            goto label_8028E274;
++        }
++    }
++
++label_8028E418:
++    cpu->pc = 0x8028E418u;
++    if (!go_block(cpu,5u,s)) goto decline;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E418: lfs     f1, -14976(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14976);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E41C:
++    cpu->pc = 0x8028E41Cu;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E41C: lwz     r3, 0(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(0);
++        cpu->gpr[3] = go_read(cpu,s,ea,4);
++    }
++
++label_8028E420:
++    cpu->pc = 0x8028E420u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E420: lfs     f0, 16(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E424:
++    cpu->pc = 0x8028E424u;
++    // 8028E424: fcmpu   cr0, f1, f0
++    ppc_fcmp(cpu, 0, cpu->fpr[1], cpu->fpr[0], false);
++
++label_8028E428:
++    cpu->pc = 0x8028E428u;
++    // 8028E428: bc    4, 2, 0x8028E434
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E434;
++        }
++    }
++
++label_8028E42C:
++    cpu->pc = 0x8028E42Cu;
++    if (!go_block(cpu,2u,s)) goto decline;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E42C: lfs     f1, 20(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(20);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E430:
++    cpu->pc = 0x8028E430u;
++    // 8028E430: b       0x8028E5C4
++    {
++            goto label_8028E5C4;
++    }
++
++label_8028E434:
++    cpu->pc = 0x8028E434u;
++    if (!go_block(cpu,4u,s)) goto decline;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E434: lfd     f0, -14936(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14936);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E438:
++    cpu->pc = 0x8028E438u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E438: lfs     f3, 28(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(28);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[3] = value;
++        cpu->ps1[3] = value;
++    }
++
++label_8028E43C:
++    cpu->pc = 0x8028E43Cu;
++    // 8028E43C: fcmpu   cr0, f0, f3
++    ppc_fcmp(cpu, 0, cpu->fpr[0], cpu->fpr[3], false);
++
++label_8028E440:
++    cpu->pc = 0x8028E440u;
++    // 8028E440: bc    4, 2, 0x8028E454
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E454;
++        }
++    }
++
++label_8028E444:
++    cpu->pc = 0x8028E444u;
++    if (!go_block(cpu,4u,s)) goto decline;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E444: lfs     f0, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E448:
++    cpu->pc = 0x8028E448u;
++    // 8028E448: fmr    f2, f0
++    cpu->fpr[2] = cpu->fpr[0];
++
++label_8028E44C:
++    cpu->pc = 0x8028E44Cu;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E44C: stfs     f0, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[0]),4))goto decline;
++    }
++
++label_8028E450:
++    cpu->pc = 0x8028E450u;
++    // 8028E450: b       0x8028E5B0
++    {
++            goto label_8028E5B0;
++    }
++
++label_8028E454:
++    cpu->pc = 0x8028E454u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E454: lbz     r0, 5(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(5);
++        cpu->gpr[0] = go_read(cpu,s,ea,1);
++    }
++
++label_8028E458:
++    cpu->pc = 0x8028E458u;
++    // 8028E458: cmplwi  r0, 0x0000
++    {
++        u32 val_a = (u32)(cpu->gpr[0]);
++        u32 val_b = (u32)(0x0000u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E45C:
++    cpu->pc = 0x8028E45Cu;
++    // 8028E45C: bc    12, 2, 0x8028E46C
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E46C;
++        }
++    }
++
++label_8028E460:
++    cpu->pc = 0x8028E460u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E460: lfs     f31, 20(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(20);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[31] = value;
++        cpu->ps1[31] = value;
++    }
++
++label_8028E464:
++    cpu->pc = 0x8028E464u;
++    // 8028E464: fcmpu   cr0, f1, f31
++    ppc_fcmp(cpu, 0, cpu->fpr[1], cpu->fpr[31], false);
++
++label_8028E468:
++    cpu->pc = 0x8028E468u;
++    // 8028E468: bc    4, 2, 0x8028E488
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E488;
++        }
++    }
++
++label_8028E46C:
++    cpu->pc = 0x8028E46Cu;
++    if (!go_block(cpu,7u,s)) goto decline;
++    cpu->cycle_observation_suffix = 6u;
++    // 8028E46C: lfs     f2, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[2] = value;
++        cpu->ps1[2] = value;
++    }
++
++label_8028E470:
++    cpu->pc = 0x8028E470u;
++    cpu->cycle_observation_suffix = 5u;
++    // 8028E470: lfs     f1, 20(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(20);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E474:
++    cpu->pc = 0x8028E474u;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E474: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E478:
++    cpu->pc = 0x8028E478u;
++    // 8028E478: fmuls   f0, f1, f0
++    ppc_fmuls(cpu, 0, 1, 0);
++
++label_8028E47C:
++    cpu->pc = 0x8028E47Cu;
++    // 8028E47C: fsubs   f2, f2, f0
++    ppc_fsubs(cpu, 2, 2, 0);
++
++label_8028E480:
++    cpu->pc = 0x8028E480u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E480: stfs     f2, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[2]),4))goto decline;
++    }
++
++label_8028E484:
++    cpu->pc = 0x8028E484u;
++    // 8028E484: b       0x8028E5B0
++    {
++            goto label_8028E5B0;
++    }
++
++label_8028E488:
++    cpu->pc = 0x8028E488u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E488: cmplwi  r0, 0x0003
++    {
++        u32 val_a = (u32)(cpu->gpr[0]);
++        u32 val_b = (u32)(0x0003u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E48C:
++    cpu->pc = 0x8028E48Cu;
++    // 8028E48C: bc    12, 2, 0x8028E4A0
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E4A0;
++        }
++    }
++
++label_8028E490:
++    cpu->pc = 0x8028E490u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E490: cmplwi  r0, 0x0001
++    {
++        u32 val_a = (u32)(cpu->gpr[0]);
++        u32 val_b = (u32)(0x0001u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E494:
++    cpu->pc = 0x8028E494u;
++    // 8028E494: bc    12, 2, 0x8028E4A0
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E4A0;
++        }
++    }
++
++label_8028E498:
++    cpu->pc = 0x8028E498u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E498: cmplwi  r0, 0x0002
++    {
++        u32 val_a = (u32)(cpu->gpr[0]);
++        u32 val_b = (u32)(0x0002u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E49C:
++    cpu->pc = 0x8028E49Cu;
++    // 8028E49C: bc    4, 2, 0x8028E59C
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E59C;
++        }
++    }
++
++label_8028E4A0:
++    cpu->pc = 0x8028E4A0u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    // 8028E4A0: li      r27, 0
++    cpu->gpr[27] = (u32)(s32)(0);
++
++label_8028E4A4:
++    cpu->pc = 0x8028E4A4u;
++    // 8028E4A4: cmpwi   r0, 2
++    {
++        s32 val_a = (s32)(cpu->gpr[0]);
++        s32 val_b = (s32)(2);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E4A8:
++    cpu->pc = 0x8028E4A8u;
++    // 8028E4A8: bc    12, 2, 0x8028E4D4
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E4D4;
++        }
++    }
++
++label_8028E4AC:
++    cpu->pc = 0x8028E4ACu;
++    if (!go_block(cpu,1u,s)) goto decline;
++    // 8028E4AC: bc    4, 0, 0x8028E4BC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E4BC;
++        }
++    }
++
++label_8028E4B0:
++    cpu->pc = 0x8028E4B0u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E4B0: cmpwi   r0, 1
++    {
++        s32 val_a = (s32)(cpu->gpr[0]);
++        s32 val_b = (s32)(1);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E4B4:
++    cpu->pc = 0x8028E4B4u;
++    // 8028E4B4: bc    4, 0, 0x8028E4CC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E4CC;
++        }
++    }
++
++label_8028E4B8:
++    cpu->pc = 0x8028E4B8u;
++    if (!go_block(cpu,1u,s)) goto decline;
++    // 8028E4B8: b       0x8028E4D8
++    {
++            goto label_8028E4D8;
++    }
++
++label_8028E4BC:
++    cpu->pc = 0x8028E4BCu;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E4BC: cmpwi   r0, 4
++    {
++        s32 val_a = (s32)(cpu->gpr[0]);
++        s32 val_b = (s32)(4);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E4C0:
++    cpu->pc = 0x8028E4C0u;
++    // 8028E4C0: bc    4, 0, 0x8028E4D8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E4D8;
++        }
++    }
++
++label_8028E4C4:
++    cpu->pc = 0x8028E4C4u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E4C4: addi    r27, r31, 0
++    cpu->gpr[27] = cpu->gpr[31] + (u32)(s32)(0);
++
++label_8028E4C8:
++    cpu->pc = 0x8028E4C8u;
++    // 8028E4C8: b       0x8028E4D8
++    {
++            goto label_8028E4D8;
++    }
++
++label_8028E4CC:
++    cpu->pc = 0x8028E4CCu;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E4CC: addi    r27, r31, 136
++    cpu->gpr[27] = cpu->gpr[31] + (u32)(s32)(136);
++
++label_8028E4D0:
++    cpu->pc = 0x8028E4D0u;
++    // 8028E4D0: b       0x8028E4D8
++    {
++            goto label_8028E4D8;
++    }
++
++label_8028E4D4:
++    cpu->pc = 0x8028E4D4u;
++    if (!go_block(cpu,1u,s)) goto decline;
++    // 8028E4D4: addi    r27, r31, 68
++    cpu->gpr[27] = cpu->gpr[31] + (u32)(s32)(68);
++
++label_8028E4D8:
++    cpu->pc = 0x8028E4D8u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E4D8: lfs     f0, -14976(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14976);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E4DC:
++    cpu->pc = 0x8028E4DCu;
++    // 8028E4DC: fcmpo   cr0, f31, f0
++    ppc_fcmp(cpu, 0, cpu->fpr[31], cpu->fpr[0], true);
++
++label_8028E4E0:
++    cpu->pc = 0x8028E4E0u;
++    // 8028E4E0: bc    4, 0, 0x8028E500
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E500;
++        }
++    }
++
++label_8028E4E4:
++    cpu->pc = 0x8028E4E4u;
++    if (!go_block(cpu,23u,s)) goto decline;
++    cpu->cycle_observation_suffix = 22u;
++    // 8028E4E4: lfs     f2, -14928(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14928);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[2] = value;
++        cpu->ps1[2] = value;
++    }
++
++label_8028E4E8:
++    cpu->pc = 0x8028E4E8u;
++    cpu->cycle_observation_suffix = 21u;
++    // 8028E4E8: lfs     f1, -14972(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14972);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E4EC:
++    cpu->pc = 0x8028E4ECu;
++    cpu->cycle_observation_suffix = 20u;
++    // 8028E4EC: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E4F0:
++    cpu->pc = 0x8028E4F0u;
++    // 8028E4F0: fdivs   f0, f0, f3
++    ppc_fdivs(cpu, 0, 0, 3);
++
++label_8028E4F4:
++    cpu->pc = 0x8028E4F4u;
++    // 8028E4F4: fsubs   f0, f1, f0
++    ppc_fsubs(cpu, 0, 1, 0);
++
++label_8028E4F8:
++    cpu->pc = 0x8028E4F8u;
++    // 8028E4F8: fmuls   f30, f2, f0
++    ppc_fmuls(cpu, 30, 2, 0);
++
++label_8028E4FC:
++    cpu->pc = 0x8028E4FCu;
++    // 8028E4FC: b       0x8028E510
++    {
++            goto label_8028E510;
++    }
++
++label_8028E500:
++    cpu->pc = 0x8028E500u;
++    if (!go_block(cpu,20u,s)) goto decline;
++    cpu->cycle_observation_suffix = 19u;
++    // 8028E500: lfs     f1, -14928(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14928);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E504:
++    cpu->pc = 0x8028E504u;
++    cpu->cycle_observation_suffix = 18u;
++    // 8028E504: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E508:
++    cpu->pc = 0x8028E508u;
++    // 8028E508: fdivs   f0, f0, f3
++    ppc_fdivs(cpu, 0, 0, 3);
++
++label_8028E50C:
++    cpu->pc = 0x8028E50Cu;
++    // 8028E50C: fmuls   f30, f1, f0
++    ppc_fmuls(cpu, 30, 1, 0);
++
++label_8028E510:
++    cpu->pc = 0x8028E510u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E510: fmr    f1, f30
++    cpu->fpr[1] = cpu->fpr[30];
++
++label_8028E514:
++    cpu->pc = 0x8028E514u;
++    // 8028E514: bl exact separately certified callee
++    cpu->lr=0x8028E518u;cpu->pc=0x80328E10u;
++    if(!go_boundary(cpu,cpu->pc,s))goto decline;
++    goto label_80328E10;
++
++label_8028E518:
++    cpu->pc = 0x8028E518u;
++    if (!go_block(cpu,9u,s)) goto decline;
++    cpu->cycle_observation_suffix = 8u;
++    // 8028E518: lfd     f1, -14952(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14952);
++        cpu->fpr[1] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E51C:
++    cpu->pc = 0x8028E51Cu;
++    cpu->cycle_observation_suffix = 7u;
++    // 8028E51C: stw     r3, 28(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(28);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[3],4))goto decline;
++    }
++
++label_8028E520:
++    cpu->pc = 0x8028E520u;
++    // 8028E520: lis     r0, 17200
++    cpu->gpr[0] = ((u32)(s32)(17200) << 16);
++
++label_8028E524:
++    cpu->pc = 0x8028E524u;
++    cpu->cycle_observation_suffix = 5u;
++    // 8028E524: stw     r0, 24(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(24);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[0],4))goto decline;
++    }
++
++label_8028E528:
++    cpu->pc = 0x8028E528u;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E528: lfd     f0, 24(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(24);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E52C:
++    cpu->pc = 0x8028E52Cu;
++    // 8028E52C: fsubs   f0, f0, f1
++    ppc_fsubs(cpu, 0, 0, 1);
++
++label_8028E530:
++    cpu->pc = 0x8028E530u;
++    // 8028E530: fsubs   f2, f30, f0
++    ppc_fsubs(cpu, 2, 30, 0);
++
++label_8028E534:
++    cpu->pc = 0x8028E534u;
++    // 8028E534: cmplwi  r3, 0x0010
++    {
++        u32 val_a = (u32)(cpu->gpr[3]);
++        u32 val_b = (u32)(0x0010u);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8028E538:
++    cpu->pc = 0x8028E538u;
++    // 8028E538: bc    12, 0, 0x8028E544
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E544;
++        }
++    }
++
++label_8028E53C:
++    cpu->pc = 0x8028E53Cu;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 8028E53C: li      r3, 15
++    cpu->gpr[3] = (u32)(s32)(15);
++
++label_8028E540:
++    cpu->pc = 0x8028E540u;
++    cpu->cycle_observation_suffix = 0u;
++    // 8028E540: lfs     f2, -14972(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14972);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[2] = value;
++        cpu->ps1[2] = value;
++    }
++
++label_8028E544:
++    cpu->pc = 0x8028E544u;
++    if (!go_block(cpu,14u,s)) goto decline;
++    // 8028E544: rlwinm r0, r3, 2, 0, 29
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[3], 2u) & 0xFFFFFFFCu;
++    }
++
++label_8028E548:
++    cpu->pc = 0x8028E548u;
++    cpu->cycle_observation_suffix = 12u;
++    // 8028E548: lfsx    f1, r27, r0
++    {
++        u32 ea = cpu->gpr[27] + cpu->gpr[0];
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E54C:
++    cpu->pc = 0x8028E54Cu;
++    // 8028E54C: add   r3, r27, r0
++    {
++        u32 a = cpu->gpr[27];
++        u32 b = cpu->gpr[0];
++        u32 res = a + b;
++        cpu->gpr[3] = res;
++    }
++
++label_8028E550:
++    cpu->pc = 0x8028E550u;
++    cpu->cycle_observation_suffix = 10u;
++    // 8028E550: lfs     f0, 4(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(4);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E554:
++    cpu->pc = 0x8028E554u;
++    // 8028E554: fsubs   f0, f0, f1
++    ppc_fsubs(cpu, 0, 0, 1);
++
++label_8028E558:
++    cpu->pc = 0x8028E558u;
++    // 8028E558: fmuls   f0, f2, f0
++    ppc_fmuls(cpu, 0, 2, 0);
++
++label_8028E55C:
++    cpu->pc = 0x8028E55Cu;
++    // 8028E55C: fadds   f0, f1, f0
++    ppc_fadds(cpu, 0, 1, 0);
++
++label_8028E560:
++    cpu->pc = 0x8028E560u;
++    // 8028E560: fmuls   f0, f31, f0
++    ppc_fmuls(cpu, 0, 31, 0);
++
++label_8028E564:
++    cpu->pc = 0x8028E564u;
++    // 8028E564: fabs    f0, f0
++    cpu->fpr[0] = f64_value(f64_bits(cpu->fpr[0]) & 0x7FFFFFFFFFFFFFFFull);
++
++label_8028E568:
++    cpu->pc = 0x8028E568u;
++    // 8028E568: frsp    f2, f0
++    ppc_frsp(cpu, 2, 0);
++
++label_8028E56C:
++    cpu->pc = 0x8028E56Cu;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E56C: lfs     f3, 20(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(20);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[3] = value;
++        cpu->ps1[3] = value;
++    }
++
++label_8028E570:
++    cpu->pc = 0x8028E570u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E570: lfs     f0, -14976(r2)
++    {
++        u32 ea = cpu->gpr[2] + (u32)(s32)(-14976);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E574:
++    cpu->pc = 0x8028E574u;
++    // 8028E574: fcmpo   cr0, f3, f0
++    ppc_fcmp(cpu, 0, cpu->fpr[3], cpu->fpr[0], true);
++
++label_8028E578:
++    cpu->pc = 0x8028E578u;
++    // 8028E578: bc    4, 0, 0x8028E588
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8028E588;
++        }
++    }
++
++label_8028E57C:
++    cpu->pc = 0x8028E57Cu;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E57C: lfs     f0, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E580:
++    cpu->pc = 0x8028E580u;
++    // 8028E580: fadds   f2, f0, f2
++    ppc_fadds(cpu, 2, 0, 2);
++
++label_8028E584:
++    cpu->pc = 0x8028E584u;
++    // 8028E584: b       0x8028E594
++    {
++            goto label_8028E594;
++    }
++
++label_8028E588:
++    cpu->pc = 0x8028E588u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E588: lfs     f1, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E58C:
++    cpu->pc = 0x8028E58Cu;
++    // 8028E58C: fsubs   f0, f3, f2
++    ppc_fsubs(cpu, 0, 3, 2);
++
++label_8028E590:
++    cpu->pc = 0x8028E590u;
++    // 8028E590: fsubs   f2, f1, f0
++    ppc_fsubs(cpu, 2, 1, 0);
++
++label_8028E594:
++    cpu->pc = 0x8028E594u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028E594: stfs     f2, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[2]),4))goto decline;
++    }
++
++label_8028E598:
++    cpu->pc = 0x8028E598u;
++    // 8028E598: b       0x8028E5B0
++    {
++            goto label_8028E5B0;
++    }
++
++label_8028E59C:
++    cpu->pc = 0x8028E59Cu;
++    if (!go_block(cpu,5u,s)) goto decline;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E59C: lfs     f1, 16(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E5A0:
++    cpu->pc = 0x8028E5A0u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E5A0: lfs     f0, 8(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(8);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E5A4:
++    cpu->pc = 0x8028E5A4u;
++    // 8028E5A4: fmuls   f0, f31, f0
++    ppc_fmuls(cpu, 0, 31, 0);
++
++label_8028E5A8:
++    cpu->pc = 0x8028E5A8u;
++    // 8028E5A8: fsubs   f2, f1, f0
++    ppc_fsubs(cpu, 2, 1, 0);
++
++label_8028E5AC:
++    cpu->pc = 0x8028E5ACu;
++    cpu->cycle_observation_suffix = 0u;
++    // 8028E5AC: stfs     f2, 12(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(12);
++        if(!go_store(cpu,s,ea,gm_single_bits(cpu->fpr[2]),4))goto decline;
++    }
++
++label_8028E5B0:
++    cpu->pc = 0x8028E5B0u;
++    if (!go_block(cpu,5u,s)) goto decline;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E5B0: lwz     r3, 0(r29)
++    {
++        u32 ea = cpu->gpr[29] + (u32)(s32)(0);
++        cpu->gpr[3] = go_read(cpu,s,ea,4);
++    }
++
++label_8028E5B4:
++    cpu->pc = 0x8028E5B4u;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E5B4: lfs     f1, 20(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(20);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[1] = value;
++        cpu->ps1[1] = value;
++    }
++
++label_8028E5B8:
++    cpu->pc = 0x8028E5B8u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E5B8: lfs     f0, 16(r3)
++    {
++        u32 ea = cpu->gpr[3] + (u32)(s32)(16);
++        f64 value = gm_single(go_read(cpu,s,ea,4));
++        cpu->fpr[0] = value;
++        cpu->ps1[0] = value;
++    }
++
++label_8028E5BC:
++    cpu->pc = 0x8028E5BCu;
++    // 8028E5BC: fmuls   f0, f2, f0
++    ppc_fmuls(cpu, 0, 2, 0);
++
++label_8028E5C0:
++    cpu->pc = 0x8028E5C0u;
++    // 8028E5C0: fadds   f1, f1, f0
++    ppc_fadds(cpu, 1, 1, 0);
++
++label_8028E5C4:
++    cpu->pc = 0x8028E5C4u;
++    if (!go_block(cpu,6u,s)) goto decline;
++    cpu->cycle_observation_suffix = 5u;
++    // 8028E5C4: psq_l   f31, 88(r1), 0, 0
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(88);
++        if(!go_pair_load(cpu,s,31u,ea))goto decline;
++        if (cpu->exception) goto decline;
++    }
++
++label_8028E5C8:
++    cpu->pc = 0x8028E5C8u;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E5C8: lfd     f31, 80(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(80);
++        cpu->fpr[31] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E5CC:
++    cpu->pc = 0x8028E5CCu;
++    cpu->cycle_observation_suffix = 3u;
++    // 8028E5CC: psq_l   f30, 72(r1), 0, 0
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(72);
++        if(!go_pair_load(cpu,s,30u,ea))goto decline;
++        if (cpu->exception) goto decline;
++    }
++
++label_8028E5D0:
++    cpu->pc = 0x8028E5D0u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E5D0: lfd     f30, 64(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(64);
++        cpu->fpr[30] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_8028E5D4:
++    cpu->pc = 0x8028E5D4u;
++    // 8028E5D4: addi    r11, r1, 64
++    cpu->gpr[11] = cpu->gpr[1] + (u32)(s32)(64);
++
++label_8028E5D8:
++    cpu->pc = 0x8028E5D8u;
++    // 8028E5D8: bl exact separately certified callee
++    cpu->lr=0x8028E5DCu;cpu->pc=0x80328F84u;
++    if(!go_boundary(cpu,cpu->pc,s))goto decline;
++    goto label_80328F84;
++
++label_8028E5DC:
++    cpu->pc = 0x8028E5DCu;
++    if (!go_block(cpu,5u,s)) goto decline;
++    cpu->cycle_observation_suffix = 4u;
++    // 8028E5DC: lwz     r0, 100(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(100);
++        cpu->gpr[0] = go_read(cpu,s,ea,4);
++    }
++
++label_8028E5E0:
++    cpu->pc = 0x8028E5E0u;
++    cpu->cycle_observation_suffix = 2u;
++    // 8028E5E0: mtlr    r0
++    cpu->lr = cpu->gpr[0];
++
++label_8028E5E4:
++    cpu->pc = 0x8028E5E4u;
++    // 8028E5E4: addi    r1, r1, 96
++    cpu->gpr[1] = cpu->gpr[1] + (u32)(s32)(96);
++
++label_8028E5E8:
++    cpu->pc = 0x8028E5E8u;
++    // 8028E5E8: blr
++    {
++        u32 target = cpu->lr & ~3u;
++        bool ctr_ok = true;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            cpu->pc = target;
++            goto go_done;
++        }
++    }
++
++
++label_80328F38:
++    if(cpu->downcount<=-cpu->cycle_budget+5 || !go_block(cpu,6u,s))goto decline;
++    cpu->pc = 0x80328F38u;
++    cpu->cycle_observation_suffix = 5u;
++    // 80328F38: stw     r27, -20(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-20);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[27],4))goto decline;
++    }
++
++label_80328F3C:
++    cpu->pc = 0x80328F3Cu;
++    cpu->cycle_observation_suffix = 4u;
++    // 80328F3C: stw     r28, -16(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-16);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[28],4))goto decline;
++    }
++
++label_80328F40:
++    cpu->pc = 0x80328F40u;
++    cpu->cycle_observation_suffix = 3u;
++    // 80328F40: stw     r29, -12(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-12);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[29],4))goto decline;
++    }
++
++label_80328F44:
++    cpu->pc = 0x80328F44u;
++    cpu->cycle_observation_suffix = 2u;
++    // 80328F44: stw     r30, -8(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-8);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[30],4))goto decline;
++    }
++
++label_80328F48:
++    cpu->pc = 0x80328F48u;
++    cpu->cycle_observation_suffix = 1u;
++    // 80328F48: stw     r31, -4(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-4);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[31],4))goto decline;
++    }
++
++label_80328F4C:
++    cpu->pc = 0x80328F4Cu;
++    // 80328F4C: blr
++    {
++        u32 target = cpu->lr & ~3u;
++        bool ctr_ok = true;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            cpu->pc = target;
++            cpu->cycle_observation_suffix=0u;
++            if(cpu->pc!=0x8028E25Cu || !go_boundary(cpu,cpu->pc,s))goto decline;
++            goto label_8028E25C;
++        }
++    }
++
++
++label_8028AAE4:
++    cpu->pc = 0x8028AAE4u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    cpu->cycle_observation_suffix = 1u;
++    // 8028AAE4: lbz     r3, -31912(r13)
++    {
++        u32 ea = cpu->gpr[13] + (u32)(s32)(-31912);
++        cpu->gpr[3] = go_read(cpu,s,ea,1);
++    }
++
++label_8028AAE8:
++    cpu->pc = 0x8028AAE8u;
++    // 8028AAE8: blr
++    {
++        u32 target = cpu->lr & ~3u;
++        bool ctr_ok = true;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            cpu->pc = target;
++            if(cpu->pc!=0x8028E34Cu || !go_boundary(cpu,cpu->pc,s))goto decline;
++            goto label_8028E34C;
++        }
++    }
++
++
++label_80328E10:
++    cpu->pc = 0x80328E10u;
++    if (!go_block(cpu,10u,s)) goto decline;
++    cpu->cycle_observation_suffix = 9u;
++    // 80328E10: stwu     r1, -16(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(-16);
++        if(!go_store(cpu,s,ea,(u32)cpu->gpr[1],4))goto decline;
++        cpu->gpr[1] = ea;
++    }
++
++label_80328E14:
++    cpu->pc = 0x80328E14u;
++    // 80328E14: lis     r4, -32713
++    cpu->gpr[4] = ((u32)(s32)(-32713) << 16);
++
++label_80328E18:
++    cpu->pc = 0x80328E18u;
++    // 80328E18: ori     r4, r4, 0x0FC8
++    cpu->gpr[4] = cpu->gpr[4] | 0x0FC8u;
++
++label_80328E1C:
++    cpu->pc = 0x80328E1Cu;
++    // 80328E1C: li      r3, 0
++    cpu->gpr[3] = (u32)(s32)(0);
++
++label_80328E20:
++    cpu->pc = 0x80328E20u;
++    cpu->cycle_observation_suffix = 5u;
++    // 80328E20: lfd     f0, 0(r4)
++    {
++        u32 ea = cpu->gpr[4] + (u32)(s32)(0);
++        cpu->fpr[0] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_80328E24:
++    cpu->pc = 0x80328E24u;
++    cpu->cycle_observation_suffix = 4u;
++    // 80328E24: lfd     f3, 8(r4)
++    {
++        u32 ea = cpu->gpr[4] + (u32)(s32)(8);
++        cpu->fpr[3] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_80328E28:
++    cpu->pc = 0x80328E28u;
++    cpu->cycle_observation_suffix = 3u;
++    // 80328E28: lfd     f4, 16(r4)
++    {
++        u32 ea = cpu->gpr[4] + (u32)(s32)(16);
++        cpu->fpr[4] = f64_value(go_read(cpu,s,ea,8));
++    }
++
++label_80328E2C:
++    cpu->pc = 0x80328E2Cu;
++    // 80328E2C: fcmpu   cr0, f1, f0
++    ppc_fcmp(cpu, 0, cpu->fpr[1], cpu->fpr[0], false);
++
++label_80328E30:
++    cpu->pc = 0x80328E30u;
++    // 80328E30: fcmpu   cr6, f1, f3
++    ppc_fcmp(cpu, 6, cpu->fpr[1], cpu->fpr[3], false);
++
++label_80328E34:
++    cpu->pc = 0x80328E34u;
++    // 80328E34: bc    12, 0, 0x80328E64
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_80328E64;
++        }
++    }
++
++label_80328E38:
++    cpu->pc = 0x80328E38u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 80328E38: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++label_80328E3C:
++    cpu->pc = 0x80328E3Cu;
++    // 80328E3C: bc    4, 24, 0x80328E64
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x00000080u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_80328E64;
++        }
++    }
++
++label_80328E40:
++    cpu->pc = 0x80328E40u;
++    if (!go_block(cpu,3u,s)) goto decline;
++    // 80328E40: fcmpu   cr7, f1, f4
++    ppc_fcmp(cpu, 7, cpu->fpr[1], cpu->fpr[4], false);
++
++label_80328E44:
++    cpu->pc = 0x80328E44u;
++    // 80328E44: fmr    f2, f1
++    cpu->fpr[2] = cpu->fpr[1];
++
++label_80328E48:
++    cpu->pc = 0x80328E48u;
++    // 80328E48: bc    12, 28, 0x80328E50
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x00000008u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_80328E50;
++        }
++    }
++
++label_80328E4C:
++    cpu->pc = 0x80328E4Cu;
++    if (!go_block(cpu,1u,s)) goto decline;
++    // 80328E4C: fsub   f2, f1, f4
++    ppc_fsub(cpu, 2, 1, 4);
++
++label_80328E50:
++    cpu->pc = 0x80328E50u;
++    if (!go_block(cpu,4u,s)) goto decline;
++    // 80328E50: fctiwz    f2, f2
++    { u64 result; if (ppc_fctiw(cpu, cpu->fpr[2], true, &result)) cpu->fpr[2] = f64_value(result); }
++
++label_80328E54:
++    cpu->pc = 0x80328E54u;
++    cpu->cycle_observation_suffix = 2u;
++    // 80328E54: stfd     f2, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        if(!go_store(cpu,s,ea,f64_bits(cpu->fpr[2]),8))goto decline;
++    }
++
++label_80328E58:
++    cpu->pc = 0x80328E58u;
++    cpu->cycle_observation_suffix = 1u;
++    // 80328E58: lwz     r3, 12(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(12);
++        cpu->gpr[3] = go_read(cpu,s,ea,4);
++    }
++
++label_80328E5C:
++    cpu->pc = 0x80328E5Cu;
++    // 80328E5C: bc    12, 28, 0x80328E64
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x00000008u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_80328E64;
++        }
++    }
++
++label_80328E60:
++    cpu->pc = 0x80328E60u;
++    if (!go_block(cpu,1u,s)) goto decline;
++    // 80328E60: addis   r3, r3, -32768
++    cpu->gpr[3] = cpu->gpr[3] + ((u32)(s32)(-32768) << 16);
++
++label_80328E64:
++    cpu->pc = 0x80328E64u;
++    if (!go_block(cpu,2u,s)) goto decline;
++    // 80328E64: addi    r1, r1, 16
++    cpu->gpr[1] = cpu->gpr[1] + (u32)(s32)(16);
++
++label_80328E68:
++    cpu->pc = 0x80328E68u;
++    // 80328E68: blr
++    {
++        u32 target = cpu->lr & ~3u;
++        bool ctr_ok = true;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            cpu->pc = target;
++            if(cpu->pc!=0x8028E518u || !go_boundary(cpu,cpu->pc,s))goto decline;
++            goto label_8028E518;
++        }
++    }
++
++
++label_80328F84:
++    if(cpu->downcount<=-cpu->cycle_budget+5 || !go_block(cpu,6u,s))goto decline;
++    cpu->pc = 0x80328F84u;
++    cpu->cycle_observation_suffix = 5u;
++    // 80328F84: lwz     r27, -20(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-20);
++        cpu->gpr[27] = go_read(cpu,s,ea,4);
++    }
++
++label_80328F88:
++    cpu->pc = 0x80328F88u;
++    cpu->cycle_observation_suffix = 4u;
++    // 80328F88: lwz     r28, -16(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-16);
++        cpu->gpr[28] = go_read(cpu,s,ea,4);
++    }
++
++label_80328F8C:
++    cpu->pc = 0x80328F8Cu;
++    cpu->cycle_observation_suffix = 3u;
++    // 80328F8C: lwz     r29, -12(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-12);
++        cpu->gpr[29] = go_read(cpu,s,ea,4);
++    }
++
++label_80328F90:
++    cpu->pc = 0x80328F90u;
++    cpu->cycle_observation_suffix = 2u;
++    // 80328F90: lwz     r30, -8(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-8);
++        cpu->gpr[30] = go_read(cpu,s,ea,4);
++    }
++
++label_80328F94:
++    cpu->pc = 0x80328F94u;
++    cpu->cycle_observation_suffix = 1u;
++    // 80328F94: lwz     r31, -4(r11)
++    {
++        u32 ea = cpu->gpr[11] + (u32)(s32)(-4);
++        cpu->gpr[31] = go_read(cpu,s,ea,4);
++    }
++
++label_80328F98:
++    cpu->pc = 0x80328F98u;
++    // 80328F98: blr
++    {
++        u32 target = cpu->lr & ~3u;
++        bool ctr_ok = true;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            cpu->pc = target;
++            cpu->cycle_observation_suffix=0u;
++            if(cpu->pc!=0x8028E5DCu || !go_boundary(cpu,cpu->pc,s))goto decline;
++            goto label_8028E5DC;
++        }
++    }
++go_done:
++    if(s->bad || cpu->exception || !go_live(cpu,s))goto decline;
++    return 1;
++decline:
++    memcpy(s->initial.ram+s->frame-GC_RAM_BASE,s->old_frame,120);
++    memcpy(s->initial.ram+s->object-GC_RAM_BASE,s->old_object,32);
++    *cpu=s->initial;fesetenv(&environment);_mm_setcsr(mxcsr);return 0;
++}
++#endif
++
+ int bluewake_native_game_math(CPUState* cpu, u32 address) {
+     if (cpu == NULL) return 0;
++#if defined(BLUEWAKE_NATIVE_OSC_CALC) && BLUEWAKE_NATIVE_OSC_CALC == 1
++    if (address == 0x8028E238u) return game_osc_calc(cpu);
++#endif
+ #if defined(BLUEWAKE_NATIVE_FMOD) && BLUEWAKE_NATIVE_FMOD == 1
+     if (address == 0x8032EC1Cu) return game_fmod(cpu);
+ #endif
+--- a/scripts/windows/native_game_math.py
++++ b/scripts/windows/native_game_math.py
+@@ -177,7 +177,7 @@
+     return text, done
+ 
+ 
+-def prepare(root, bg_minmax=False, quaternion=False, game_atan=False, plane=False, finite_fmod=False):
++def prepare(root, bg_minmax=False, quaternion=False, game_atan=False, plane=False, finite_fmod=False, osc_calc=False):
+     # A reusable importer must not retain an earlier opt-in after it is removed.
+     ENTRIES.pop(0x8032EC1C, None)
+     FRAGMENTS.pop('finite_fmod', None)
+@@ -194,6 +194,19 @@
+         FRAGMENTS['fmod_loop_8032ED54'] = (2150815456, 'loop_8032ED54', None, 'd22235c9d2671073f3089e2ce4defcfef2257eff4eeea7b6c3d90293ff52fd61')
+         FRAGMENTS['fmod_loop_8032EEAC'] = (2150815456, 'loop_8032EEAC', None, '1344be94b1dbf72b76eb3494a8a0d6cc8e0fdf28cdf165185d75b4d48a44e0f0')
+         ENTRIES[0x8032EC1C] = ('finite_fmod', 'fmod_loop_8032ECD8', 'fmod_loop_8032ECF8', 'fmod_loop_8032ED34', 'fmod_loop_8032ED54', 'fmod_loop_8032EEAC')
++    ENTRIES.pop(0x8028E238, None)
++    FRAGMENTS.pop('osc_calc', None)
++    FRAGMENTS.pop('osc_interval', None)
++    FRAGMENTS.pop('osc_cvt', None)
++    FRAGMENTS.pop('osc_save27', None)
++    FRAGMENTS.pop('osc_restore27', None)
++    if osc_calc:
++        FRAGMENTS['osc_calc'] = (2150160096, 2150163000, 2150163948, '2db87aef3221a7eace083e4552b373e826fadbbe4d0c41d46577df65f207ed1f')
++        FRAGMENTS['osc_interval'] = (2150143712, 2150148836, 2150148844, '35505ee19a311d879a475013eb6a5173b04819941532178054ecd11607df828a')
++        FRAGMENTS['osc_cvt'] = (2150782688, 2150796816, 2150796908, 'aa1f1208d3abdf0a965fe54cdb2eca7c6522f4e14a703005141171b8ab57e571')
++        FRAGMENTS['osc_save27'] = (2150782688, 2150797112, 2150797136, '4afe5da363d97a9e0a9fec602c17f0de7b253ee983b90250bf7a829805ab028c')
++        FRAGMENTS['osc_restore27'] = (2150782688, 2150797188, 2150797212, '899789cb82ef6740bbdfd96f1f66c5eb387dd054b116236ae5333799ab9925e1')
++        ENTRIES[0x8028E238] = ('osc_calc', 'osc_interval', 'osc_cvt', 'osc_save27', 'osc_restore27')
+     FRAGMENTS.pop('bg_minmax', None)
+     ENTRIES.pop(0x80247C4C, None)
+     FRAGMENTS.pop('quaternion', None)
+@@ -282,8 +295,9 @@
+     parser.add_argument('--enable-game-atan', action='store_true')
+     parser.add_argument('--enable-plane', action='store_true')
+     parser.add_argument('--enable-finite-fmod', action='store_true')
++    parser.add_argument('--enable-osc-calc', action='store_true')
+     args = parser.parse_args()
+     try:
+-        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan, args.enable_plane, args.enable_finite_fmod)
++        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan, args.enable_plane, args.enable_finite_fmod, args.enable_osc_calc)
+     except ValueError as error:
+         parser.exit(1, f'{error}\n')

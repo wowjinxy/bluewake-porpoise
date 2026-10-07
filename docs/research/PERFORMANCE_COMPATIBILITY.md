@@ -37,6 +37,10 @@ Primary frozen sources:
 - [Completion and vertex-format changes](https://github.com/Frityet/aurora/commit/870f700098ae5dd381623a9bcff44205cb7ba003).
 
 The implementation records for 19/23/24 are separate from this backend review.
-Item 23 now has an inactive exact plane draft with optimized/ASan and original
-call-boundary comparisons. Items 19/24 are still being implemented. Ordinary
-builds retain their exact translated paths; none of this review enables them.
+Finite fmod and oscillator calc now have exact optimized/ASan candidate proofs.
+Plane has optional builder wiring, but its original-stage certificate needed
+correction and permanent watched interior PC 80328F40 still prevents admission.
+Oscillator's permanent save/restore interior watches also prevent admission.
+These results do not authorize removing observers or substituting a later-stage
+source certificate. Ordinary tester builds retain those translated paths;
+none of this backend review enables them.

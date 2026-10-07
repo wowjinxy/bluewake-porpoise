@@ -1,0 +1,176 @@
+{
+  "status": "INACTIVE_TEST_DRAFT_FULL_FIVE_CASE_RUNTIME_UNQUALIFIED",
+  "production_candidate_unchanged": [
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\direct-presentation-copy.patch",
+      "bytes": 18116,
+      "sha256": "9ef8e0336ad95676fc7725a27917391eb091984216878f8ed5857ca4bca24ee5"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\direct-presentation-copy-tests.patch",
+      "bytes": 10156,
+      "sha256": "533b18c95444c8cb2e2c0970f769966aa97dc799bc046411ce9bbae631fc861e"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\direct-presentation-copy.md",
+      "bytes": 3190,
+      "sha256": "03fcfc5b33779c4e7967981da95cdc096acb933851a01998655d75e47f31e2e5"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\direct-presentation-copy.json",
+      "bytes": 1812,
+      "sha256": "dbba6d036611df6d0bf139285d6528ebd6704b3df61712e414d2d8d0718a5586"
+    }
+  ],
+  "donor": {
+    "commit": "a2d0f9792c8190d91b02dbf89f1ff644bb9ca8d7",
+    "author": "Joey Yakimowich-Payne",
+    "email": "jyapayne@pm.me"
+  },
+  "patch": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\direct-presentation-copy-surface-tests.patch",
+    "bytes": 33890,
+    "sha256": "48a78d089a3de21b8dd5575ef7e3bf99a4bc103e3a55f246dfe4d2a0e1344354"
+  },
+  "notes": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\direct-presentation-copy-surface-tests.md",
+    "bytes": 4175,
+    "sha256": "fad2e5d3f73667ca9f839553614e8c60b9375f8f9d9f7d714bf0b8d5e5701b8b"
+  },
+  "sources": [
+    {
+      "base": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-renderer-wave3-repaired-20261006\\sdk\\GXRuntime\\graphics\\aurora\\lib\\aurora.cpp",
+        "bytes": 22369,
+        "sha256": "5d1e4c24985b3a018be7203a7c97f69f5b16758b95500642095fe9626aa712cb"
+      },
+      "candidate": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\projected\\GXRuntime\\graphics\\aurora\\lib\\aurora.cpp",
+        "bytes": 23892,
+        "sha256": "455efbee31dad8b26da598c9c8116a8cb6bf93500c6d54bf8c13155db9f7e2ec"
+      },
+      "target": "GXRuntime/graphics/aurora/lib/aurora.cpp"
+    },
+    {
+      "base": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-renderer-wave3-repaired-20261006\\sdk\\GXRuntime\\graphics\\aurora\\lib\\webgpu\\gpu.cpp",
+        "bytes": 45696,
+        "sha256": "c5f6c90ea4245693f710d042a69c5be99a318f97fe5b9579e6c6630a46eaf6c6"
+      },
+      "candidate": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\projected\\GXRuntime\\graphics\\aurora\\lib\\webgpu\\gpu.cpp",
+        "bytes": 47831,
+        "sha256": "b3f23b7853a521c2c9240b5dc1fb07f2b315ed79b1dd4daa6f385b2151c13210"
+      },
+      "target": "GXRuntime/graphics/aurora/lib/webgpu/gpu.cpp"
+    },
+    {
+      "candidate": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\direct_present_probe.hpp",
+        "bytes": 1665,
+        "sha256": "b5282906a4ed8e942f6aacad6fe76215ee10ece65a7830a7e72c072adc2adfac"
+      },
+      "target": "GXRuntime/graphics/aurora/lib/direct_present_probe.hpp"
+    },
+    {
+      "candidate": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\direct_present_probe.cpp",
+        "bytes": 6795,
+        "sha256": "1cf58cb7e0b27c8b959444fc71560ff05e4537e5c2cbccbd47d865c7d78364c4"
+      },
+      "target": "GXRuntime/graphics/aurora/lib/direct_present_probe.cpp"
+    },
+    {
+      "candidate": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-final-fixture-20261006\\surface_copy_pixels_test.cpp",
+        "bytes": 13373,
+        "sha256": "30100851edd66f69a39cbd1d2f6bba5ab536e97f0d688f74fa781b21008c20cb"
+      },
+      "target": "tests/direct_presentation_surface_pixels_test.cpp"
+    },
+    {
+      "candidate": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-final-fixture-20261006\\output_guard.py",
+        "bytes": 4003,
+        "sha256": "08538f7ca450ddd70e1acc7d850935d9dbdcf9d0c02c1983abb44f3b6b4b31a9"
+      },
+      "target": "tests/direct_presentation_output_guard.py"
+    }
+  ],
+  "evidence": {
+    "producer_compile": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\build-attempt1\\result.json",
+      "bytes": 21278,
+      "sha256": "8e0ed151df6990fbb57a1014e1dfa78bd2647cc50102df947554801230015c93"
+    },
+    "producer_link": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\link-continuation1\\work\\result.json",
+      "bytes": 22427,
+      "sha256": "1b874e02ffd9823538cd07eafeda3b2b01059caaf817a76ddf2ce79a6d84d6f3"
+    },
+    "read_only_link_qualification": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-proposal-20261006-v2\\qualify-link-v2\\facts\\result.json",
+      "bytes": 467,
+      "sha256": "b72dbca7c06694b7ece33f41d10cb828902f3cab321b7b0e56d5e154f29debe5"
+    },
+    "partial_real_GPU": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-stable-overlay-20261006\\gpu-attempt1\\result.json",
+      "bytes": 1103,
+      "sha256": "69d22ad3556230ca5541c8cc6565a4a623e99a16e91d5bd77d6295e1b8f6799d"
+    },
+    "partial_raw_log": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-stable-overlay-20261006\\gpu-attempt1\\logs\\0.log",
+      "bytes": 4610,
+      "sha256": "61f5d7b9421a6cceb7aa06d41307fe6c8f2a0023c05940e11fe79bcc08f6788d"
+    },
+    "final_fixture_build": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-final-fixture-20261006\\work\\result.json",
+      "bytes": 24221,
+      "sha256": "9986e359cfcb12c7e41d6c3e88670e73052e08fc3d2823716e138391fa4fc4d4"
+    },
+    "output_guard_cases": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-final-fixture-20261006\\work\\output-guard-tests.json",
+      "bytes": 327,
+      "sha256": "bca295dc6b17a209c42d6ff66f95cdd0c2ae95a3707893b4bb63b9f0b87dccac"
+    },
+    "first_corrected_aspect_failure": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-final-fixture-20261006\\gpu-attempt1\\result.json",
+      "bytes": 1109,
+      "sha256": "499ad390247aa78d4d9b175a400115f52aa83e44d6d3fb07550315dde2ebc5d8"
+    },
+    "sole_resumed_attempt": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-resumed-runtime-20261007\\gpu-attempt1\\result.json",
+      "bytes": 1112,
+      "sha256": "9084187fb36df03394b0ce14d190aebeed270bf71ef19a266976b2f4e361393f"
+    },
+    "sole_resumed_parent": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-resumed-runtime-20261007\\gpu-parent-result.json",
+      "bytes": 199,
+      "sha256": "98eb32587e92e71f2b7da271e3dc93966768ee6193bac3a0e766fd6557bbf1ca"
+    },
+    "sole_resumed_log": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-resumed-runtime-20261007\\gpu-attempt1\\logs\\0.log",
+      "bytes": 463,
+      "sha256": "c548e5df90b073912845556a935518f5480010d212d9fdf35678e8728954ca29"
+    },
+    "historical_tar_loss": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-09-hidden-surface-pixel-diagnostics-20261006\\link-repair2\\work\\historical-tar-loss.json",
+      "bytes": 609,
+      "sha256": "bea537226e996f37451ea9d60e125c2da2f185ec81138ffb54525ef7d1dc7871"
+    }
+  },
+  "valid_partial_cases": [
+    "full",
+    "imgui",
+    "resized800x600"
+  ],
+  "unqualified_cases": [
+    "letterbox_fallback",
+    "surface_recreation"
+  ],
+  "source_runtime_preserved_on_resumed_attempt": true,
+  "owned_processes_running": 0,
+  "additional_GPU_attempts_allowed": 0,
+  "historical_private_repro_tar_preserved": false,
+  "no_shipping_stage_commit_default_or_timing_claim": true
+}

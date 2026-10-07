@@ -1,0 +1,322 @@
+--- /dev/null
++++ b/tests/native_oscillator_test.c
+@@ -0,0 +1,167 @@
++/* Authored exact oscillator state/call oracle against the original translation. */
++#include "StaticRecompABI.h"
++#include "native_game_math.h"
++#include "module_cpu_contract.h"
++#include <fenv.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#include <xmmintrin.h>
++#define AREA 0x80100000u
++#define BYTES 0x3000u
++#define SP (AREA+0x2800u)
++#define OBJECT (AREA+0x100u)
++#define CONFIG (AREA+0x180u)
++#define RECORDS (AREA+0x400u)
++#define SDA (AREA+0x2000u)
++#define SDA13 (AREA+0x2100u)
++#define ENTRY 0x8028E238u
++#define TABLE 0x803688A8u
++#define CVT 0x80370FC8u
++static u32 seed=0x24190672u;
++static unsigned queries,boundaries,refuse,changed,observed[8],reference_boundaries;
++static bool manual_pending;
++#define MAX_BOUNDARIES 2048u
++static bool eligible=true;
++static CPUState probes[MAX_BOUNDARIES];
++static u8 images[MAX_BOUNDARIES][BYTES];
++static const u32 boundary_pc[]={0x80328F38u,0x8028E25Cu,0x8028AAE4u,0x8028E34Cu,0x80328E10u,0x8028E518u,0x80328F84u,0x8028E5DCu};
++static u32 rnd(void){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
++static u64 random_bits(void){return ((u64)rnd()<<32)|rnd();}
++static bool gate(void* unused,const CPUState* cpu,u32 pc){
++ (void)unused;++queries;if(pc==ENTRY)return eligible;
++ unsigned n=0;while(n<8&&pc!=boundary_pc[n])++n;if(n==8||cpu->pc!=pc)abort();
++ if(boundaries>=MAX_BOUNDARIES)abort();
++ ++observed[n];probes[boundaries]=*cpu;memcpy(images[boundaries],cpu->ram+AREA-GC_RAM_BASE,BYTES);++boundaries;
++ if(changed==n+1u)++g_ppc_guest_alias_generation;
++ return refuse!=n+1u;
++}
++static void journal(u32 a,u32 n,void* u){(void)a;(void)n;(void)u;abort();}
++static void same(const CPUState* a,const CPUState* b,unsigned i){
++ if(!memcmp(a,b,sizeof *a))return;
++ fprintf(stderr,"osc case%u pc%08X/%08X dc%lld/%lld suffix%u/%u\n",i,a->pc,b->pc,(long long)a->downcount,(long long)b->downcount,a->cycle_observation_suffix,b->cycle_observation_suffix);
++ for(unsigned j=0;j<sizeof *a;++j)if(((const u8*)a)[j]!=((const u8*)b)[j])fprintf(stderr,"CPUbyte%u:%02X/%02X\n",j,((const u8*)a)[j],((const u8*)b)[j]);exit(20);
++}
++static void reference_observation(const CPUState* cpu,u32 pc,bool callback){
++ unsigned at=reference_boundaries;
++ /* An inline gate can follow the outer dispatcher's observation of the same
++  * boundary. Recheck that copied state without consuming a second record. */
++ bool duplicate=callback&&manual_pending&&at&&pc==probes[at-1u].pc;
++ if(duplicate)--at;
++ if(at>=boundaries||pc!=probes[at].pc||cpu->pc!=pc){
++  fprintf(stderr,"ordered boundary %u/%u pc%08X expected%08X\n",at,boundaries,pc,at<boundaries?probes[at].pc:0);exit(22);}
++ CPUState probe=probes[at];probe.ram=cpu->ram;same(&probe,cpu,999999);
++ if(memcmp(images[at],cpu->ram+AREA-GC_RAM_BASE,BYTES)){fprintf(stderr,"reference RAM boundary%u\n",at);exit(21);}
++ if(!duplicate)++reference_boundaries;
++ manual_pending=!callback;
++}
++static bool original_gate(void* unused,const CPUState* cpu,u32 pc){
++ (void)unused;reference_observation(cpu,pc,true);return true;
++}
++
++typedef int (*DirectFn)(bool,const bool*,const bool*,const u32*,const u32*,bool (*)(void*,const CPUState*,u32),void*);
++static u8* image(void){u8* p=VirtualAlloc(NULL,GC_MAIN_RAM_SIZE,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!p)abort();return p;}
++static void protect(u8* p){DWORD old;if(!VirtualProtect(p,GC_MAIN_RAM_SIZE,PAGE_READONLY,&old)||!VirtualProtect(p+AREA-GC_RAM_BASE,BYTES,PAGE_READWRITE,&old))abort();}
++static void w32(u8* p,u32 at,u32 v){write_be32(p+at-GC_RAM_BASE,v);}
++static void w16(u8* p,u32 at,u16 v){write_be16(p+at-GC_RAM_BASE,v);}
++static void wf(u8* p,u32 at,float v){u32 b;memcpy(&b,&v,4);w32(p,at,b);}
++static void wd(u8* p,u32 at,double v){write_be64(p+at-GC_RAM_BASE,f64_bits(v));}
++static void record(u8* ram,unsigned index,int mode,int duration,int target){
++ w16(ram,RECORDS+6u*index,(u16)mode);w16(ram,RECORDS+6u*index+2u,(u16)duration);w16(ram,RECORDS+6u*index+4u,(u16)target);
++}
++static CPUState input(u8* ram,unsigned i){
++ for(u32 o=0;o<BYTES;o+=4)w32(ram,AREA+o,rnd());
++ CPUState c={0};c.ram=ram;c.ram_size=GC_MAIN_RAM_SIZE;
++ for(unsigned r=0;r<32;++r){c.gpr[r]=rnd();c.fpr[r]=f64_value(random_bits());c.ps1[r]=f64_value(random_bits());}
++ c.gpr[1]=SP;c.gpr[2]=SDA+14992u;c.gpr[13]=SDA13+31992u;c.gpr[3]=OBJECT;c.gpr[4]=RECORDS;
++ c.pc=ENTRY;c.lr=0xFFFFFFFCu;c.cr=rnd();c.xer=rnd();c.ctr=rnd();c.msr=PPC_MSR_FP;c.hid2=PPC_HID2_LSQE;
++ c.fpscr=rnd()&~3u;ppc_fpscr_updated(&c);c.cycle_budget=200000;c.cycle_deadline_budget=i%3u?0:200000;c.downcount=-(s64)(i%11u);c.cycle_observation_suffix=rnd();
++ c.reserve_valid=(i&1u)!=0;c.reserve_addr=i%3u?OBJECT+4u*(i%8u):SP-112u+4u*(rnd()%30u);
++ w32(ram,OBJECT,CONFIG);ram[OBJECT+4u-GC_RAM_BASE]=(u8)(i%7u);ram[OBJECT+5u-GC_RAM_BASE]=(u8)(i%4u);w16(ram,OBJECT+6u,(u16)(i%5u));
++ wf(ram,OBJECT+8u,i%3u?(float)(i%33u)/16.f-1.f:0.f);
++ wf(ram,OBJECT+12u,(float)(i%23u)/8.f);wf(ram,OBJECT+16u,(float)(i%37u)/16.f);
++ wf(ram,OBJECT+20u,(float)(i%19u)/8.f);wf(ram,OBJECT+28u,(float)(i%29u)/16.f+0.5f);
++ wf(ram,CONFIG+16u,0.5f+(float)(i%7u)/4.f);wf(ram,CONFIG+20u,(float)(i%9u)/8.f);
++ wf(ram,SDA+16u,0.f);wf(ram,SDA+20u,1.f);wf(ram,SDA+24u,0.5f);wf(ram,SDA+28u,1.f);
++ wd(ram,SDA+32u,4503601774854144.0);wd(ram,SDA+40u,4503599627370496.0);
++ wf(ram,SDA+48u,32768.f);wd(ram,SDA+56u,65535.0);wf(ram,SDA+64u,16.f);
++ wf(ram,SDA13,(float)(1u+i%8u)/8.f);ram[SDA13+80u-GC_RAM_BASE]=(u8)(i%8u);
++ for(unsigned j=0;j<256u;++j)record(ram,j,j>=5u?15:(int)(j+i)%5,1+(int)((j+i)%127u),(int)((j*7301u+i)%32768u));
++ switch(i%16u){
++  case 0:record(ram,i%5u,13,0,(int)(i%5u+1u));break;
++  case 1:record(ram,i%5u,14,0,0);wf(ram,OBJECT+8u,0);break;
++  case 2:record(ram,i%5u,15,0,0);wf(ram,OBJECT+8u,0);break;
++  case 3:record(ram,i%5u,0,0,32767);wf(ram,OBJECT+8u,0);break;
++  case 4:record(ram,i%5u,3,-1,-32768);wf(ram,OBJECT+8u,0);break;
++  case 5:record(ram,i%5u,13,0,(int)(i%5u));wf(ram,OBJECT+8u,0);break;
++  case 6:record(ram,i%5u,13,0,-1);wf(ram,OBJECT+8u,0);break;
++  case 7:wf(ram,OBJECT+8u,1);wf(ram,OBJECT+28u,1);break;
++  case 8:wf(ram,OBJECT+8u,0.000001f);break;
++ }
++ return c;
++}
++int main(int argc,char** argv){
++ if(argc!=2)return 2;HMODULE lib=LoadLibraryA(argv[1]);if(!lib)return 3;
++ StaticRecompGetModuleFn get=(StaticRecompGetModuleFn)GetProcAddress(lib,STATICRECOMP_GET_MODULE_SYMBOL);
++ DirectFn direct=(DirectFn)GetProcAddress(lib,"bluewake_composite_direct_calls_v2");if(!get||!direct)return 4;
++ const StaticRecompModuleDesc* desc=get();CPUState fallback={0};BlueWakeModuleStorage storage={0};
++ const char* error=bw_module_select_storage(desc,(BlueWakeModuleCPUFn)GetProcAddress(lib,"bluewake_composite_guest_cpu"),(BlueWakeModuleMEM1Fn)GetProcAddress(lib,"bluewake_composite_guest_mem1"),&fallback,&storage);
++ if(error||strcmp(desc->game_id,"GZLE01"))return 5;
++ u8* a=image();u8* b=storage.mem1?storage.mem1:image();DWORD old;if(!VirtualProtect(b,GC_MAIN_RAM_SIZE,PAGE_READWRITE,&old))return 6;
++ for(unsigned bank=0;bank<3;++bank)for(unsigned k=0;k<17;++k)wf(a,TABLE+68u*bank+4u*k,(float)k/16.f);
++ wd(a,CVT,0);wd(a,CVT+8u,2147483648.0);wd(a,CVT+16u,4294967296.0);
++ memcpy(b,a,GC_MAIN_RAM_SIZE);protect(a);protect(b);if(!bluewake_composite_native_game_math_v1(true,gate,NULL))return 7;
++ bool clear=false;u32 none=0;if(!direct(true,&clear,&clear,&none,&none,original_gate,NULL))return 18;
++ const int rounds[]={FE_TONEAREST,FE_DOWNWARD,FE_UPWARD,FE_TOWARDZERO};
++ unsigned accepted=0,declined=0,late=0,callback_equal=0;
++ for(unsigned i=0;i<36000;++i){
++  _mm_setcsr(_mm_getcsr()|0x1F80u);
++  CPUState c=input(a,i);refuse=changed=0;
++  if(i>=24000)switch(i%34u){
++   case 0:c.cycle_budget=1+i%240u;break;case 1:c.cycle_deadline_budget=1+i%240u;break;
++   case 2:c.downcount=-199999;break;case 3:c.msr=0;break;case 4:c.exception=1;break;case 5:c.fpscr|=1;break;
++   case 6:c.gpr[1]=OBJECT+112u;break;case 7:c.gpr[1]|=4u;break;case 8:c.gpr[4]=OBJECT;break;
++   case 9:c.gpr[4]=0xCC000000u;break;case 10:c.gpr[4]|=0x40000000u;break;
++   case 11:g_mem_write_journal=journal;break;case 12:g_ppc_guest_aliases_overlap_mem1=true;break;
++   case 13:eligible=false;break;case 14:c.gqr[0]=4;break;case 15:c.hid2=0;break;
++   case 16:c.cycle_budget=INT64_MIN;break;case 17:c.cycle_budget=INT64_MAX;break;
++   case 18:c.downcount=INT64_MIN;break;case 19:c.downcount=INT64_MAX;break;
++   case 20:c.cycle_deadline_budget=INT64_MAX;break;case 21:c.cycle_deadline_budget=INT64_MIN;break;
++   case 22:case 23:case 24:case 25:case 26:case 27:case 28:case 29:refuse=i%34u-21u;break;
++   case 30:changed=1u+i%8u;break;
++  }
++  memcpy(b+AREA-GC_RAM_BASE,a+AREA-GC_RAM_BASE,BYTES);CPUState initial=c;
++  u8 before[BYTES];memcpy(before,a+AREA-GC_RAM_BASE,BYTES);memset(observed,0,sizeof observed);boundaries=reference_boundaries=0;manual_pending=false;
++  if(fesetround(rounds[i%4u]))return 8;feclearexcept(FE_ALL_EXCEPT);if(i&1u)feraiseexcept(FE_INEXACT);
++  unsigned csr=_mm_getcsr();csr=(csr&~0x8040u)|((i&4u)?0x8040u:0u);_mm_setcsr(csr);
++  if(i>=24000 && i%34u==31u){csr&=~0x100u;_mm_setcsr(csr);}
++  const int oldflags=fetestexcept(FE_ALL_EXCEPT);const unsigned oldqueries=queries;
++  int ok=bluewake_native_game_math_try(&c,ENTRY);int flags=fetestexcept(FE_ALL_EXCEPT);unsigned gotcsr=_mm_getcsr();
++  if(queries<oldqueries+1||fegetround()!=rounds[i%4u])return 9;
++  g_mem_write_journal=NULL;g_ppc_guest_aliases_overlap_mem1=false;eligible=true;
++  if(!ok){++declined;late+=queries>oldqueries+1u;same(&c,&initial,i);if(memcmp(before,a+AREA-GC_RAM_BASE,BYTES)||oldflags!=flags||csr!=gotcsr)return 10;continue;}
++  ++accepted;if(refuse||changed)for(unsigned n=0;n<8;++n)if(observed[n]&&((refuse==n+1u)||(changed==n+1u)))return 17;
++  *storage.cpu=initial;storage.cpu->ram=b;desc->on_state_loaded(storage.cpu);
++  feclearexcept(FE_ALL_EXCEPT);if(i&1u)feraiseexcept(FE_INEXACT);_mm_setcsr(csr);
++  unsigned turns=0;
++  while(storage.cpu->pc!=0xFFFFFFFCu&&storage.cpu->downcount>-storage.cpu->cycle_budget&&!storage.cpu->exception){
++   /* A raw dispatcher call need not execute an inline direct-call gate. Its
++    * actual returned CPU/RAM still provides the boundary observation. */
++   if(reference_boundaries<boundaries&&storage.cpu->pc==probes[reference_boundaries].pc)
++    reference_observation(storage.cpu,storage.cpu->pc,false);
++   if(++turns>24||!desc->dispatch(storage.cpu,storage.cpu->pc))return 11;
++  }
++  CPUState reference=*storage.cpu;reference.ram=a;same(&c,&reference,i);
++  unsigned expected=boundaries;
++  if(reference_boundaries!=expected||memcmp(a+AREA-GC_RAM_BASE,b+AREA-GC_RAM_BASE,BYTES)||flags!=fetestexcept(FE_ALL_EXCEPT)||gotcsr!=_mm_getcsr()){
++   fprintf(stderr,"case%u boundaries%u/%u flags%x/%x MXCSR%x/%x RAM%d\n",i,reference_boundaries,expected,flags,fetestexcept(FE_ALL_EXCEPT),gotcsr,_mm_getcsr(),memcmp(a+AREA-GC_RAM_BASE,b+AREA-GC_RAM_BASE,BYTES));return 12;}
++  callback_equal+=reference_boundaries;
++ }
++ if(accepted<12000||declined<3000||late<500||callback_equal<10000)return 13;
++ eligible=false;unsigned prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior+1)return 14;
++ bluewake_composite_native_game_math_v1(false,gate,NULL);prior=queries;if(bluewake_native_game_math_try((CPUState*)(uintptr_t)1,ENTRY)||queries!=prior)return 15;
++ if(memcmp(a,b,GC_MAIN_RAM_SIZE))return 16;
++ printf("item24 osc_calc cases=36000 translated_equal=%u declined_unchanged=%u late_refusals=%u actual_boundary_CPU_equal=%u fresh_queries=%u host_round_modes=4 DAZ_FTZ=both\n",accepted,declined,late,callback_equal,queries);return 0;
++}
+--- /dev/null
++++ b/tests/test_native_game_oscillator_prepare.py
+@@ -0,0 +1,96 @@
++"""Current real certification path, main plus all four complete callee bodies."""
++import contextlib
++import os
++import importlib.util
++import io
++import json
++from pathlib import Path
++import re
++import sys
++import tempfile
++import unittest
++
++HERE=Path(__file__).resolve().parent
++ROOT=HERE.parent
++sys.path.insert(0,str(ROOT/'scripts/windows'))
++spec=importlib.util.spec_from_file_location('candidate_osc',ROOT/'scripts/windows/native_game_math.py')
++candidate=importlib.util.module_from_spec(spec);spec.loader.exec_module(candidate)
++RANGES={'osc_calc':(0x8028D6E0,0x8028E238,0x8028E5EC),
++ 'osc_interval':(0x802896E0,0x8028AAE4,0x8028AAEC),
++ 'osc_cvt':(0x803256E0,0x80328E10,0x80328E6C),
++ 'osc_save27':(0x803256E0,0x80328F38,0x80328F50),
++ 'osc_restore27':(0x803256E0,0x80328F84,0x80328F9C)}
++CHUNKS={chunk:next((Path(os.environ['BLUEWAKE_OSCILLATOR_ORACLE_CHUNKS'])).glob(f'*_{chunk:08X}.c')) for chunk,_,_ in RANGES.values()}
++DIGEST={'osc_calc': '2db87aef3221a7eace083e4552b373e826fadbbe4d0c41d46577df65f207ed1f', 'osc_interval': '35505ee19a311d879a475013eb6a5173b04819941532178054ecd11607df828a', 'osc_cvt': 'aa1f1208d3abdf0a965fe54cdb2eca7c6522f4e14a703005141171b8ab57e571', 'osc_save27': '4afe5da363d97a9e0a9fec602c17f0de7b253ee983b90250bf7a829805ab028c', 'osc_restore27': '899789cb82ef6740bbdfd96f1f66c5eb387dd054b116236ae5333799ab9925e1'}
++
++class Certification(unittest.TestCase):
++ def setUp(self):
++  self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
++  self.files={c:self.root/p.name for c,p in CHUNKS.items()}
++  self.originals={c:candidate.HOOK.sub('',p.read_text()) for c,p in CHUNKS.items()}
++  for c,p in self.files.items():p.write_text(self.originals[c])
++  self.path=self.files[0x8028D6E0];self.original=self.originals[0x8028D6E0]
++  self.fragments,self.entries=candidate.FRAGMENTS,candidate.ENTRIES
++  candidate.FRAGMENTS={name:(*row,DIGEST[name]) for name,row in RANGES.items()}
++  candidate.ENTRIES={0x8028E238:tuple(RANGES)}
++ def tearDown(self):
++  candidate.FRAGMENTS,candidate.ENTRIES=self.fragments,self.entries
++  self.temp.cleanup()
++ def certified(self,watched=(),extra=()):
++  with contextlib.redirect_stdout(io.StringIO()):return candidate.certify([*self.files.values(),*extra],set(watched))
++ def test_actual_canonical_fragments_and_idempotent_hook(self):
++  self.assertEqual(self.certified(),{0x8028E238})
++  body,count=candidate.transform(self.original,0x8028D6E0,{0x8028E238})
++  self.assertEqual(count,1)
++  self.assertEqual(candidate.transform(body,0x8028D6E0,{0x8028E238}),(body,0))
++ def test_real_host_watch_keeps_oscillator_translated(self):
++  watches=candidate.watched_addresses()
++  self.assertIn(0x80328F40,watches)
++  self.assertIn(0x80328F84,watches)
++  self.assertEqual(self.certified(watches),set())
++ def test_changed_main_and_each_loop_c_declines(self):
++  for name,(chunk,start,end) in RANGES.items():
++   anchor=f'label_{start:08X}:\n';original=self.originals[chunk]
++   changed=original.replace(anchor,anchor+'    ctx->cr=0;\n',1)
++   self.assertNotEqual(changed,original)
++   self.files[chunk].write_text(changed)
++   self.assertEqual(self.certified(),set(),name)
++   self.files[chunk].write_text(original)
++ def test_changed_variant_leaves_every_base_untouched(self):
++  other=self.root/('mod_'+self.path.name)
++  other.write_text(self.original.replace('label_8028E238:\n','label_8028E238:\n    ctx->cr=0;\n',1))
++  self.assertEqual(self.certified(extra=[other]),set())
++  self.assertEqual(self.path.read_text(),self.original)
++ def test_every_observed_main_loop_pc_and_mirror_declines(self):
++  pcs=set()
++  for chunk,start,end in RANGES.values():
++   fragment=candidate.fragment(self.originals[chunk],chunk,start,end)
++   pcs.update(int(p,16) for p in re.findall(r'// ([8C][0-9A-F]{7}):',fragment))
++  self.assertGreater(len(pcs),260)
++  for pc in pcs:
++   for p in (pc,pc|0x40000000):
++    self.assertEqual(self.certified((p,p|0x40000000,p&~0x40000000)),set(),hex(p))
++ def test_lost_certificate_removes_existing_hook(self):
++  body,_=candidate.transform(self.original,0x8028D6E0,{0x8028E238})
++  restored,count=candidate.transform(body,0x8028D6E0,set())
++  self.assertEqual(count,0);self.assertNotIn('bluewake_native_game_math_try(ctx, 0x8028E238u)',restored)
++  self.assertEqual(candidate.fragment(restored,0x8028D6E0,0x8028E238,0x8028E5EC),candidate.fragment(self.original,0x8028D6E0,0x8028E238,0x8028E5EC))
++ def test_default_not_enabled(self):
++  self.assertNotIn(0x8028E238,self.entries)
++  for name in RANGES:self.assertNotIn(name,self.fragments)
++
++class OptionReset(unittest.TestCase):
++ def test_removed_option_clears_previous_failed_preparation(self):
++  spec=importlib.util.spec_from_file_location('fresh_osc',ROOT/'scripts/windows/native_game_math.py')
++  fresh=importlib.util.module_from_spec(spec);spec.loader.exec_module(fresh)
++  with tempfile.TemporaryDirectory() as temp:
++   root=Path(temp);header=root/'generated.h';header.write_text('/* authored */\n')
++   with contextlib.redirect_stdout(io.StringIO()):
++    with self.assertRaises(ValueError):fresh.prepare(root,False,False,False,False,False,True)
++    self.assertIn(0x8028E238,fresh.ENTRIES)
++    with self.assertRaises(ValueError):fresh.prepare(root)
++   self.assertNotIn(0x8028E238,fresh.ENTRIES)
++   for name in RANGES:self.assertNotIn(name,fresh.FRAGMENTS)
++   self.assertEqual(header.read_text(),'/* authored */\n')
++
++if __name__=='__main__':unittest.main()
+--- /dev/null
++++ b/tests/native_oscillator/CMakeLists.txt
+@@ -0,0 +1,50 @@
++cmake_minimum_required(VERSION 3.24)
++project(bluewake_oscillator_oracle C)
++set(CMAKE_C_STANDARD 11)
++set(CMAKE_C_STANDARD_REQUIRED ON)
++set(BLUEWAKE_ROOT "" CACHE PATH "Checkout after applying inactive patches")
++set(BLUEWAKE_ORIGINAL_MODULE "" CACHE FILEPATH "Personal unchanged GZLE01 function oracle")
++option(BLUEWAKE_ORACLE_ASAN "Instrument fixture and CPU/native sources" OFF)
++if(NOT BLUEWAKE_ROOT OR NOT BLUEWAKE_ORIGINAL_MODULE)
++  message(FATAL_ERROR "Explicit checkout and personal original module required")
++endif()
++set(sdk "${BLUEWAKE_ROOT}/ref/recompcore")
++set(common_sources
++  "${BLUEWAKE_ROOT}/cmake/composite/native_game_math.c"
++  "${sdk}/GXRuntime/src/core/cpu.c"
++  "${sdk}/GXRuntime/src/core/cpu_exception.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_float.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_integer.c"
++  "${sdk}/GXRuntime/src/core/cpu_interpreter_table.c")
++enable_testing()
++foreach(name IN ITEMS oscillator)
++  add_executable(${name} "${BLUEWAKE_ROOT}/tests/native_${name}_test.c" ${common_sources})
++  target_include_directories(${name} PRIVATE "${BLUEWAKE_ROOT}/cmake/composite"
++    "${sdk}/GXRuntime/include" "${sdk}/Source/Core/Core/PowerPC/StaticRecomp")
++  target_compile_definitions(${name} PRIVATE BLUEWAKE_NATIVE_OSC_CALC=1)
++  target_compile_options(${name} PRIVATE -O3 -UNDEBUG -ffp-contract=off)
++  if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "Clang")
++    target_compile_options(${name} PRIVATE -fms-compatibility-version=19.44 -fms-runtime-lib=dll -Wno-dll-attribute-on-redeclaration)
++    target_link_options(${name} PRIVATE -fms-runtime-lib=dll)
++  endif()
++  if(BLUEWAKE_ORACLE_ASAN)
++    target_compile_options(${name} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
++    target_link_options(${name} PRIVATE -fsanitize=address)
++    if(WIN32)
++      target_compile_options(${name} PRIVATE -shared-libasan)
++      target_link_options(${name} PRIVATE -shared-libasan)
++    endif()
++  endif()
++  add_test(NAME native_${name} COMMAND ${name} "${BLUEWAKE_ORIGINAL_MODULE}")
++  set_tests_properties(native_${name} PROPERTIES TIMEOUT 300 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1")
++endforeach()
++
++set(BLUEWAKE_ORACLE_CHUNKS "" CACHE PATH "Personal raw preparation-stage chunks for source tests")
++if(BLUEWAKE_ORACLE_CHUNKS)
++  find_package(Python3 REQUIRED COMPONENTS Interpreter)
++  add_test(NAME native_oscillator_source COMMAND "${Python3_EXECUTABLE}" -B -S
++    "${BLUEWAKE_ROOT}/tests/test_native_game_oscillator_prepare.py")
++  set_tests_properties(native_oscillator_source PROPERTIES TIMEOUT 120
++    ENVIRONMENT "BLUEWAKE_OSCILLATOR_ORACLE_CHUNKS=${BLUEWAKE_ORACLE_CHUNKS}")
++endif()

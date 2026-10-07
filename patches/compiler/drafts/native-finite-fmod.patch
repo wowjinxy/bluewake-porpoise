@@ -1,0 +1,2216 @@
+--- a/cmake/composite/native_game_math.c
++++ b/cmake/composite/native_game_math.c
+@@ -5499,8 +5499,2175 @@
+ }
+ #endif
+ 
++/* Elliott Tate (elliotttate), donor app944a1f3c2b130a8086295428a0847938a777a2d7.
++ * Exact translated finite remainder; no host-libm replacement. */
++#if defined(BLUEWAKE_NATIVE_FMOD) && BLUEWAKE_NATIVE_FMOD == 1
++#include <fenv.h>
++#include <limits.h>
++#include <string.h>
++#include <xmmintrin.h>
++
++enum { GF_ZERO = 0x80371178u, GF_STEPS = 8192u };
++static bool gf_in(u32 at, u32 size, u32 first, u32 extent) {
++    return size <= extent && at - first <= extent - size;
++}
++static bool gf_readable(u32 at, u32 size, u32 frame) {
++    return gf_in(at,size,frame,32u) || gf_in(at,size,GF_ZERO,16u);
++}
++static u32 gf_read32(CPUState* cpu,u32 frame,u32 at,bool* bad) {
++    if ((at&3u) || !gf_readable(at,4u,frame)) { *bad=true; return 0; }
++    return word(cpu,at);
++}
++static u64 gf_read64(CPUState* cpu,u32 frame,u32 at,bool* bad) {
++    if ((at&7u) || !gf_readable(at,8u,frame)) { *bad=true; return 0; }
++    return gm_word64(cpu,at);
++}
++static bool gf_store32(CPUState* cpu,u32 frame,u32 at,u32 value) {
++    if ((at&3u) || !gf_in(at,4u,frame,32u)) return false;
++    store(cpu,at,value); return true;
++}
++static bool gf_store64(CPUState* cpu,u32 frame,u32 at,u64 value) {
++    if ((at&7u) || !gf_in(at,8u,frame,32u)) return false;
++    gm_store64(cpu,at,value); return true;
++}
++static bool gf_block(CPUState* cpu,u32 cycles,unsigned* steps,bool bad) {
++    if (bad || ++*steps > GF_STEPS || cpu->cycle_budget<=0 || cpu->cycle_budget>INT32_MAX ||
++        cpu->downcount>0 || cpu->downcount<=-cpu->cycle_budget) return false;
++    /* Positive deadline + bounded nonpositive downcount cannot overflow. */
++    if (cpu->cycle_deadline_budget>0 &&
++        cpu->cycle_deadline_budget+cpu->downcount<(s64)cycles) return false;
++    cpu->downcount-=(s64)cycles; return true;
++}
++static int game_fmod(CPUState* cpu) {
++    if (!cpu || !cpu->ram || cpu->cycle_budget<=0 || cpu->cycle_budget>INT32_MAX ||
++        cpu->downcount>0 || cpu->downcount<=-cpu->cycle_budget || cpu->exception ||
++        !(cpu->msr&PPC_MSR_FP) || (cpu->fpscr&3u) || g_mem_write_journal ||
++        g_ppc_guest_aliases_overlap_mem1) return 0;
++    const uintptr_t cp=(uintptr_t)cpu,rp=(uintptr_t)cpu->ram;
++    if (cp>UINTPTR_MAX-sizeof *cpu || rp>UINTPTR_MAX-cpu->ram_size ||
++        !(cp+sizeof *cpu<=rp || rp+cpu->ram_size<=cp)) return 0;
++    const u32 frame=cpu->gpr[1]-32u;
++    if ((frame&7u) || !ram_ok(cpu,frame,32u) || !ram_ok(cpu,GF_ZERO,16u) ||
++        !apart(frame,32u,GF_ZERO,16u) || gm_word64(cpu,GF_ZERO)!=0 ||
++        gm_word64(cpu,GF_ZERO+8u)!=0x8000000000000000ull) return 0;
++    const u64 x=f64_bits(cpu->fpr[1])&0x7FFFFFFFFFFFFFFFull;
++    const u64 y=f64_bits(cpu->fpr[2])&0x7FFFFFFFFFFFFFFFull;
++    if (x>=0x7FF0000000000000ull || y>=0x7FF0000000000000ull || y==0) return 0;
++    const unsigned mxcsr=_mm_getcsr();
++    if ((mxcsr&0x1F80u)!=0x1F80u) return 0;
++    CPUState initial=*cpu; u8 previous[32]; fenv_t environment;
++    if (fegetenv(&environment)) return 0;
++    memcpy(previous,cpu->ram+frame-GC_RAM_BASE,sizeof previous);
++    const u32 aliases=g_ppc_guest_alias_generation;
++    unsigned steps=0; bool bad=false;
++    goto label_8032EC1C;
++
++label_8032EC1C:
++    cpu->pc = 0x8032EC1Cu;
++    if (!gf_block(cpu,12u,&steps,bad)) goto decline;
++    cpu->cycle_observation_suffix = 11u;
++    // 8032EC1C: stwu     r1, -32(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(-32);
++        if (!gf_store32(cpu,frame,ea,(u32)cpu->gpr[1])) goto decline;
++        cpu->gpr[1] = ea;
++    }
++
++label_8032EC20:
++    cpu->pc = 0x8032EC20u;
++    cpu->cycle_observation_suffix = 10u;
++    // 8032EC20: stfd     f2, 16(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(16);
++        if (!gf_store64(cpu,frame,ea,f64_bits(cpu->fpr[2]))) goto decline;
++    }
++
++label_8032EC24:
++    cpu->pc = 0x8032EC24u;
++    cpu->cycle_observation_suffix = 9u;
++    // 8032EC24: stfd     f1, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        if (!gf_store64(cpu,frame,ea,f64_bits(cpu->fpr[1]))) goto decline;
++    }
++
++label_8032EC28:
++    cpu->pc = 0x8032EC28u;
++    cpu->cycle_observation_suffix = 8u;
++    // 8032EC28: lwz     r10, 16(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(16);
++        cpu->gpr[10] = gf_read32(cpu, frame, ea, &bad);
++    }
++
++label_8032EC2C:
++    cpu->pc = 0x8032EC2Cu;
++    cpu->cycle_observation_suffix = 7u;
++    // 8032EC2C: lwz     r6, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        cpu->gpr[6] = gf_read32(cpu, frame, ea, &bad);
++    }
++
++label_8032EC30:
++    cpu->pc = 0x8032EC30u;
++    cpu->cycle_observation_suffix = 6u;
++    // 8032EC30: lwz     r5, 20(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(20);
++        cpu->gpr[5] = gf_read32(cpu, frame, ea, &bad);
++    }
++
++label_8032EC34:
++    cpu->pc = 0x8032EC34u;
++    // 8032EC34: rlwinm r8, r10, 0, 1, 31
++    {
++        cpu->gpr[8] = gm_rotl32(cpu->gpr[10], 0u) & 0x7FFFFFFFu;
++    }
++
++label_8032EC38:
++    cpu->pc = 0x8032EC38u;
++    // 8032EC38: rlwinm r0, r6, 0, 0, 0
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[6], 0u) & 0x80000000u;
++    }
++
++label_8032EC3C:
++    cpu->pc = 0x8032EC3Cu;
++    cpu->cycle_observation_suffix = 3u;
++    // 8032EC3C: lwz     r4, 12(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(12);
++        cpu->gpr[4] = gf_read32(cpu, frame, ea, &bad);
++    }
++
++label_8032EC40:
++    cpu->pc = 0x8032EC40u;
++    // 8032EC40: or.   r3, r8, r5
++    {
++        cpu->gpr[3] = cpu->gpr[8] | cpu->gpr[5];
++        u32 cr_bits = 0;
++        s32 cr_value = (s32)cpu->gpr[3];
++        if (cr_value < 0)  cr_bits |= 0x8u;
++        if (cr_value > 0)  cr_bits |= 0x4u;
++        if (cr_value == 0) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & 0x0FFFFFFFu) | (cr_bits << 28);
++    }
++
++label_8032EC44:
++    cpu->pc = 0x8032EC44u;
++    // 8032EC44: xor   r7, r6, r0
++    {
++        cpu->gpr[7] = cpu->gpr[6] ^ cpu->gpr[0];
++    }
++
++label_8032EC48:
++    cpu->pc = 0x8032EC48u;
++    // 8032EC48: bc    12, 2, 0x8032EC70
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EC70;
++        }
++    }
++
++label_8032EC4C:
++    cpu->pc = 0x8032EC4Cu;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EC4C: lis     r6, 32752
++    cpu->gpr[6] = ((u32)(s32)(32752) << 16);
++
++label_8032EC50:
++    cpu->pc = 0x8032EC50u;
++    // 8032EC50: cmpw    r7, r6
++    {
++        s32 val_a = (s32)(cpu->gpr[7]);
++        s32 val_b = (s32)(cpu->gpr[6]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EC54:
++    cpu->pc = 0x8032EC54u;
++    // 8032EC54: bc    4, 0, 0x8032EC70
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EC70;
++        }
++    }
++
++label_8032EC58:
++    cpu->pc = 0x8032EC58u;
++    if (!gf_block(cpu,6u,&steps,bad)) goto decline;
++    // 8032EC58: neg  r3, r5
++    {
++        u32 a = cpu->gpr[5];
++        cpu->gpr[3] = (~a) + 1u;
++    }
++
++label_8032EC5C:
++    cpu->pc = 0x8032EC5Cu;
++    // 8032EC5C: or   r3, r5, r3
++    {
++        cpu->gpr[3] = cpu->gpr[5] | cpu->gpr[3];
++    }
++
++label_8032EC60:
++    cpu->pc = 0x8032EC60u;
++    // 8032EC60: rlwinm r3, r3, 1, 31, 31
++    {
++        cpu->gpr[3] = gm_rotl32(cpu->gpr[3], 1u) & 0x00000001u;
++    }
++
++label_8032EC64:
++    cpu->pc = 0x8032EC64u;
++    // 8032EC64: or   r3, r8, r3
++    {
++        cpu->gpr[3] = cpu->gpr[8] | cpu->gpr[3];
++    }
++
++label_8032EC68:
++    cpu->pc = 0x8032EC68u;
++    // 8032EC68: cmplw   r3, r6
++    {
++        u32 val_a = (u32)(cpu->gpr[3]);
++        u32 val_b = (u32)(cpu->gpr[6]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EC6C:
++    cpu->pc = 0x8032EC6Cu;
++    // 8032EC6C: bc    4, 1, 0x8032EC84
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EC84;
++        }
++    }
++
++label_8032EC70:
++    cpu->pc = 0x8032EC70u;
++    if (!gf_block(cpu,35u,&steps,bad)) goto decline;
++    cpu->cycle_observation_suffix = 34u;
++    // 8032EC70: lfd     f1, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        cpu->fpr[1] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032EC74:
++    cpu->pc = 0x8032EC74u;
++    cpu->cycle_observation_suffix = 33u;
++    // 8032EC74: lfd     f0, 16(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(16);
++        cpu->fpr[0] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032EC78:
++    cpu->pc = 0x8032EC78u;
++    // 8032EC78: fmul   f0, f1, f0
++    ppc_fmul(cpu, 0, 1, 0);
++
++label_8032EC7C:
++    cpu->pc = 0x8032EC7Cu;
++    // 8032EC7C: fdiv   f1, f0, f0
++    ppc_fdiv(cpu, 1, 0, 0);
++
++label_8032EC80:
++    cpu->pc = 0x8032EC80u;
++    // 8032EC80: b       0x8032EF50
++    {
++            goto label_8032EF50;
++    }
++
++label_8032EC84:
++    cpu->pc = 0x8032EC84u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EC84: cmpw    r7, r8
++    {
++        s32 val_a = (s32)(cpu->gpr[7]);
++        s32 val_b = (s32)(cpu->gpr[8]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EC88:
++    cpu->pc = 0x8032EC88u;
++    // 8032EC88: bc    12, 1, 0x8032ECB8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ECB8;
++        }
++    }
++
++label_8032EC8C:
++    cpu->pc = 0x8032EC8Cu;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032EC8C: bc    12, 0, 0x8032EC98
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EC98;
++        }
++    }
++
++label_8032EC90:
++    cpu->pc = 0x8032EC90u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EC90: cmplw   r4, r5
++    {
++        u32 val_a = (u32)(cpu->gpr[4]);
++        u32 val_b = (u32)(cpu->gpr[5]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EC94:
++    cpu->pc = 0x8032EC94u;
++    // 8032EC94: bc    4, 0, 0x8032ECA0
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ECA0;
++        }
++    }
++
++label_8032EC98:
++    cpu->pc = 0x8032EC98u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032EC98: lfd     f1, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        cpu->fpr[1] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032EC9C:
++    cpu->pc = 0x8032EC9Cu;
++    // 8032EC9C: b       0x8032EF50
++    {
++            goto label_8032EF50;
++    }
++
++label_8032ECA0:
++    cpu->pc = 0x8032ECA0u;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032ECA0: bc    4, 2, 0x8032ECB8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ECB8;
++        }
++    }
++
++label_8032ECA4:
++    cpu->pc = 0x8032ECA4u;
++    if (!gf_block(cpu,5u,&steps,bad)) goto decline;
++    // 8032ECA4: lis     r3, -32713
++    cpu->gpr[3] = ((u32)(s32)(-32713) << 16);
++
++label_8032ECA8:
++    cpu->pc = 0x8032ECA8u;
++    // 8032ECA8: rlwinm r0, r0, 4, 28, 28
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[0], 4u) & 0x00000008u;
++    }
++
++label_8032ECAC:
++    cpu->pc = 0x8032ECACu;
++    // 8032ECAC: addi    r3, r3, 4472
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(4472);
++
++label_8032ECB0:
++    cpu->pc = 0x8032ECB0u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032ECB0: lfdx    f1, r3, r0
++    {
++        u32 ea = cpu->gpr[3] + cpu->gpr[0];
++        cpu->fpr[1] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032ECB4:
++    cpu->pc = 0x8032ECB4u;
++    // 8032ECB4: b       0x8032EF50
++    {
++            goto label_8032EF50;
++    }
++
++label_8032ECB8:
++    cpu->pc = 0x8032ECB8u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ECB8: lis     r3, 16
++    cpu->gpr[3] = ((u32)(s32)(16) << 16);
++
++label_8032ECBC:
++    cpu->pc = 0x8032ECBCu;
++    // 8032ECBC: cmpw    r7, r3
++    {
++        s32 val_a = (s32)(cpu->gpr[7]);
++        s32 val_b = (s32)(cpu->gpr[3]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ECC0:
++    cpu->pc = 0x8032ECC0u;
++    // 8032ECC0: bc    4, 0, 0x8032ED0C
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ED0C;
++        }
++    }
++
++label_8032ECC4:
++    cpu->pc = 0x8032ECC4u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ECC4: cmpwi   r7, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[7]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ECC8:
++    cpu->pc = 0x8032ECC8u;
++    // 8032ECC8: bc    4, 2, 0x8032ECEC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ECEC;
++        }
++    }
++
++label_8032ECCC:
++    cpu->pc = 0x8032ECCCu;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ECCC: or   r3, r4, r4
++    {
++        cpu->gpr[3] = cpu->gpr[4] | cpu->gpr[4];
++    }
++
++label_8032ECD0:
++    cpu->pc = 0x8032ECD0u;
++    // 8032ECD0: li      r11, -1043
++    cpu->gpr[11] = (u32)(s32)(-1043);
++
++label_8032ECD4:
++    cpu->pc = 0x8032ECD4u;
++    // 8032ECD4: b       0x8032ECE0
++    {
++            goto label_8032ECE0;
++    }
++
++/* loop 8032ECD8 is inlined below */
++label_8032ECDC:
++    // 8032ECDC: addi    r11, r11, -1
++    cpu->gpr[11] = cpu->gpr[11] + (u32)(s32)(-1);
++
++label_8032ECE0:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ECE0: cmpwi   r3, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[3]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ECE4:
++    // 8032ECE4: bc    12, 1, 0x8032ECD8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ECD8u;
++                goto decline;
++            }
++            goto label_8032ECD8;
++        }
++    }
++
++label_8032ECE8:
++    cpu->pc = 0x8032ECE8u;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032ECE8: b       0x8032ED14
++    {
++            goto label_8032ED14;
++    }
++
++label_8032ECEC:
++    cpu->pc = 0x8032ECECu;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ECEC: rlwinm r3, r7, 11, 0, 20
++    {
++        cpu->gpr[3] = gm_rotl32(cpu->gpr[7], 11u) & 0xFFFFF800u;
++    }
++
++label_8032ECF0:
++    cpu->pc = 0x8032ECF0u;
++    // 8032ECF0: li      r11, -1022
++    cpu->gpr[11] = (u32)(s32)(-1022);
++
++label_8032ECF4:
++    cpu->pc = 0x8032ECF4u;
++    // 8032ECF4: b       0x8032ED00
++    {
++            goto label_8032ED00;
++    }
++
++/* loop 8032ECF8 is inlined below */
++label_8032ECFC:
++    // 8032ECFC: addi    r11, r11, -1
++    cpu->gpr[11] = cpu->gpr[11] + (u32)(s32)(-1);
++
++label_8032ED00:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED00: cmpwi   r3, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[3]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED04:
++    // 8032ED04: bc    12, 1, 0x8032ECF8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ECF8u;
++                goto decline;
++            }
++            goto label_8032ECF8;
++        }
++    }
++
++label_8032ED08:
++    cpu->pc = 0x8032ED08u;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032ED08: b       0x8032ED14
++    {
++            goto label_8032ED14;
++    }
++
++label_8032ED0C:
++    cpu->pc = 0x8032ED0Cu;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED0C: srawi r3, r7, 20
++    {
++        u32 sh = 20u;
++        u32 value = cpu->gpr[7];
++        bool ca = false;
++        if (sh == 0) {
++            cpu->gpr[3] = value;
++        } else if (sh > 31) {
++            cpu->gpr[3] = (value & 0x80000000u) ? 0xFFFFFFFFu : 0u;
++            ca = (value & 0x80000000u) != 0;
++        } else {
++            cpu->gpr[3] = (u32)((s32)value >> sh);
++            ca = (value & 0x80000000u) && ((value << (32u - sh)) != 0);
++        }
++        cpu->xer = (cpu->xer & ~0x20000000u) | (ca ? 0x20000000u : 0u);
++    }
++
++label_8032ED10:
++    cpu->pc = 0x8032ED10u;
++    // 8032ED10: addi    r11, r3, -1023
++    cpu->gpr[11] = cpu->gpr[3] + (u32)(s32)(-1023);
++
++label_8032ED14:
++    cpu->pc = 0x8032ED14u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ED14: lis     r3, 16
++    cpu->gpr[3] = ((u32)(s32)(16) << 16);
++
++label_8032ED18:
++    cpu->pc = 0x8032ED18u;
++    // 8032ED18: cmpw    r8, r3
++    {
++        s32 val_a = (s32)(cpu->gpr[8]);
++        s32 val_b = (s32)(cpu->gpr[3]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED1C:
++    cpu->pc = 0x8032ED1Cu;
++    // 8032ED1C: bc    4, 0, 0x8032ED68
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ED68;
++        }
++    }
++
++label_8032ED20:
++    cpu->pc = 0x8032ED20u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED20: cmpwi   r8, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[8]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED24:
++    cpu->pc = 0x8032ED24u;
++    // 8032ED24: bc    4, 2, 0x8032ED48
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ED48;
++        }
++    }
++
++label_8032ED28:
++    cpu->pc = 0x8032ED28u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ED28: or   r6, r5, r5
++    {
++        cpu->gpr[6] = cpu->gpr[5] | cpu->gpr[5];
++    }
++
++label_8032ED2C:
++    cpu->pc = 0x8032ED2Cu;
++    // 8032ED2C: li      r3, -1043
++    cpu->gpr[3] = (u32)(s32)(-1043);
++
++label_8032ED30:
++    cpu->pc = 0x8032ED30u;
++    // 8032ED30: b       0x8032ED3C
++    {
++            goto label_8032ED3C;
++    }
++
++/* loop 8032ED34 is inlined below */
++label_8032ED38:
++    // 8032ED38: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++label_8032ED3C:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED3C: cmpwi   r6, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED40:
++    // 8032ED40: bc    12, 1, 0x8032ED34
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ED34u;
++                goto decline;
++            }
++            goto label_8032ED34;
++        }
++    }
++
++label_8032ED44:
++    cpu->pc = 0x8032ED44u;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032ED44: b       0x8032ED70
++    {
++            goto label_8032ED70;
++    }
++
++label_8032ED48:
++    cpu->pc = 0x8032ED48u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ED48: rlwinm r6, r8, 11, 0, 20
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[8], 11u) & 0xFFFFF800u;
++    }
++
++label_8032ED4C:
++    cpu->pc = 0x8032ED4Cu;
++    // 8032ED4C: li      r3, -1022
++    cpu->gpr[3] = (u32)(s32)(-1022);
++
++label_8032ED50:
++    cpu->pc = 0x8032ED50u;
++    // 8032ED50: b       0x8032ED5C
++    {
++            goto label_8032ED5C;
++    }
++
++/* loop 8032ED54 is inlined below */
++label_8032ED58:
++    // 8032ED58: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++label_8032ED5C:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED5C: cmpwi   r6, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED60:
++    // 8032ED60: bc    12, 1, 0x8032ED54
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ED54u;
++                goto decline;
++            }
++            goto label_8032ED54;
++        }
++    }
++
++label_8032ED64:
++    cpu->pc = 0x8032ED64u;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032ED64: b       0x8032ED70
++    {
++            goto label_8032ED70;
++    }
++
++label_8032ED68:
++    cpu->pc = 0x8032ED68u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED68: srawi r3, r8, 20
++    {
++        u32 sh = 20u;
++        u32 value = cpu->gpr[8];
++        bool ca = false;
++        if (sh == 0) {
++            cpu->gpr[3] = value;
++        } else if (sh > 31) {
++            cpu->gpr[3] = (value & 0x80000000u) ? 0xFFFFFFFFu : 0u;
++            ca = (value & 0x80000000u) != 0;
++        } else {
++            cpu->gpr[3] = (u32)((s32)value >> sh);
++            ca = (value & 0x80000000u) && ((value << (32u - sh)) != 0);
++        }
++        cpu->xer = (cpu->xer & ~0x20000000u) | (ca ? 0x20000000u : 0u);
++    }
++
++label_8032ED6C:
++    cpu->pc = 0x8032ED6Cu;
++    // 8032ED6C: addi    r3, r3, -1023
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1023);
++
++label_8032ED70:
++    cpu->pc = 0x8032ED70u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED70: cmpwi   r11, -1022
++    {
++        s32 val_a = (s32)(cpu->gpr[11]);
++        s32 val_b = (s32)(-1022);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED74:
++    cpu->pc = 0x8032ED74u;
++    // 8032ED74: bc    12, 0, 0x8032ED84
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032ED84;
++        }
++    }
++
++label_8032ED78:
++    cpu->pc = 0x8032ED78u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ED78: rlwinm r6, r7, 0, 12, 31
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[7], 0u) & 0x000FFFFFu;
++    }
++
++label_8032ED7C:
++    cpu->pc = 0x8032ED7Cu;
++    // 8032ED7C: oris    r9, r6, 0x0010
++    cpu->gpr[9] = cpu->gpr[6] | (0x0010u << 16);
++
++label_8032ED80:
++    cpu->pc = 0x8032ED80u;
++    // 8032ED80: b       0x8032EDB4
++    {
++            goto label_8032EDB4;
++    }
++
++label_8032ED84:
++    cpu->pc = 0x8032ED84u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032ED84: subfic  r9, r11, -1022
++    {
++        u64 res = (u64)(u32)(s32)(-1022) + (u64)(~cpu->gpr[11]) + 1u;
++        cpu->gpr[9] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032ED88:
++    cpu->pc = 0x8032ED88u;
++    // 8032ED88: cmpwi   r9, 31
++    {
++        s32 val_a = (s32)(cpu->gpr[9]);
++        s32 val_b = (s32)(31);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032ED8C:
++    cpu->pc = 0x8032ED8Cu;
++    // 8032ED8C: bc    12, 1, 0x8032EDA8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EDA8;
++        }
++    }
++
++label_8032ED90:
++    cpu->pc = 0x8032ED90u;
++    if (!gf_block(cpu,6u,&steps,bad)) goto decline;
++    // 8032ED90: subfic  r6, r9, 32
++    {
++        u64 res = (u64)(u32)(s32)(32) + (u64)(~cpu->gpr[9]) + 1u;
++        cpu->gpr[6] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032ED94:
++    cpu->pc = 0x8032ED94u;
++    // 8032ED94: slw   r7, r7, r9
++    {
++        u32 sh = cpu->gpr[9] & 0x3Fu;
++        cpu->gpr[7] = sh > 31 ? 0u : (cpu->gpr[7] << sh);
++    }
++
++label_8032ED98:
++    cpu->pc = 0x8032ED98u;
++    // 8032ED98: srw   r6, r4, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        cpu->gpr[6] = sh > 31 ? 0u : (cpu->gpr[4] >> sh);
++    }
++
++label_8032ED9C:
++    cpu->pc = 0x8032ED9Cu;
++    // 8032ED9C: slw   r4, r4, r9
++    {
++        u32 sh = cpu->gpr[9] & 0x3Fu;
++        cpu->gpr[4] = sh > 31 ? 0u : (cpu->gpr[4] << sh);
++    }
++
++label_8032EDA0:
++    cpu->pc = 0x8032EDA0u;
++    // 8032EDA0: or   r9, r7, r6
++    {
++        cpu->gpr[9] = cpu->gpr[7] | cpu->gpr[6];
++    }
++
++label_8032EDA4:
++    cpu->pc = 0x8032EDA4u;
++    // 8032EDA4: b       0x8032EDB4
++    {
++            goto label_8032EDB4;
++    }
++
++label_8032EDA8:
++    cpu->pc = 0x8032EDA8u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EDA8: addi    r6, r9, -32
++    cpu->gpr[6] = cpu->gpr[9] + (u32)(s32)(-32);
++
++label_8032EDAC:
++    cpu->pc = 0x8032EDACu;
++    // 8032EDAC: slw   r9, r4, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        cpu->gpr[9] = sh > 31 ? 0u : (cpu->gpr[4] << sh);
++    }
++
++label_8032EDB0:
++    cpu->pc = 0x8032EDB0u;
++    // 8032EDB0: li      r4, 0
++    cpu->gpr[4] = (u32)(s32)(0);
++
++label_8032EDB4:
++    cpu->pc = 0x8032EDB4u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EDB4: cmpwi   r3, -1022
++    {
++        s32 val_a = (s32)(cpu->gpr[3]);
++        s32 val_b = (s32)(-1022);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EDB8:
++    cpu->pc = 0x8032EDB8u;
++    // 8032EDB8: bc    12, 0, 0x8032EDC8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EDC8;
++        }
++    }
++
++label_8032EDBC:
++    cpu->pc = 0x8032EDBCu;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EDBC: rlwinm r6, r10, 0, 12, 31
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[10], 0u) & 0x000FFFFFu;
++    }
++
++label_8032EDC0:
++    cpu->pc = 0x8032EDC0u;
++    // 8032EDC0: oris    r7, r6, 0x0010
++    cpu->gpr[7] = cpu->gpr[6] | (0x0010u << 16);
++
++label_8032EDC4:
++    cpu->pc = 0x8032EDC4u;
++    // 8032EDC4: b       0x8032EDF8
++    {
++            goto label_8032EDF8;
++    }
++
++label_8032EDC8:
++    cpu->pc = 0x8032EDC8u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EDC8: subfic  r10, r3, -1022
++    {
++        u64 res = (u64)(u32)(s32)(-1022) + (u64)(~cpu->gpr[3]) + 1u;
++        cpu->gpr[10] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032EDCC:
++    cpu->pc = 0x8032EDCCu;
++    // 8032EDCC: cmpwi   r10, 31
++    {
++        s32 val_a = (s32)(cpu->gpr[10]);
++        s32 val_b = (s32)(31);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EDD0:
++    cpu->pc = 0x8032EDD0u;
++    // 8032EDD0: bc    12, 1, 0x8032EDEC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EDEC;
++        }
++    }
++
++label_8032EDD4:
++    cpu->pc = 0x8032EDD4u;
++    if (!gf_block(cpu,6u,&steps,bad)) goto decline;
++    // 8032EDD4: subfic  r6, r10, 32
++    {
++        u64 res = (u64)(u32)(s32)(32) + (u64)(~cpu->gpr[10]) + 1u;
++        cpu->gpr[6] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032EDD8:
++    cpu->pc = 0x8032EDD8u;
++    // 8032EDD8: slw   r7, r8, r10
++    {
++        u32 sh = cpu->gpr[10] & 0x3Fu;
++        cpu->gpr[7] = sh > 31 ? 0u : (cpu->gpr[8] << sh);
++    }
++
++label_8032EDDC:
++    cpu->pc = 0x8032EDDCu;
++    // 8032EDDC: srw   r6, r5, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        cpu->gpr[6] = sh > 31 ? 0u : (cpu->gpr[5] >> sh);
++    }
++
++label_8032EDE0:
++    cpu->pc = 0x8032EDE0u;
++    // 8032EDE0: slw   r5, r5, r10
++    {
++        u32 sh = cpu->gpr[10] & 0x3Fu;
++        cpu->gpr[5] = sh > 31 ? 0u : (cpu->gpr[5] << sh);
++    }
++
++label_8032EDE4:
++    cpu->pc = 0x8032EDE4u;
++    // 8032EDE4: or   r7, r7, r6
++    {
++        cpu->gpr[7] = cpu->gpr[7] | cpu->gpr[6];
++    }
++
++label_8032EDE8:
++    cpu->pc = 0x8032EDE8u;
++    // 8032EDE8: b       0x8032EDF8
++    {
++            goto label_8032EDF8;
++    }
++
++label_8032EDEC:
++    cpu->pc = 0x8032EDECu;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EDEC: addi    r6, r10, -32
++    cpu->gpr[6] = cpu->gpr[10] + (u32)(s32)(-32);
++
++label_8032EDF0:
++    cpu->pc = 0x8032EDF0u;
++    // 8032EDF0: slw   r7, r5, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        cpu->gpr[7] = sh > 31 ? 0u : (cpu->gpr[5] << sh);
++    }
++
++label_8032EDF4:
++    cpu->pc = 0x8032EDF4u;
++    // 8032EDF4: li      r5, 0
++    cpu->gpr[5] = (u32)(s32)(0);
++
++label_8032EDF8:
++    cpu->pc = 0x8032EDF8u;
++    if (!gf_block(cpu,4u,&steps,bad)) goto decline;
++    // 8032EDF8: subf.   r6, r3, r11
++    {
++        u32 a = ~cpu->gpr[3];
++        u32 b = cpu->gpr[11];
++        u32 res = a + b + 1u;
++        cpu->gpr[6] = res;
++        u32 cr_bits = 0;
++        s32 cr_value = (s32)cpu->gpr[6];
++        if (cr_value < 0)  cr_bits |= 0x8u;
++        if (cr_value > 0)  cr_bits |= 0x4u;
++        if (cr_value == 0) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & 0x0FFFFFFFu) | (cr_bits << 28);
++    }
++
++label_8032EDFC:
++    cpu->pc = 0x8032EDFCu;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032EDFC: mtctr    r6
++    cpu->ctr = cpu->gpr[6];
++
++label_8032EE00:
++    cpu->pc = 0x8032EE00u;
++    // 8032EE00: bc    12, 2, 0x8032EE64
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EE64;
++        }
++    }
++
++label_8032EE04:
++    if (!gf_block(cpu,4u,&steps,bad)) goto decline;
++    // 8032EE04: cmplw   r4, r5
++    {
++        u32 val_a = (u32)(cpu->gpr[4]);
++        u32 val_b = (u32)(cpu->gpr[5]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EE08:
++    // 8032EE08: subf   r8, r7, r9
++    {
++        u32 a = ~cpu->gpr[7];
++        u32 b = cpu->gpr[9];
++        u32 res = a + b + 1u;
++        cpu->gpr[8] = res;
++    }
++
++label_8032EE0C:
++    // 8032EE0C: subf   r10, r5, r4
++    {
++        u32 a = ~cpu->gpr[5];
++        u32 b = cpu->gpr[4];
++        u32 res = a + b + 1u;
++        cpu->gpr[10] = res;
++    }
++
++label_8032EE10:
++    // 8032EE10: bc    4, 0, 0x8032EE18
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EE18;
++        }
++    }
++
++label_8032EE14:
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032EE14: addi    r8, r8, -1
++    cpu->gpr[8] = cpu->gpr[8] + (u32)(s32)(-1);
++
++label_8032EE18:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EE18: cmpwi   r8, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[8]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EE1C:
++    // 8032EE1C: bc    4, 0, 0x8032EE34
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EE34;
++        }
++    }
++
++label_8032EE20:
++    if (!gf_block(cpu,5u,&steps,bad)) goto decline;
++    // 8032EE20: rlwinm r6, r4, 1, 31, 31
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[4], 1u) & 0x00000001u;
++    }
++
++label_8032EE24:
++    // 8032EE24: add   r4, r4, r4
++    {
++        u32 a = cpu->gpr[4];
++        u32 b = cpu->gpr[4];
++        u32 res = a + b;
++        cpu->gpr[4] = res;
++    }
++
++label_8032EE28:
++    // 8032EE28: add   r6, r9, r6
++    {
++        u32 a = cpu->gpr[9];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[6] = res;
++    }
++
++label_8032EE2C:
++    // 8032EE2C: add   r9, r9, r6
++    {
++        u32 a = cpu->gpr[9];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[9] = res;
++    }
++
++label_8032EE30:
++    // 8032EE30: b       0x8032EE60
++    {
++            goto label_8032EE60;
++    }
++
++label_8032EE34:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EE34: or.   r4, r8, r10
++    {
++        cpu->gpr[4] = cpu->gpr[8] | cpu->gpr[10];
++        u32 cr_bits = 0;
++        s32 cr_value = (s32)cpu->gpr[4];
++        if (cr_value < 0)  cr_bits |= 0x8u;
++        if (cr_value > 0)  cr_bits |= 0x4u;
++        if (cr_value == 0) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & 0x0FFFFFFFu) | (cr_bits << 28);
++    }
++
++label_8032EE38:
++    // 8032EE38: bc    4, 2, 0x8032EE50
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EE50;
++        }
++    }
++
++label_8032EE3C:
++    if (!gf_block(cpu,5u,&steps,bad)) goto decline;
++    // 8032EE3C: lis     r3, -32713
++    cpu->gpr[3] = ((u32)(s32)(-32713) << 16);
++
++label_8032EE40:
++    // 8032EE40: rlwinm r0, r0, 4, 28, 28
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[0], 4u) & 0x00000008u;
++    }
++
++label_8032EE44:
++    // 8032EE44: addi    r3, r3, 4472
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(4472);
++
++label_8032EE48:
++    cpu->pc = 0x8032EE48u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032EE48: lfdx    f1, r3, r0
++    {
++        u32 ea = cpu->gpr[3] + cpu->gpr[0];
++        cpu->fpr[1] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032EE4C:
++    // 8032EE4C: b       0x8032EF50
++    {
++            goto label_8032EF50;
++    }
++
++label_8032EE50:
++    if (!gf_block(cpu,4u,&steps,bad)) goto decline;
++    // 8032EE50: rlwinm r6, r10, 1, 31, 31
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[10], 1u) & 0x00000001u;
++    }
++
++label_8032EE54:
++    // 8032EE54: add   r4, r10, r10
++    {
++        u32 a = cpu->gpr[10];
++        u32 b = cpu->gpr[10];
++        u32 res = a + b;
++        cpu->gpr[4] = res;
++    }
++
++label_8032EE58:
++    // 8032EE58: add   r9, r8, r6
++    {
++        u32 a = cpu->gpr[8];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[9] = res;
++    }
++
++label_8032EE5C:
++    // 8032EE5C: add   r9, r8, r9
++    {
++        u32 a = cpu->gpr[8];
++        u32 b = cpu->gpr[9];
++        u32 res = a + b;
++        cpu->gpr[9] = res;
++    }
++
++label_8032EE60:
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032EE60: bc    16, 0, 0x8032EE04
++    {
++        cpu->ctr--;
++        bool ctr_ok = (((cpu->ctr != 0) ? 1u : 0u) ^ 0u) != 0;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032EE04u;
++                goto decline;
++            }
++            goto label_8032EE04;
++        }
++    }
++
++label_8032EE64:
++    cpu->pc = 0x8032EE64u;
++    if (!gf_block(cpu,4u,&steps,bad)) goto decline;
++    // 8032EE64: cmplw   r4, r5
++    {
++        u32 val_a = (u32)(cpu->gpr[4]);
++        u32 val_b = (u32)(cpu->gpr[5]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EE68:
++    cpu->pc = 0x8032EE68u;
++    // 8032EE68: subf   r6, r7, r9
++    {
++        u32 a = ~cpu->gpr[7];
++        u32 b = cpu->gpr[9];
++        u32 res = a + b + 1u;
++        cpu->gpr[6] = res;
++    }
++
++label_8032EE6C:
++    cpu->pc = 0x8032EE6Cu;
++    // 8032EE6C: subf   r5, r5, r4
++    {
++        u32 a = ~cpu->gpr[5];
++        u32 b = cpu->gpr[4];
++        u32 res = a + b + 1u;
++        cpu->gpr[5] = res;
++    }
++
++label_8032EE70:
++    cpu->pc = 0x8032EE70u;
++    // 8032EE70: bc    4, 0, 0x8032EE78
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EE78;
++        }
++    }
++
++label_8032EE74:
++    cpu->pc = 0x8032EE74u;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    // 8032EE74: addi    r6, r6, -1
++    cpu->gpr[6] = cpu->gpr[6] + (u32)(s32)(-1);
++
++label_8032EE78:
++    cpu->pc = 0x8032EE78u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EE78: cmpwi   r6, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EE7C:
++    cpu->pc = 0x8032EE7Cu;
++    // 8032EE7C: bc    12, 0, 0x8032EE88
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EE88;
++        }
++    }
++
++label_8032EE80:
++    cpu->pc = 0x8032EE80u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EE80: or   r9, r6, r6
++    {
++        cpu->gpr[9] = cpu->gpr[6] | cpu->gpr[6];
++    }
++
++label_8032EE84:
++    cpu->pc = 0x8032EE84u;
++    // 8032EE84: or   r4, r5, r5
++    {
++        cpu->gpr[4] = cpu->gpr[5] | cpu->gpr[5];
++    }
++
++label_8032EE88:
++    cpu->pc = 0x8032EE88u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EE88: or.   r5, r9, r4
++    {
++        cpu->gpr[5] = cpu->gpr[9] | cpu->gpr[4];
++        u32 cr_bits = 0;
++        s32 cr_value = (s32)cpu->gpr[5];
++        if (cr_value < 0)  cr_bits |= 0x8u;
++        if (cr_value > 0)  cr_bits |= 0x4u;
++        if (cr_value == 0) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & 0x0FFFFFFFu) | (cr_bits << 28);
++    }
++
++label_8032EE8C:
++    cpu->pc = 0x8032EE8Cu;
++    // 8032EE8C: bc    4, 2, 0x8032EEA4
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x20000000u) != 0) == false);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EEA4;
++        }
++    }
++
++label_8032EE90:
++    cpu->pc = 0x8032EE90u;
++    if (!gf_block(cpu,5u,&steps,bad)) goto decline;
++    // 8032EE90: lis     r3, -32713
++    cpu->gpr[3] = ((u32)(s32)(-32713) << 16);
++
++label_8032EE94:
++    cpu->pc = 0x8032EE94u;
++    // 8032EE94: rlwinm r0, r0, 4, 28, 28
++    {
++        cpu->gpr[0] = gm_rotl32(cpu->gpr[0], 4u) & 0x00000008u;
++    }
++
++label_8032EE98:
++    cpu->pc = 0x8032EE98u;
++    // 8032EE98: addi    r3, r3, 4472
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(4472);
++
++label_8032EE9C:
++    cpu->pc = 0x8032EE9Cu;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032EE9C: lfdx    f1, r3, r0
++    {
++        u32 ea = cpu->gpr[3] + cpu->gpr[0];
++        cpu->fpr[1] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032EEA0:
++    cpu->pc = 0x8032EEA0u;
++    // 8032EEA0: b       0x8032EF50
++    {
++            goto label_8032EF50;
++    }
++
++label_8032EEA4:
++    cpu->pc = 0x8032EEA4u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EEA4: lis     r5, 16
++    cpu->gpr[5] = ((u32)(s32)(16) << 16);
++
++label_8032EEA8:
++    cpu->pc = 0x8032EEA8u;
++    // 8032EEA8: b       0x8032EEC0
++    {
++            goto label_8032EEC0;
++    }
++
++/* loop 8032EEAC is inlined below */
++label_8032EEB0:
++    // 8032EEB0: add   r4, r4, r4
++    {
++        u32 a = cpu->gpr[4];
++        u32 b = cpu->gpr[4];
++        u32 res = a + b;
++        cpu->gpr[4] = res;
++    }
++
++label_8032EEB4:
++    // 8032EEB4: add   r6, r9, r6
++    {
++        u32 a = cpu->gpr[9];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[6] = res;
++    }
++
++label_8032EEB8:
++    // 8032EEB8: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++label_8032EEBC:
++    // 8032EEBC: add   r9, r9, r6
++    {
++        u32 a = cpu->gpr[9];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[9] = res;
++    }
++
++label_8032EEC0:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EEC0: cmpw    r9, r5
++    {
++        s32 val_a = (s32)(cpu->gpr[9]);
++        s32 val_b = (s32)(cpu->gpr[5]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EEC4:
++    // 8032EEC4: bc    12, 0, 0x8032EEAC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032EEACu;
++                goto decline;
++            }
++            goto label_8032EEAC;
++        }
++    }
++
++label_8032EEC8:
++    cpu->pc = 0x8032EEC8u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EEC8: cmpwi   r3, -1022
++    {
++        s32 val_a = (s32)(cpu->gpr[3]);
++        s32 val_b = (s32)(-1022);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EECC:
++    cpu->pc = 0x8032EECCu;
++    // 8032EECC: bc    12, 0, 0x8032EEF0
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EEF0;
++        }
++    }
++
++label_8032EED0:
++    cpu->pc = 0x8032EED0u;
++    if (!gf_block(cpu,8u,&steps,bad)) goto decline;
++    // 8032EED0: addi    r3, r3, 1023
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(1023);
++
++label_8032EED4:
++    cpu->pc = 0x8032EED4u;
++    // 8032EED4: addis   r5, r9, -16
++    cpu->gpr[5] = cpu->gpr[9] + ((u32)(s32)(-16) << 16);
++
++label_8032EED8:
++    cpu->pc = 0x8032EED8u;
++    // 8032EED8: rlwinm r3, r3, 20, 0, 11
++    {
++        cpu->gpr[3] = gm_rotl32(cpu->gpr[3], 20u) & 0xFFF00000u;
++    }
++
++label_8032EEDC:
++    cpu->pc = 0x8032EEDCu;
++    cpu->cycle_observation_suffix = 4u;
++    // 8032EEDC: stw     r4, 12(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(12);
++        if (!gf_store32(cpu,frame,ea,(u32)cpu->gpr[4])) goto decline;
++    }
++
++label_8032EEE0:
++    cpu->pc = 0x8032EEE0u;
++    // 8032EEE0: or   r3, r5, r3
++    {
++        cpu->gpr[3] = cpu->gpr[5] | cpu->gpr[3];
++    }
++
++label_8032EEE4:
++    cpu->pc = 0x8032EEE4u;
++    // 8032EEE4: or   r0, r3, r0
++    {
++        cpu->gpr[0] = cpu->gpr[3] | cpu->gpr[0];
++    }
++
++label_8032EEE8:
++    cpu->pc = 0x8032EEE8u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032EEE8: stw     r0, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        if (!gf_store32(cpu,frame,ea,(u32)cpu->gpr[0])) goto decline;
++    }
++
++label_8032EEEC:
++    cpu->pc = 0x8032EEECu;
++    // 8032EEEC: b       0x8032EF4C
++    {
++            goto label_8032EF4C;
++    }
++
++label_8032EEF0:
++    cpu->pc = 0x8032EEF0u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EEF0: subfic  r6, r3, -1022
++    {
++        u64 res = (u64)(u32)(s32)(-1022) + (u64)(~cpu->gpr[3]) + 1u;
++        cpu->gpr[6] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032EEF4:
++    cpu->pc = 0x8032EEF4u;
++    // 8032EEF4: cmpwi   r6, 20
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(20);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EEF8:
++    cpu->pc = 0x8032EEF8u;
++    // 8032EEF8: bc    12, 1, 0x8032EF14
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EF14;
++        }
++    }
++
++label_8032EEFC:
++    cpu->pc = 0x8032EEFCu;
++    if (!gf_block(cpu,6u,&steps,bad)) goto decline;
++    // 8032EEFC: subfic  r3, r6, 32
++    {
++        u64 res = (u64)(u32)(s32)(32) + (u64)(~cpu->gpr[6]) + 1u;
++        cpu->gpr[3] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032EF00:
++    cpu->pc = 0x8032EF00u;
++    // 8032EF00: srw   r4, r4, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        cpu->gpr[4] = sh > 31 ? 0u : (cpu->gpr[4] >> sh);
++    }
++
++label_8032EF04:
++    cpu->pc = 0x8032EF04u;
++    // 8032EF04: slw   r3, r9, r3
++    {
++        u32 sh = cpu->gpr[3] & 0x3Fu;
++        cpu->gpr[3] = sh > 31 ? 0u : (cpu->gpr[9] << sh);
++    }
++
++label_8032EF08:
++    cpu->pc = 0x8032EF08u;
++    // 8032EF08: sraw   r9, r9, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        u32 value = cpu->gpr[9];
++        bool ca = false;
++        if (sh == 0) {
++            cpu->gpr[9] = value;
++        } else if (sh > 31) {
++            cpu->gpr[9] = (value & 0x80000000u) ? 0xFFFFFFFFu : 0u;
++            ca = (value & 0x80000000u) != 0;
++        } else {
++            cpu->gpr[9] = (u32)((s32)value >> sh);
++            ca = (value & 0x80000000u) && ((value << (32u - sh)) != 0);
++        }
++        cpu->xer = (cpu->xer & ~0x20000000u) | (ca ? 0x20000000u : 0u);
++    }
++
++label_8032EF0C:
++    cpu->pc = 0x8032EF0Cu;
++    // 8032EF0C: or   r3, r4, r3
++    {
++        cpu->gpr[3] = cpu->gpr[4] | cpu->gpr[3];
++    }
++
++label_8032EF10:
++    cpu->pc = 0x8032EF10u;
++    // 8032EF10: b       0x8032EF40
++    {
++            goto label_8032EF40;
++    }
++
++label_8032EF14:
++    cpu->pc = 0x8032EF14u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EF14: cmpwi   r6, 31
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(31);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++label_8032EF18:
++    cpu->pc = 0x8032EF18u;
++    // 8032EF18: bc    12, 1, 0x8032EF34
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            goto label_8032EF34;
++        }
++    }
++
++label_8032EF1C:
++    cpu->pc = 0x8032EF1Cu;
++    if (!gf_block(cpu,6u,&steps,bad)) goto decline;
++    // 8032EF1C: subfic  r5, r6, 32
++    {
++        u64 res = (u64)(u32)(s32)(32) + (u64)(~cpu->gpr[6]) + 1u;
++        cpu->gpr[5] = (u32)res;
++        cpu->xer = (cpu->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);
++    }
++
++label_8032EF20:
++    cpu->pc = 0x8032EF20u;
++    // 8032EF20: srw   r3, r4, r6
++    {
++        u32 sh = cpu->gpr[6] & 0x3Fu;
++        cpu->gpr[3] = sh > 31 ? 0u : (cpu->gpr[4] >> sh);
++    }
++
++label_8032EF24:
++    cpu->pc = 0x8032EF24u;
++    // 8032EF24: slw   r4, r9, r5
++    {
++        u32 sh = cpu->gpr[5] & 0x3Fu;
++        cpu->gpr[4] = sh > 31 ? 0u : (cpu->gpr[9] << sh);
++    }
++
++label_8032EF28:
++    cpu->pc = 0x8032EF28u;
++    // 8032EF28: or   r9, r0, r0
++    {
++        cpu->gpr[9] = cpu->gpr[0] | cpu->gpr[0];
++    }
++
++label_8032EF2C:
++    cpu->pc = 0x8032EF2Cu;
++    // 8032EF2C: or   r3, r4, r3
++    {
++        cpu->gpr[3] = cpu->gpr[4] | cpu->gpr[3];
++    }
++
++label_8032EF30:
++    cpu->pc = 0x8032EF30u;
++    // 8032EF30: b       0x8032EF40
++    {
++            goto label_8032EF40;
++    }
++
++label_8032EF34:
++    cpu->pc = 0x8032EF34u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EF34: addi    r3, r6, -32
++    cpu->gpr[3] = cpu->gpr[6] + (u32)(s32)(-32);
++
++label_8032EF38:
++    cpu->pc = 0x8032EF38u;
++    // 8032EF38: sraw   r3, r9, r3
++    {
++        u32 sh = cpu->gpr[3] & 0x3Fu;
++        u32 value = cpu->gpr[9];
++        bool ca = false;
++        if (sh == 0) {
++            cpu->gpr[3] = value;
++        } else if (sh > 31) {
++            cpu->gpr[3] = (value & 0x80000000u) ? 0xFFFFFFFFu : 0u;
++            ca = (value & 0x80000000u) != 0;
++        } else {
++            cpu->gpr[3] = (u32)((s32)value >> sh);
++            ca = (value & 0x80000000u) && ((value << (32u - sh)) != 0);
++        }
++        cpu->xer = (cpu->xer & ~0x20000000u) | (ca ? 0x20000000u : 0u);
++    }
++
++label_8032EF3C:
++    cpu->pc = 0x8032EF3Cu;
++    // 8032EF3C: or   r9, r0, r0
++    {
++        cpu->gpr[9] = cpu->gpr[0] | cpu->gpr[0];
++    }
++
++label_8032EF40:
++    cpu->pc = 0x8032EF40u;
++    if (!gf_block(cpu,3u,&steps,bad)) goto decline;
++    // 8032EF40: or   r0, r9, r0
++    {
++        cpu->gpr[0] = cpu->gpr[9] | cpu->gpr[0];
++    }
++
++label_8032EF44:
++    cpu->pc = 0x8032EF44u;
++    cpu->cycle_observation_suffix = 1u;
++    // 8032EF44: stw     r3, 12(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(12);
++        if (!gf_store32(cpu,frame,ea,(u32)cpu->gpr[3])) goto decline;
++    }
++
++label_8032EF48:
++    cpu->pc = 0x8032EF48u;
++    cpu->cycle_observation_suffix = 0u;
++    // 8032EF48: stw     r0, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        if (!gf_store32(cpu,frame,ea,(u32)cpu->gpr[0])) goto decline;
++    }
++
++label_8032EF4C:
++    cpu->pc = 0x8032EF4Cu;
++    if (!gf_block(cpu,1u,&steps,bad)) goto decline;
++    cpu->cycle_observation_suffix = 0u;
++    // 8032EF4C: lfd     f1, 8(r1)
++    {
++        u32 ea = cpu->gpr[1] + (u32)(s32)(8);
++        cpu->fpr[1] = f64_value(gf_read64(cpu, frame, ea, &bad));
++    }
++
++label_8032EF50:
++    cpu->pc = 0x8032EF50u;
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032EF50: addi    r1, r1, 32
++    cpu->gpr[1] = cpu->gpr[1] + (u32)(s32)(32);
++
++label_8032EF54:
++    cpu->pc = 0x8032EF54u;
++    // 8032EF54: blr
++    {
++        u32 target = cpu->lr & ~3u;
++        bool ctr_ok = true;
++        bool cr_ok = true;
++        if (ctr_ok && cr_ok) {
++            cpu->pc = target;
++            goto gf_done;
++        }
++    }
++
++label_8032ECD8:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ECD8: rlwinm r3, r3, 1, 0, 30
++    {
++        cpu->gpr[3] = gm_rotl32(cpu->gpr[3], 1u) & 0xFFFFFFFEu;
++    }
++
++    // 8032ECDC: addi    r11, r11, -1
++    cpu->gpr[11] = cpu->gpr[11] + (u32)(s32)(-1);
++
++    // 8032ECE0: cmpwi   r3, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[3]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++    // 8032ECE4: bc    12, 1, 0x8032ECD8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ECD8u;
++                goto decline;
++            }
++            goto label_8032ECD8;
++        }
++    }
++
++    cpu->pc=0x8032ECE8u;
++    goto label_8032ECE8;
++
++label_8032ECF8:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ECF8: rlwinm r3, r3, 1, 0, 30
++    {
++        cpu->gpr[3] = gm_rotl32(cpu->gpr[3], 1u) & 0xFFFFFFFEu;
++    }
++
++    // 8032ECFC: addi    r11, r11, -1
++    cpu->gpr[11] = cpu->gpr[11] + (u32)(s32)(-1);
++
++    // 8032ED00: cmpwi   r3, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[3]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++    // 8032ED04: bc    12, 1, 0x8032ECF8
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ECF8u;
++                goto decline;
++            }
++            goto label_8032ECF8;
++        }
++    }
++
++    cpu->pc=0x8032ED08u;
++    goto label_8032ED08;
++
++label_8032ED34:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED34: rlwinm r6, r6, 1, 0, 30
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[6], 1u) & 0xFFFFFFFEu;
++    }
++
++    // 8032ED38: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++    // 8032ED3C: cmpwi   r6, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++    // 8032ED40: bc    12, 1, 0x8032ED34
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ED34u;
++                goto decline;
++            }
++            goto label_8032ED34;
++        }
++    }
++
++    cpu->pc=0x8032ED44u;
++    goto label_8032ED44;
++
++label_8032ED54:
++    if (!gf_block(cpu,2u,&steps,bad)) goto decline;
++    // 8032ED54: rlwinm r6, r6, 1, 0, 30
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[6], 1u) & 0xFFFFFFFEu;
++    }
++
++    // 8032ED58: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++    // 8032ED5C: cmpwi   r6, 0
++    {
++        s32 val_a = (s32)(cpu->gpr[6]);
++        s32 val_b = (s32)(0);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++    // 8032ED60: bc    12, 1, 0x8032ED54
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x40000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032ED54u;
++                goto decline;
++            }
++            goto label_8032ED54;
++        }
++    }
++
++    cpu->pc=0x8032ED64u;
++    goto label_8032ED64;
++
++label_8032EEAC:
++    if (!gf_block(cpu,5u,&steps,bad)) goto decline;
++    // 8032EEAC: rlwinm r6, r4, 1, 31, 31
++    {
++        cpu->gpr[6] = gm_rotl32(cpu->gpr[4], 1u) & 0x00000001u;
++    }
++
++    // 8032EEB0: add   r4, r4, r4
++    {
++        u32 a = cpu->gpr[4];
++        u32 b = cpu->gpr[4];
++        u32 res = a + b;
++        cpu->gpr[4] = res;
++    }
++
++    // 8032EEB4: add   r6, r9, r6
++    {
++        u32 a = cpu->gpr[9];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[6] = res;
++    }
++
++    // 8032EEB8: addi    r3, r3, -1
++    cpu->gpr[3] = cpu->gpr[3] + (u32)(s32)(-1);
++
++    // 8032EEBC: add   r9, r9, r6
++    {
++        u32 a = cpu->gpr[9];
++        u32 b = cpu->gpr[6];
++        u32 res = a + b;
++        cpu->gpr[9] = res;
++    }
++
++    // 8032EEC0: cmpw    r9, r5
++    {
++        s32 val_a = (s32)(cpu->gpr[9]);
++        s32 val_b = (s32)(cpu->gpr[5]);
++        u32 cr_bits = 0;
++        if (val_a < val_b)  cr_bits |= 0x8u;
++        if (val_a > val_b)  cr_bits |= 0x4u;
++        if (val_a == val_b) cr_bits |= 0x2u;
++        cr_bits |= (cpu->xer >> 31) & 1u;
++        cpu->cr = (cpu->cr & ~(0xFu << 28)) | (cr_bits << 28);
++    }
++
++    // 8032EEC4: bc    12, 0, 0x8032EEAC
++    {
++        bool ctr_ok = true;
++        bool cr_ok = (((cpu->cr & 0x80000000u) != 0) == true);
++        if (ctr_ok && cr_ok) {
++            if (cpu->downcount <= -cpu->cycle_budget) {
++                cpu->pc = 0x8032EEACu;
++                goto decline;
++            }
++            goto label_8032EEAC;
++        }
++    }
++
++    cpu->pc=0x8032EEC8u;
++    goto label_8032EEC8;
++gf_done:
++    if (bad || cpu->exception || cpu->ram!=initial.ram || cpu->ram_size!=initial.ram_size ||
++        aliases!=g_ppc_guest_alias_generation || g_ppc_guest_aliases_overlap_mem1 ||
++        g_mem_write_journal) goto decline;
++    return 1;
++decline:
++    memcpy(initial.ram+frame-GC_RAM_BASE,previous,sizeof previous);
++    *cpu=initial; fesetenv(&environment); _mm_setcsr(mxcsr); return 0;
++}
++#endif
++
+ int bluewake_native_game_math(CPUState* cpu, u32 address) {
+     if (cpu == NULL) return 0;
++#if defined(BLUEWAKE_NATIVE_FMOD) && BLUEWAKE_NATIVE_FMOD == 1
++    if (address == 0x8032EC1Cu) return game_fmod(cpu);
++#endif
+ #if defined(BLUEWAKE_NATIVE_PLANE) && BLUEWAKE_NATIVE_PLANE == 1
+     if (address == 0x8024A6F0u) return game_plane(cpu);
+ #endif
+--- a/scripts/windows/native_game_math.py
++++ b/scripts/windows/native_game_math.py
+@@ -177,8 +177,23 @@
+     return text, done
+ 
+ 
+-def prepare(root, bg_minmax=False, quaternion=False, game_atan=False, plane=False):
++def prepare(root, bg_minmax=False, quaternion=False, game_atan=False, plane=False, finite_fmod=False):
+     # A reusable importer must not retain an earlier opt-in after it is removed.
++    ENTRIES.pop(0x8032EC1C, None)
++    FRAGMENTS.pop('finite_fmod', None)
++    FRAGMENTS.pop('fmod_loop_8032ECD8', None)
++    FRAGMENTS.pop('fmod_loop_8032ECF8', None)
++    FRAGMENTS.pop('fmod_loop_8032ED34', None)
++    FRAGMENTS.pop('fmod_loop_8032ED54', None)
++    FRAGMENTS.pop('fmod_loop_8032EEAC', None)
++    if finite_fmod:
++        FRAGMENTS['finite_fmod'] = (2150815456, 2150820892, 2150821720, 'c8c4c71b68872c00423403d85e09fa06f3c8c06dae557831d264b3beab4ba4b2')
++        FRAGMENTS['fmod_loop_8032ECD8'] = (2150815456, 'loop_8032ECD8', None, '106a0e8fca84464ce1b0ce60ed220c1a03fc907669af33903247b06ec525cf9c')
++        FRAGMENTS['fmod_loop_8032ECF8'] = (2150815456, 'loop_8032ECF8', None, '1c9bf4d5af402ba0c5c678abafbae5ac18c94e4e14dd92babf0a9b04bb9796d3')
++        FRAGMENTS['fmod_loop_8032ED34'] = (2150815456, 'loop_8032ED34', None, '1b47f64c9ee5115bcc31ec185e3124b10e4a49e1b215e67e11f7d1ab684af556')
++        FRAGMENTS['fmod_loop_8032ED54'] = (2150815456, 'loop_8032ED54', None, 'd22235c9d2671073f3089e2ce4defcfef2257eff4eeea7b6c3d90293ff52fd61')
++        FRAGMENTS['fmod_loop_8032EEAC'] = (2150815456, 'loop_8032EEAC', None, '1344be94b1dbf72b76eb3494a8a0d6cc8e0fdf28cdf165185d75b4d48a44e0f0')
++        ENTRIES[0x8032EC1C] = ('finite_fmod', 'fmod_loop_8032ECD8', 'fmod_loop_8032ECF8', 'fmod_loop_8032ED34', 'fmod_loop_8032ED54', 'fmod_loop_8032EEAC')
+     FRAGMENTS.pop('bg_minmax', None)
+     ENTRIES.pop(0x80247C4C, None)
+     FRAGMENTS.pop('quaternion', None)
+@@ -266,8 +281,9 @@
+     parser.add_argument('--enable-quaternion', action='store_true')
+     parser.add_argument('--enable-game-atan', action='store_true')
+     parser.add_argument('--enable-plane', action='store_true')
++    parser.add_argument('--enable-finite-fmod', action='store_true')
+     args = parser.parse_args()
+     try:
+-        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan, args.enable_plane)
++        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan, args.enable_plane, args.enable_finite_fmod)
+     except ValueError as error:
+         parser.exit(1, f'{error}\n')
