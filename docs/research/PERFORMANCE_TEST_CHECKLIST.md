@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 7, 2026, 12:56 a.m. CDT**. Implementation started from
+Updated **October 7, 2026, 1:31 a.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -11,6 +11,15 @@ Donor gains are evidence to investigate, not promised gains on this machine.
 All 38 numbered candidates remain in scope. Implement dependency groups in
 isolated builds; preserve negative results and enable improvements only after
 their applicable qualification. Tingle rescue wait-skip stays disabled.
+
+The latest crowded-view investigation identifies game-thread CPU saturation
+in the actual play-session log. An additional host-only pending-return filter
+passed the existing event suite and 5,646,341 old-predicate comparisons each
+under O3/ASan. Four serialized original/filter/filter/original Dragon Roost
+runs reduced mean route time 10.89% and process CPU 9.20%; both pairs improved.
+The separate feature-address experiment regressed and was restored. See
+[busy-scene results](PERFORMANCE_BUSY_SCENES.md) for the exact settings,
+receipts and limits. This does not establish full-speed displayed gameplay.
 
 | Item | Current result | Remaining qualification |
 | --- | --- | --- |

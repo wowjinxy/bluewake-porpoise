@@ -161,6 +161,10 @@ static BwGameScene g_scene;
 static uint8_t g_facts[kSaveDataSpan];
 static Subscriber g_subscribers[kSubscribers];
 static PendingCall g_pending[kPendingCalls];
+/* A conservative return-address filter, not a cache of observation answers.
+ * Cancellation may leave bits set; every hit still checks the live slots.
+ * Only a new arm adds a bit, and clearing all slots clears the filter. */
+static uint64_t g_pending_return_buckets[4];
 static uint64_t g_mask, g_subscription_token, g_sequence, g_native_token;
 static BwGameEventStats g_stats;
 static BwGameEventSubscription g_trace_subscription;
@@ -278,6 +282,7 @@ static void clear_pending(void) {
         memset(&g_pending[i].inventory_proof, 0, sizeof g_pending[i].inventory_proof);
 #endif
     }
+    memset(g_pending_return_buckets, 0, sizeof g_pending_return_buckets);
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
     bw_inventory_collector_emit_end();
 #endif
@@ -510,6 +515,10 @@ static bool item_entry(uint32_t address) {
     return address == kItemGet || address == kItemGetUncached;
 }
 
+static unsigned return_bucket(uint32_t address) {
+    return (address * UINT32_C(0x9E3779B1)) >> 24;
+}
+
 bool bluewake_game_events_observes(uint32_t address) {
     if (g_cpu == NULL || g_mask == 0) return false;
     if ((address == kExecuteMethod && (g_mask & BW_GAME_EVENT_MASK(BW_GAME_EVENT_PLAYER_UPDATED))) ||
@@ -518,6 +527,9 @@ bool bluewake_game_events_observes(uint32_t address) {
         (address == kSaveSync && (g_mask & BW_GAME_EVENT_MASK(BW_GAME_EVENT_SAVE_COMPLETED))) ||
         address == kCardToMemory)
         return true;
+    const unsigned bucket = return_bucket(address);
+    if (!(g_pending_return_buckets[bucket >> 6] & (UINT64_C(1) << (bucket & 63u))))
+        return false;
     for (unsigned i = 0; i < kPendingCalls; ++i)
         if (g_pending[i].active && g_pending[i].return_address == address) return true;
     return false;
@@ -542,6 +554,8 @@ static bool arm(CPUState* cpu, CallKind kind, uint32_t player, uint8_t item, int
         g_pending[i] = (PendingCall){.active=true,.kind=kind,.return_address=target,
             .stack=stack,.player=player,.item=item,.slot=slot,.token=++g_native_token,
             .epoch=g_stats.epoch,.generation=g_stats.scene_generation,.tick=g_stats.ticks};
+        const unsigned bucket = return_bucket(target);
+        g_pending_return_buckets[bucket >> 6] |= UINT64_C(1) << (bucket & 63u);
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
         if (kind == CALL_PLAYER && bw_inventory_collector_completion_enabled())
             (void)bw_inventory_collector_call_begin(cpu, g_pending[i].token,
