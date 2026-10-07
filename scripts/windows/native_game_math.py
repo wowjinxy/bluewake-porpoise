@@ -136,9 +136,16 @@ def certify(chunks, watched):
                     observed = observed.replace(
                         'ctx->lr = 0x8024AEC8u; ctx->pc = 0x80328F40u;',
                         'ctx->lr = 0x8024AEC8u;')
+                if name == 'plane':
+                    # These exact two save/restore entry boundaries are kept
+                    # as fresh runtime queries, with the real CPU/RAM view.
+                    for target in ('80328F3C', '80328F88'):
+                        observed = observed.replace('ctx->pc = 0x' + target + 'u;', '')
                 names = re.findall(r"label_([8C][0-9A-Fa-f]{7})|// ([8C][0-9A-Fa-f]{7}):|"
                                    r"ctx->(?:pc|lr) = 0x([8C][0-9A-Fa-f]{7})", observed)
                 pcs = [int(next(value for value in match if value), 16) for match in names]
+                if name in ('plane_save', 'plane_restore'):
+                    pcs = [pc for pc in pcs if pc != start]
                 if any(pc in watched or (pc & ~0x40000000) in watched for pc in pcs):
                     print(f"{name}: host watches an internal address; dependent natives disabled")
                     valid = False
@@ -170,7 +177,7 @@ def transform(text, chunk, entries):
     return text, done
 
 
-def prepare(root, bg_minmax=False, quaternion=False, game_atan=False):
+def prepare(root, bg_minmax=False, quaternion=False, game_atan=False, plane=False):
     # A reusable importer must not retain an earlier opt-in after it is removed.
     FRAGMENTS.pop('bg_minmax', None)
     ENTRIES.pop(0x80247C4C, None)
@@ -179,6 +186,27 @@ def prepare(root, bg_minmax=False, quaternion=False, game_atan=False):
     FRAGMENTS.pop('game_atan', None)
     FRAGMENTS.pop('atan_table', None)
     ENTRIES.pop(0x802460D0, None)
+    ENTRIES.pop(0x8024A6F0, None)
+    FRAGMENTS.pop('plane', None)
+    FRAGMENTS.pop('plane_cross', None)
+    FRAGMENTS.pop('plane_mag', None)
+    FRAGMENTS.pop('plane_dot', None)
+    FRAGMENTS.pop('plane_save', None)
+    FRAGMENTS.pop('plane_restore', None)
+    if plane:
+        FRAGMENTS['plane'] = (0x802496E0, 0x8024A6F0, 0x8024A7BC,
+            'd0a5789e0976289d30ca43be72334239af64a0f8b0161a1b7e814e0f4690a36c')
+        FRAGMENTS['plane_cross'] = (0x8030D6E0, 0x8030DECC, 0x8030DF08,
+            'a1eedeef0d07eb445d5d0b52313325a54945cb299e4abc81b058c2107676fe04')
+        FRAGMENTS['plane_mag'] = (0x8030D6E0, 0x8030DE68, 0x8030DEAC,
+            'ed8be5c3e04ec0bb6b8b8af13095e391acb4291521073be27f3c74ec63909313')
+        FRAGMENTS['plane_dot'] = (0x8030D6E0, 0x8030DEAC, 0x8030DECC,
+            '62a35df011a51e2aef7a0db1bfa512390017e42567a52275ea91e01c3398607b')
+        FRAGMENTS['plane_save'] = (0x803256E0, 0x80328F3C, 0x80328F50,
+            '5edcdccc1424eca7aa29c27064f6f7003890e7e5aff2f6ad4410437659b7fb42')
+        FRAGMENTS['plane_restore'] = (0x803256E0, 0x80328F88, 0x80328F9C,
+            '1e09a9f3f03e9cea060a494e1e79184d1bd0d3cd68329b8f4e3989db337cb33a')
+        ENTRIES[0x8024A6F0] = ('plane', 'sdk_sub', 'sdk_scale', 'plane_cross', 'plane_mag', 'plane_dot', 'plane_save', 'plane_restore')
     if game_atan:
         FRAGMENTS['game_atan'] = (0x802456E0, 0x802460D0, 0x80246270,
             '31ee7ceef93f4061bbfa05f7b869092425a3f61d781099f01cb323d62223425d')
@@ -237,8 +265,9 @@ if __name__ == '__main__':
     parser.add_argument('--enable-bg-minmax', action='store_true')
     parser.add_argument('--enable-quaternion', action='store_true')
     parser.add_argument('--enable-game-atan', action='store_true')
+    parser.add_argument('--enable-plane', action='store_true')
     args = parser.parse_args()
     try:
-        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan)
+        prepare(args.composite, args.enable_bg_minmax, args.enable_quaternion, args.enable_game_atan, args.enable_plane)
     except ValueError as error:
         parser.exit(1, f'{error}\n')

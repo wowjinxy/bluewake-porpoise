@@ -5382,8 +5382,128 @@ ga_end:
 }
 #endif
 
+/* Elliott Tate donor 944a1f3c identifies cM3d_CalcPla and its exact SDK leaves.
+ * This bounded composition retains every actual call/return observation.
+ * The read-only versioned provider sees the real CPU and already-written RAM.
+ * A refusal restores CPU, touched RAM and host FP state before translation. */
+#if defined(BLUEWAKE_NATIVE_PLANE) && BLUEWAKE_NATIVE_PLANE == 1
+#include "native_vec.h"
+#include <fenv.h>
+#include <xmmintrin.h>
+
+static bool gp_boundary(CPUState* cpu,u32 address,u32 aliases) {
+    return s_ready!=NULL && s_ready(s_ready_user,cpu,address) &&
+        g_mem_write_journal==NULL && !g_ppc_guest_aliases_overlap_mem1 && g_ppc_guest_alias_generation==aliases;
+}
+static bool gp_call(CPUState* cpu,u32 address,u32 returned,u32 aliases) {
+    cpu->lr=returned;cpu->pc=address;
+    if(!gp_boundary(cpu,address,aliases) || !bluewake_native_vec(cpu,address))return false;
+    return cpu->pc==returned && gp_boundary(cpu,returned,aliases);
+}
+static int game_plane(CPUState* cpu) {
+    const u32 sp=cpu->gpr[1],frame=sp-48u,a=cpu->gpr[3],b=cpu->gpr[4],c=cpu->gpr[5];
+    const u32 normal=cpu->gpr[6],distance=cpu->gpr[7],sda=cpu->gpr[2]-16540u;
+    const u32 mag_sda=cpu->gpr[2]-12884u;
+    if(!ready(cpu,160,true) || g_ppc_guest_aliases_overlap_mem1 ||
+       !ram_ok(cpu,frame,56) || !floats_ok(cpu,a,3) || !floats_ok(cpu,b,3) ||
+       !floats_ok(cpu,c,3) || !ram_ok(cpu,normal,12) || !ram_ok(cpu,distance,4) ||
+       !ram_ok(cpu,sda,28) || !ram_ok(cpu,mag_sda,8))return 0;
+    const uintptr_t cp=(uintptr_t)cpu,rp=(uintptr_t)cpu->ram;
+    if(rp>UINTPTR_MAX-cpu->ram_size || cp>UINTPTR_MAX-sizeof *cpu ||
+       !(cp+sizeof *cpu<=rp || rp+cpu->ram_size<=cp))return 0;
+    const u32 addresses[]={a,b,c,normal,distance,sda,mag_sda};
+    const u32 sizes[]={12,12,12,12,4,28,8};
+    for(unsigned i=0;i<7;++i)if(!apart(frame,56,addresses[i],sizes[i]))return 0;
+    for(unsigned i=0;i<7;++i) {
+        if(i!=3 && !apart(normal,12,addresses[i],sizes[i]))return 0;
+        if(i!=4 && !apart(distance,4,addresses[i],sizes[i]))return 0;
+    }
+    /* Actual guest constants remain fresh. Restrict the optional fast path
+     * to the source-defined canonical zero, one, Newton half/three and epsilon. */
+    const u32 epsilon=word(cpu,sda+24u);
+    if(word(cpu,sda)!=0u || word(cpu,sda+20u)!=0x3F800000u ||
+       epsilon<0x21800000u || epsilon>=0x4E800000u ||
+       word(cpu,mag_sda)!=0x3F000000u || word(cpu,mag_sda+4u)!=0x40400000u)return 0;
+    /* A speculative FP path must not trap before it can roll back a refusal. */
+    const unsigned mxcsr=_mm_getcsr();
+    if((mxcsr&0x1F80u)!=0x1F80u)return 0;
+    fenv_t environment;if(fegetenv(&environment))return 0;
+    const u32 aliases=g_ppc_guest_alias_generation;
+    const CPUState initial=*cpu;
+    u8 old_frame[56],old_normal[12],old_distance[4];
+    memcpy(old_frame,cpu->ram+frame-GC_RAM_BASE,sizeof old_frame);
+    memcpy(old_normal,cpu->ram+normal-GC_RAM_BASE,sizeof old_normal);
+    memcpy(old_distance,cpu->ram+distance-GC_RAM_BASE,sizeof old_distance);
+
+    cpu->downcount-=5;store(cpu,frame,sp);cpu->gpr[1]=frame;
+    cpu->gpr[0]=cpu->lr;store(cpu,frame+52u,cpu->gpr[0]);
+    cpu->gpr[11]=sp;cpu->cycle_observation_suffix=2u;
+    cpu->lr=0x8024A704u;cpu->pc=0x80328F3Cu;
+    if(!gp_boundary(cpu,cpu->pc,aliases))goto decline;
+    cpu->downcount-=5;
+    for(unsigned r=28;r<32;++r)store(cpu,frame+32u+4u*(r-28u),cpu->gpr[r]);
+    cpu->cycle_observation_suffix=0;cpu->pc=0x8024A704u;
+    if(!gp_boundary(cpu,cpu->pc,aliases))goto decline;
+
+    cpu->downcount-=8;
+    cpu->gpr[28]=cpu->gpr[3];cpu->gpr[29]=cpu->gpr[5];
+    cpu->gpr[30]=cpu->gpr[6];cpu->gpr[31]=cpu->gpr[7];
+    cpu->gpr[3]=cpu->gpr[4];cpu->gpr[4]=cpu->gpr[28];cpu->gpr[5]=frame+8u;
+    if(!gp_call(cpu,0x8030DD04u,0x8024A724u,aliases))goto decline;
+    cpu->downcount-=4;
+    cpu->gpr[3]=cpu->gpr[29];cpu->gpr[4]=cpu->gpr[28];cpu->gpr[5]=frame+20u;
+    if(!gp_call(cpu,0x8030DD04u,0x8024A734u,aliases))goto decline;
+    cpu->downcount-=4;
+    cpu->gpr[3]=frame+8u;cpu->gpr[4]=frame+20u;cpu->gpr[5]=cpu->gpr[30];
+    if(!gp_call(cpu,0x8030DECCu,0x8024A744u,aliases))goto decline;
+    cpu->downcount-=2;cpu->gpr[3]=cpu->gpr[30];
+    if(!gp_call(cpu,0x8030DE68u,0x8024A74Cu,aliases))goto decline;
+    cpu->downcount-=6;
+    cpu->fpr[0]=f64_value(f64_bits(cpu->fpr[1])&0x7FFFFFFFFFFFFFFFull);
+    ppc_frsp(cpu,2,0);lfs(cpu,0,sda+24u);cpu->cycle_observation_suffix=3u;
+    bw_fp_fcmp(cpu,0,cpu->fpr[2],cpu->fpr[0],true);
+    {const u32 q=((cpu->cr>>30u)|(cpu->cr>>29u))&1u;
+     cpu->cr=(cpu->cr&~0x20000000u)|(q<<29u);}
+    if(cpu->cr&0x20000000u) {
+        cpu->downcount-=21;
+        cpu->gpr[3]=cpu->gpr[30];cpu->gpr[4]=cpu->gpr[30];
+        lfs(cpu,0,sda+20u);cpu->cycle_observation_suffix=18u;
+        bw_fp_fdivs(cpu,1,0,1);
+        if(!gp_call(cpu,0x8030DD28u,0x8024A778u,aliases))goto decline;
+        cpu->downcount-=3;cpu->gpr[3]=cpu->gpr[30];cpu->gpr[4]=cpu->gpr[28];
+        if(!gp_call(cpu,0x8030DEACu,0x8024A784u,aliases))goto decline;
+        cpu->downcount-=3;
+        cpu->fpr[0]=f64_value(f64_bits(cpu->fpr[1])^0x8000000000000000ull);
+        stfs(cpu,0,cpu->gpr[31]);cpu->cycle_observation_suffix=1u;
+    }else {
+        cpu->downcount-=5;lfs(cpu,0,sda);
+        stfs(cpu,0,cpu->gpr[30]+4u);stfs(cpu,0,cpu->gpr[31]);
+        stfs(cpu,0,cpu->gpr[30]+8u);stfs(cpu,0,cpu->gpr[30]);
+        cpu->cycle_observation_suffix=0;
+    }
+    cpu->downcount-=2;cpu->gpr[11]=sp;
+    cpu->lr=0x8024A7ACu;cpu->pc=0x80328F88u;
+    if(!gp_boundary(cpu,cpu->pc,aliases))goto decline;
+    cpu->downcount-=5;
+    for(unsigned r=28;r<32;++r)cpu->gpr[r]=word(cpu,frame+32u+4u*(r-28u));
+    cpu->cycle_observation_suffix=0;cpu->pc=0x8024A7ACu;
+    if(!gp_boundary(cpu,cpu->pc,aliases))goto decline;
+    cpu->downcount-=5;cpu->gpr[0]=word(cpu,frame+52u);cpu->lr=cpu->gpr[0];
+    cpu->gpr[1]=sp;cpu->cycle_observation_suffix=2u;cpu->pc=cpu->lr&~3u;
+    return 1;
+decline:
+    memcpy(initial.ram+frame-GC_RAM_BASE,old_frame,sizeof old_frame);
+    memcpy(initial.ram+normal-GC_RAM_BASE,old_normal,sizeof old_normal);
+    memcpy(initial.ram+distance-GC_RAM_BASE,old_distance,sizeof old_distance);
+    *cpu=initial;fesetenv(&environment);_mm_setcsr(mxcsr);return 0;
+}
+#endif
+
 int bluewake_native_game_math(CPUState* cpu, u32 address) {
     if (cpu == NULL) return 0;
+#if defined(BLUEWAKE_NATIVE_PLANE) && BLUEWAKE_NATIVE_PLANE == 1
+    if (address == 0x8024A6F0u) return game_plane(cpu);
+#endif
 #if defined(BLUEWAKE_NATIVE_GAME_ATAN) && BLUEWAKE_NATIVE_GAME_ATAN == 1
     if (address == 0x802460D0u) return game_atan(cpu);
 #endif

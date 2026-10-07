@@ -15,8 +15,8 @@ from unittest.mock import patch
 import test_windows_dispatch_builder as integration
 
 bw = integration.bw
-OPTIONS = ("native_bg_minmax", "native_quaternion", "native_game_atan")
-ENTRIES = (0x80247C4C, 0x80301150, 0x802460D0)
+OPTIONS = ("native_bg_minmax", "native_quaternion", "native_game_atan", "native_plane")
+ENTRIES = (0x80247C4C, 0x80301150, 0x802460D0, 0x8024A6F0)
 
 
 class NativeGameOptionsTest(integration.DispatchBuilderTest):
@@ -25,12 +25,13 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
         for name in OPTIONS:
             setattr(self.b.args, name, False)
         for name in ("scripts/windows/native_game_math.py", "scripts/windows/direct_calls.py",
-                     "cmake/composite/native_game_math.c", "cmake/composite/native_game_math.h"):
+                     "cmake/composite/native_game_math.c", "cmake/composite/native_game_math.h",
+                     "cmake/composite/native_vec.c", "cmake/composite/native_vec.h"):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(integration.REPO / name, target)
         for chunk, entries in ((0x802456E0, (ENTRIES[0], ENTRIES[2])),
-                               (0x802FD6E0, (ENTRIES[1],))):
+                               (0x802FD6E0, (ENTRIES[1],)), (0x802496E0, (ENTRIES[3],))):
             text = '#include "../generated.h"\nvoid authored(CPUState* ctx) {\n'
             text += "".join(f"\nlabel_{entry:08X}:\n    return;\n" for entry in entries)
             text += f"\nreturn_dispatch_{chunk:08X}:\n    return;\n}}\n"
@@ -51,7 +52,8 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
              patch.object(m, "watched_addresses", return_value=set()), \
              patch.object(m, "certify", side_effect=lambda *_: set(m.ENTRIES)):
             m.prepare(root, "--enable-bg-minmax" in options,
-                      "--enable-quaternion" in options, "--enable-game-atan" in options)
+                      "--enable-quaternion" in options, "--enable-game-atan" in options,
+                      "--enable-plane" in options)
 
     def test_native_parser_defaults_reversal_and_parent_dependency(self):
         parse = integration.parser_prefix()
@@ -73,7 +75,7 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
     def test_native_selections_reuse_disable_and_helper_identity(self):
         self.b.args.native_game_math = True
         previous = None
-        for selected in itertools.product((False, True), repeat=3):
+        for selected in itertools.product((False, True), repeat=len(OPTIONS)):
             for name, enabled in zip(OPTIONS, selected):
                 setattr(self.b.args, name, enabled)
             receipt = self.cycle()
@@ -112,6 +114,23 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
         self.assertNotEqual(old[0], (self.out / "composite-inputs.digest").read_text())
         self.assertNotEqual(old[1], self.b.training_fingerprint())
 
+    def test_plane_fingerprints_actual_vector_implementation(self):
+        self.b.args.native_game_math = True
+        self.b.args.native_plane = True
+        receipt = self.cycle()
+        helpers = receipt["preparation_experiment_inputs"]
+        self.assertTrue(all(f"cmake/composite/{name}" in helpers
+                            for name in ("native_vec.c", "native_vec.h")))
+        old = (self.out / "composite-inputs.digest").read_text(), self.b.training_fingerprint()
+        q = self.root / "cmake/composite/native_vec.c"
+        q.write_bytes(q.read_bytes() + b"\n/* authored plane dependency mutation */\n")
+        self.cycle()
+        self.assertNotEqual(old[0], (self.out / "composite-inputs.digest").read_text())
+        self.assertNotEqual(old[1], self.b.training_fingerprint())
+        self.b.args.native_plane = False
+        self.cycle()
+        self.assertNotIn("cmake/composite/native_vec.c", self.b.preparation_experiment_inputs())
+
     def test_actual_preparer_rejects_uncertified_input_without_publication(self):
         spec = importlib.util.spec_from_file_location("negative_native_preparer", self.root / "scripts/windows/native_game_math.py")
         m = importlib.util.module_from_spec(spec)
@@ -119,7 +138,7 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
         before = {q.relative_to(self.base): q.read_bytes() for q in self.base.rglob("*") if q.is_file()}
         with patch.object(m, "watched_addresses", return_value=set()), \
              contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "uncertified"):
-            m.prepare(self.base, True, True, True)
+            m.prepare(self.base, True, True, True, True)
         after = {q.relative_to(self.base): q.read_bytes() for q in self.base.rglob("*") if q.is_file()}
         self.assertEqual(before, after)
 
@@ -134,7 +153,7 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
         build = self.root / "compile"
         build.mkdir()
         (build / bw.MODULE).write_bytes(b"authored command-capture placeholder")
-        for selected in itertools.product((False, True), repeat=3):
+        for selected in itertools.product((False, True), repeat=len(OPTIONS)):
             for name, enabled in zip(OPTIONS, selected):
                 setattr(self.b.args, name, enabled)
             for flags in ([], ["-fprofile-instr-generate"]):
@@ -154,7 +173,7 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
         app = self.root / "app"
         app.mkdir()
         (app / bw.MODULE).write_bytes(b"authored provenance module input")
-        for selected in itertools.product((False, True), repeat=3):
+        for selected in itertools.product((False, True), repeat=len(OPTIONS)):
             for name, enabled in zip(OPTIONS, selected):
                 setattr(self.b.args, name, enabled)
             result = eval(compile(ast.Expression(expr), str(integration.SOURCE), "eval"),
@@ -184,9 +203,9 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
             (self.base / name).write_text("/* authored configuration input */\n")
         (self.base / "generated.h").write_text("#define BLUEWAKE_NATIVE_GAME_MATH_PREPARED 1\n")
         manifest = self.base / "native_game_math.json"
-        cases = [(selected, True, ENTRIES, True) for selected in itertools.product((False, True), repeat=3)]
-        cases += [(tuple(j == i for j in range(3)), True, (), False) for i in range(3)]
-        cases += [((True, False, False), False, ENTRIES, False)]
+        cases = [(selected, True, ENTRIES, True) for selected in itertools.product((False, True), repeat=len(OPTIONS))]
+        cases += [(tuple(j == i for j in range(len(OPTIONS))), True, (), False) for i in range(len(OPTIONS))]
+        cases += [((True, False, False, False), False, ENTRIES, False)]
         for index, (selected, parent, certified, expect_success) in enumerate(cases):
             manifest.write_text(json.dumps({"abi": 1, "entries": sorted(certified), "files": {}}, indent=2) + "\n")
             build = self.root / f"cmake-case-{index}"
@@ -204,6 +223,9 @@ class NativeGameOptionsTest(integration.DispatchBuilderTest):
                 generated = (build / "build.ninja").read_text()
                 for (_, macro, _), enabled in zip(bw.NATIVE_GAME_EXPERIMENTS, selected):
                     self.assertEqual(f"-D{macro}=1" in generated, enabled)
+                # Plane owns its native-vector implementation even when the
+                # separate vector/entries features are disabled; include once.
+                self.assertEqual(generated.count("/native_vec.c.obj:"), int(selected[3]))
             else:
                 self.assertIn(b"require" if not parent else b"certified prepared entry", r.stdout)
 

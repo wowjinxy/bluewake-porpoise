@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 6, 2026, 7:13 p.m. CDT**. Implementation started from
+Updated **October 6, 2026, 7:19 p.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -35,7 +35,7 @@ their applicable qualification. Tingle rescue wait-skip stays disabled.
 | 20 | Default-off native-bg-minmax is integrated with preparation, CMake certificate admission, cache/training and provenance. Original O3/ASan each passed 32,000 CPU/RAM cases; focused 20-22 signed-counter proof also passes. | MakeBlckBnd remains translated. Full module/gameplay and timing; original fallback retained. Default optimized machine code is unchanged. |
 | 21 | Default-off native-quaternion is integrated. O3/ASan each passed 240,000 CPU/RAM cases, every signed angle on all axes and all 64 shifts. Fresh predicate and exact mutable table reads remain mandatory. | Full module/gameplay and timing. Default optimized machine code is unchanged; no host sine/cosine approximation. |
 | 22 | Default-off native-game-atan is integrated using the exact guest table and existing host handshake. Live-source O3/ASan each passed 64,000 full-state cases and eight certification tests. Ten builder tests and twelve actual CMake configurations passed. | Module/gameplay and timing. Focused 20-22 proof passed 3,300 signed-counter combinations per mode; no guard repair needed. |
-| 23 | Inactive plane replay passed 40,000 full-state cases each O3/ASan and 402,168 original-module CPU/RAM call-boundary comparisons per mode. Focused tests cover all 16 boundaries with refusal/journal/alias rollback, physical overlap and unmasked-host controls. | Optional integration, module/gameplay and timing. Preserve preparation-stage failures and exact vector/save/restore closure. |
+| 23 | Default-off native-plane integrates the exact source that passed 40,000 full-state cases each O3/ASan and 402,168 original-module CPU/RAM call-boundary comparisons per mode. All 16 boundaries have refusal/journal/alias rollback controls. Eleven builder tests cover all 16 selections, twenty-one CMake configurations, vector dependency identity and single inclusion. | Full module/gameplay and timing. Preserve preparation-stage failures and exact vector/save/restore closure; no speedup or default promotion claimed. |
 | 24 | Envelope/mixer mutation and callee closure recorded; exact translated execution remains. | Implement and qualify bounded closure before substitution; audio correctness and performance remain separate. |
 | 25-26 | CPU geometry-cache negative and required GPU ownership/write-footprint model recorded in PERFORMANCE_COMPATIBILITY.md. | Implement complete identity/lifetime mechanism before GPU retention or transform batching; sampled pointers/bytes are insufficient. |
 | 27 | Native descriptor-setter donor targets a different frontend from retail FIFO consumption; Swiss maps already present. | Establish a costly corresponding call path before adaptation. |

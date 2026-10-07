@@ -54,6 +54,7 @@ NATIVE_GAME_EXPERIMENTS = (
     ("native_bg_minmax", "BLUEWAKE_NATIVE_BG_MINMAX", "--enable-bg-minmax"),
     ("native_quaternion", "BLUEWAKE_NATIVE_QUATERNION", "--enable-quaternion"),
     ("native_game_atan", "BLUEWAKE_NATIVE_GAME_ATAN", "--enable-game-atan"),
+    ("native_plane", "BLUEWAKE_NATIVE_PLANE", "--enable-plane"),
 )
 
 
@@ -623,6 +624,9 @@ int main(void) {
             for name in ("scripts/windows/native_game_math.py", "cmake/composite/native_game_math.c",
                          "cmake/composite/native_game_math.h"):
                 files[name] = ROOT / name
+        if getattr(self.args, "native_plane", False):
+            for name in ("cmake/composite/native_vec.c", "cmake/composite/native_vec.h"):
+                files[name] = ROOT / name
         if getattr(self.args, "dispatch_slots", False) or getattr(self.args, "return_ranges", False):
             files["scripts/windows/dispatch_prepare.py"] = ROOT / "scripts/windows/dispatch_prepare.py"
         if getattr(self.args, "inline_cache_callbacks", False):
@@ -658,6 +662,7 @@ int main(void) {
                        f"{int(getattr(self.args, 'native_bg_minmax', False))}\n"
                        f"{int(getattr(self.args, 'native_quaternion', False))}\n"
                        f"{int(getattr(self.args, 'native_game_atan', False))}\n"
+                       f"{int(getattr(self.args, 'native_plane', False))}\n"
                        f"{int(getattr(self.args, 'module_thinlto', False))}\n"
                        f"{int(getattr(self.args, 'dispatch_slots', False))}\n"
                        f"{int(getattr(self.args, 'return_ranges', False))}\n"
@@ -719,7 +724,7 @@ int main(void) {
                               "native_j3d", "native_vec", "native_math", "native_skin", "native_game_math",
                               "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto",
                               "dispatch_slots", "return_ranges", "inline_cache_callbacks",
-                              "native_bg_minmax", "native_quaternion", "native_game_atan")
+                              "native_bg_minmax", "native_quaternion", "native_game_atan", "native_plane")
                 self.preparation_current = (not self.mods_pending and prepared.get("base_digest") == digest and
                                             prepared.get("final_digest") == saved and
                                             prepared.get("enabled") == self.args.prepared_blocks and
@@ -892,6 +897,7 @@ int main(void) {
                    "native_bg_minmax": getattr(self.args, "native_bg_minmax", False),
                    "native_quaternion": getattr(self.args, "native_quaternion", False),
                    "native_game_atan": getattr(self.args, "native_game_atan", False),
+                   "native_plane": getattr(self.args, "native_plane", False),
                    "native_entries": getattr(self.args, "native_entries", False),
                    "lean_memory": getattr(self.args, "lean_memory", False),
                    "libporpoise": getattr(self.args, "libporpoise", False),
@@ -1092,7 +1098,7 @@ int main(void) {
                                             "native_vec", "native_math", "native_skin", "native_game_math",
                                             "native_entries", "lean_memory", "libporpoise", "f32_hw_widen", "module_thinlto",
                                             "dispatch_slots", "return_ranges", "inline_cache_callbacks",
-                                            "native_bg_minmax", "native_quaternion", "native_game_atan")},
+                                            "native_bg_minmax", "native_quaternion", "native_game_atan", "native_plane")},
                                "preparation_experiment_inputs": self.preparation_experiment_inputs(),
                                "libporpoise": self.libporpoise_inputs(),
                                "runtime": self.git("-C", str(self.recompcore), "rev-parse", "HEAD"),
@@ -1311,6 +1317,7 @@ int main(void) {
             "native_bg_minmax": getattr(self.args, "native_bg_minmax", False),
             "native_quaternion": getattr(self.args, "native_quaternion", False),
             "native_game_atan": getattr(self.args, "native_game_atan", False),
+            "native_plane": getattr(self.args, "native_plane", False),
             "native_entries": getattr(self.args, "native_entries", False),
             "lean_memory": getattr(self.args, "lean_memory", False),
             "libporpoise": getattr(self.args, "libporpoise", False),

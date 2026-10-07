@@ -220,6 +220,7 @@ Options (`--help` lists all):
 | `--native-bg-minmax` | Add certified block minimum/maximum replay; requires native game math, off by default |
 | `--native-quaternion` | Add certified table-based quaternion replay; requires native game math, off by default |
 | `--native-game-atan` | Add certified table-based angle replay; requires native game math, off by default |
+| `--native-plane` | Add exact plane calculation with fresh vector/save/restore observations and rollback; requires native game math, off by default |
 | `--native-skin` | Prepare certified model skinning |
 | `--native-math` | Prepare four certified SDK matrix functions |
 | `--libporpoise` / `--no-libporpoise` | Select the pinned native matrix constructors; enabled by default, requires native math; conservative builds disable it |
