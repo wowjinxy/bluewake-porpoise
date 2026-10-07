@@ -1,6 +1,6 @@
 # Performance improvements to test
 
-Updated **October 7, 2026, 12:41 a.m. CDT**. Implementation started from
+Updated **October 7, 2026, 12:56 a.m. CDT**. Implementation started from
 `7bb4aec`; runtime remains `e280c788` with active patches **0152–0163**.
 Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
@@ -109,6 +109,24 @@ objects failed. The original log and completed objects are preserved under
 must verify unchanged object dependencies, flags, sources and tools before
 retaining the freshly compiled translated chunks and rebuilding the failed
 runtime objects. No earlier build's objects or PGO profile may be substituted.
+
+The same-attempt continuation is complete: all 823 successful objects, including
+813 translated chunks, retained their verified bytes; thirteen runtime objects
+were rebuilt and the module linked. The selected tester enables 10/11/12/20/21/22
+and keeps 23/29 and Tingle rescue wait-skip off. It uses the standard O2
+configuration with the three existing O1 fallbacks, no PGO and no ThinLTO.
+
+The exact new host/module pair passed hidden copied-save Outset and Dragon Roost
+runs through 3,300 retraces. Complete captured PPM bytes and loaded checkpoint
+contexts match their controls. The already-running 16:9/BetterWW check also
+passed. Additional automated runs were deferred when the user requested the
+play-test handoff; this does not complete all 38 candidates or establish FPS.
+The final 46-file tester passed hashes, ZIP CRC, DLL closure and the real upstream
+content gate. Version: `20261007-performance-6275863`; ZIP SHA-256:
+`e30382b919b9d0cae865f7d1700f56e6d8dd307292896135faf2963de5060c87`.
+The package and actual gate receipt are under
+`build/windows-tester-20261006-performance/`; gate result SHA-256:
+`b1bdc9d16e9aa7eab7ce3e8d22ceecd81f6f98ba9abbb48c301c48443ed2541c`.
 
 Item 35 private summary: `build/app-profile-cache-20261006/summary.json`,
 SHA-256 `ade5655da120e5f502a9864bb917c89a658792757e17f5ea701625c0db7bfc9e`.
