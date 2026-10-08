@@ -972,3 +972,48 @@ raw resource-section check failed because the larger host moved seven resource
 data RVAs; a separate bounded resource-tree check proves all payloads and every
 other resource-section byte exact. Private harness/parser negatives remain
 preserved. Tingle rescue wait-skip remains disabled.
+
+### October 8, 2026: first visible F7 slowdown capture
+
+The player's title-intro marker completed at 00:02:39 CDT with fourteen history
+samples and six after samples, `partial=0 reason=complete`. Smooth Motion was
+off. The drop began before F7: VI743 and VI793 already reported 27.8 and
+24.8 FPS. The six after buckets (VI835-1041) report **18.6-21.4 game/display
+FPS**, averaging approximately **20.1 FPS / 67% game speed**.
+
+| Recorded metric | Earlier title, VI388-687 | Six after-marker buckets |
+| --- | ---: | ---: |
+| Game/display FPS | 29.5 | 20.1 |
+| Game-thread CPU, percent of one core | 96.6% | 95.2% |
+| Game-thread CPU milliseconds/game present | 32.7 | 47.4 |
+| GX-worker CPU, percent of one core | 17.3% | 62.8% |
+| Reported recorded commands/game present, approximate | 1,121 | 4,180 |
+
+There were no new shader pipelines, audio throttles or dropped-audio increments
+in these buckets. GX drain waits total only 1.4-1.7 ms per after bucket;
+present totals 2.9-4.0 ms, with submit/drawable wait nested inside. These are
+host-side measurements, not hardware GPU execution times. Whole-session audio
+starvation/stretch counts exist but cannot be attributed to particular buckets.
+The data supports CPU-side game/graphics pressure, with more command work as the
+intro becomes busier; it does not isolate one function or prove a GPU bottleneck.
+
+`render_draws` comes from asynchronously published Aurora recorded-command stats,
+includes multiple command types, and has separate merged-draw accounting. It is
+neither a raw GX-call tally nor an exact current-frame GPU draw count. The first
+after bucket crosses the marker; excluding it still yields approximately
+20.1 FPS. Earlier/later intro phases are different workloads, so this comparison
+is diagnostic correlation, not an A/B performance gain or regression result.
+
+Next profiling target: game-thread and GX-worker work around VI800-1100,
+including translated J3D/GX command production and planning before batching.
+Particle, wake and cloth ranges are candidates for attribution, not established
+causes. Preserve the negative broad-fusion/cache experiments; do not enable them
+based on command counts alone.
+
+The raw log remains private and unmodified. Snapshot and reproducible analysis:
+`build/slowdown-capture-20261008/session-20261008-000217-43172-snapshot1.log`,
+SHA-256 `074dca302d94a45b170e0dfeecade4a2b0a192f095526396eb9d1ff82d1725a1`;
+`build/slowdown-capture-20261008/analysis1.json`, SHA-256
+`0d1b37681724943f15e93dfb18a891ae98d72b012eb20439a7e6782f368b2071`.
+This inspection launched no game, changed no installed binary/settings/save,
+and used no desktop input. Tingle rescue wait-skip remains disabled.
