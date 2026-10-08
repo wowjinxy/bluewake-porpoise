@@ -794,3 +794,114 @@ receipts under `build/performance-focus-20261007/`:
 Tester packaging/install qualification follows separately. Tingle rescue
 wait-skip remains disabled; all negative experiments and other optimizer work
 are preserved.
+
+### Counter-isolation tester and reversible installation
+
+Source commit `3496f4ab5fc02f097ade8dd9d720cf4205b78286` is packaged in
+`build/windows-tester-20261007-draw-counters/candidate/BlueWake-tester-20261007-draw-counters-3496f4a-windows-x64.zip`
+(205,822,517 bytes; SHA-256
+`930dee763930861cac60d8f2f6e1d2e6e958e3decdb0145632f9d104ccfb1266`).
+The actual release-asset gate passes with its Windows translated-code exception;
+no other finding is waived. Gate receipt SHA-256:
+`cb0b37f898efa8995f599102152de33e497cee5131c7ca09f5e4fc54280bad24`.
+
+The gated tester is installed at `E:/GPT5/WindWakerRecomp/BlueWake`. Exactly
+`BlueWake.exe`, `BUILD.json`, `README.txt` and `SHA256SUMS` changed. All 42
+other package files, including module `976184c6`, and all 448 player APPDATA
+files and nine directories matched before and after. The old four files have
+a verified backup and standalone guarded restore at
+`build/performance-focus-20261007/counter-install1/attempt2/Restore-Previous-Tester.ps1`.
+Installation receipt SHA-256:
+`a85b5da5bbc45e21ca52e81ac1aca65a25857f553a65473847cb114e56dc9cdf`.
+Isolated installer fixtures pass hash rejection before writes, rollback after
+an injected replacement failure, successful replacement, exact restoration,
+and nested save/settings preservation. The initial pre-write receipt-schema
+failure is preserved separately.
+
+No game, mouse/input control or public upload occurred during installation.
+This tester contains the qualified counter storage change only. Experimental
+dispatch and arithmetic inlining candidates remain private until qualified;
+their results do not block this tester. The visible intro's reported 20 FPS
+dip still requires gameplay confirmation.
+
+### Private floating-point inlining experiment: not qualified
+
+An O2 candidate forced eight existing scalar helpers inline in three selected
+translated chunks, preserving helper bodies and floating-point flags. The
+835-object closure retains 832 objects exactly. Candidate module SHA-256:
+`d37de451726b0ca50c63367b2b2b2eb671488a30e1b2c216c067b107227e1816`.
+It is inactive and absent from the tester. Its first checkpoint comparison
+matches only VI300; CPU and MEM1 differ at VI600 and MEM1 differs thereafter.
+Fresh control repeats match all six original checkpoints. Candidate repeats
+also differ; no timing claim is made.
+
+The unchanged arithmetic fixture passes 38 million full-state interpreter
+comparisons plus 1,536 explicit division edges per build. Its control and
+candidate machine code is identical apart from the COFF timestamp, so it does
+not exercise the changed production outlining context or the store conversion.
+This fixture cannot clear the production mismatch.
+
+Saved states align at VI601/PC `0x80322BC8` with identical complete 3,400-byte
+CPU PODs. MEM1 differs by 2,068 bytes, concentrated in lighting state and
+display-list/heap copies. The same sun positions and distance values accompany
+different visibility inputs, 0.5 versus approximately 0.61. Those inputs
+reproduce the changed lighting ratios exactly. Source shows visibility depends
+on queued depth peeks and asynchronously mapped renderer snapshots throttled
+by a 30 Hz steady clock. This is a possible source of the divergence; it does
+not establish an inlining miscompile, rounding error, or causal translated chunk.
+The initiating cause remains unknown, and the candidate stays rejected for
+promotion. Preserved conclusion:
+`build/performance-focus-20261007/hot-inline1/state-diff1/negative-conclusion-v1.json`,
+SHA-256 `410fd2f879265fa56c03d9c7e7a447346b5c10db4532f19cf4fe432ad3ff5bf8`.
+
+### Private certified dispatch boundaries: correct in bounded checks, inconsistent timing
+
+The V3 draft avoids repeating fixed-address observer checks after the module
+proves a static watch-list miss. It preserves full V2 for ordinary direct/native
+calls, and retains dynamic returns, reward checks, overlap/alias state, raw
+module aliases, interrupts, diagnostics, CPU/budget/depth guards and gather
+drains. Finite-filter hits and complete particle/wake ranges fall back to V2.
+Registration validates the exact CPU ABI/size and ordered 1,085-key list;
+mismatch or re-registration revokes V3. The normal scanner over the proposed
+source overlay produces the exact original watch list. Future dynamic observer
+or range changes still require contract review even if their keys are unchanged.
+
+Private host `52478dbd` and module `0386a4b8` replace two host objects and three
+module support objects, retaining all 832 other direct module objects. O3 and
+ASan fixtures each pass 13,322,973 checks. The native candidate passes all six
+complete guest checkpoints and matches complete intro P6 pixels. The old
+submitted/rejected counters and display-copy flag remain in one 64-byte line,
+at the same within-line offsets; V3 does not accidentally include counter
+isolation. Existing GX-count variation is recorded, not treated as command
+equality. No broader gameplay correctness or continuous-state claim is made.
+
+Four warm, serialized, unpaced title runs have no capture, state hashing,
+sampling, shader compilation, physical input, audio/presentation, or concurrent
+owned compiler/game job:
+
+| Order | Build | Wall seconds | Process CPU seconds |
+| --- | --- | ---: | ---: |
+| A1 | f319/976 control | 37.594 | 54.343750 |
+| B1 | Certified V3 | 37.484 | 54.531250 |
+| B2 | Certified V3 | 35.688 | 51.984375 |
+| A2 | f319/976 control | 37.219 | 54.031250 |
+
+Means improve CPU 1.716%, wall 2.193% and cycles 0.969%, but CPU pairs
+disagree (+0.345%/-3.788%). This fails the predeclared requirement that both
+pairs improve CPU and wall time, with mean improvements of at least 1% in both.
+Decision: **NO_CLEAR_ROUTE_GAIN**, inactive. Do not repeat the unchanged
+candidate or promote it based on the mean alone. The accepted counter tester
+is independent of this result.
+
+Preserved source draft and rebuild limitations:
+`patches/compiler/drafts/host-certified-edges-v3.md` and adjacent `.patch`.
+The normal builder may rebuild translated chunks; such a build and a combined
+V3/counter build would need separate qualification. Neither was attempted.
+Private receipts under `build/performance-focus-20261007/`:
+
+- `certified-checkpoint-comparison1.json`, SHA-256
+  `cbf276aed2c5cecda6b2b47d2e10bdb3242c8547fc51cbf5741eb2e78be30100`.
+- `certified-capture-observation-v1.json`, SHA-256
+  `5793e943beccf2f04de81e0942fc5cc8bb8e0268b9b3628b1cba12af0e2f14eb`.
+- `certified-timing-observation-v1.json`, SHA-256
+  `958344b73784b52f9d7dd30f7079203b9455600a35e81c7faee930879b91eee7`.
