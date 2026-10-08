@@ -639,3 +639,85 @@ with a changed mechanism or concrete profile hypothesis. Normal-builder and
 versioned-capability integration stay deferred. The installed gated tester
 retains only the accepted animation guard change; the 20 FPS dip remains
 unresolved, and Tingle rescue wait-skip remains disabled.
+
+
+## October 7, 2026 evening: fresh CPU profiles and single-probe edge lookup
+
+Performance remains the priority. Two fresh hidden, warmed, no-input title
+diagnostics used the installed `f3198b53` host and `976184c6` module. Both
+completed 1,800 VIs with zero renderer rejects/failures, no pipeline compilation,
+no state load/save, copied CARD/private SRAM and preserved original inputs.
+Sampling is diagnostic and excluded from throughput timing.
+
+The game-thread profile contains 4,634 native RIP samples: 3,492 in the translated
+module and 1,102 in the host. `host_chassis_requires_full`,
+`host_can_skip_observation` and `bluewake_game_events_observes` account for
+619 samples (13.36%) together; the inlined edge lookup itself accounts for
+99 (2.14%). These are sample frequencies, not exact exclusive CPU time or
+predicted gains. The second profile selected the busiest owned non-main thread
+and confirmed its GX role from symbols. Its 4,378 samples include draw-plan
+construction (506), core-plan observation (207), packet consumer (124), packet
+emission (84), packet filling (72) and FIFO archiving (12). Another 1,711 hit
+the installed Windows `NtWaitForAlertByThreadId+0x14` stub; no stack was collected
+to identify the wait's caller or owner. Do not add percentages across threads
+or treat waiting samples as CPU work.
+
+A private candidate replaces only the fixed edge hash's probing lookup with
+one verified load/compare: the same 56 keys, 256 slots, multiplier `0xE52766E2`,
+shift 24, and the old zero-sentinel behavior. Generation refuses collisions
+before rewriting the header. All dynamic flags, mirrored addresses, raw module
+alias, interrupt handling and the accepted GroundCross/Maya continuation gate
+remain unchanged. Only current `main.c` and `edge_intercepts.c` were rebuilt;
+all other host link inputs, imports, resources and manifest match the installed
+host. The module was unchanged. Candidate host SHA-256 is
+`12eeb4823b72c9dc31cf9caf3d1b61cf13e2fde69ac7861b3f36660b600dcaa8`.
+
+Fresh generator/collision-refusal, 63,005,941 exact lookup comparisons and
+edge-switch/menu/mirror/raw-module tests pass. The historical lookup oracle also
+passed the same comparison count under O3 and ASan. Fresh fixtures first hit
+missing CRT-library and pthread dependencies; all failed attempts remain, and
+the successful source-only fixture uses exact extracted CARD predicates.
+Every child job is drained. Separate current/candidate title captures match
+the complete P6 bytes at actual VI 1103 (requested 1100), SHA-256
+`5c91962fa369b7f664fefc2f6a783ab601d7c5ba42b326130294f743bf531e96`.
+This is one frame, not complete RAM/command-stream parity.
+
+Four serialized, unsampled, uncaptured warm title measurements followed ABBA
+order. Both builds retained identical settings, affinity, module and immutable
+cache seed; all runs passed route checks with no owned compiler/other game
+overlap. Complete-process measurements:
+
+| Order | Build | Wall seconds | Process CPU seconds |
+| --- | --- | ---: | ---: |
+| A1 | Installed control | 38.828 | 55.796875 |
+| B1 | Single-probe candidate | 38.125 | 56.640625 |
+| B2 | Single-probe candidate | 37.187 | 54.875000 |
+| A2 | Installed control | 37.781 | 55.984375 |
+
+Mean wall time fell 1.693%, but mean CPU fell only 0.238% and process cycles
+increased 0.017%. Paired CPU changes conflict: +1.512% and -1.982%. The policy
+declared before measurement required both pairs to improve CPU/wall and both
+means to improve at least 1%. Decision: **NO_CLEAR_ROUTE_GAIN; keep inactive**.
+This does not establish better displayed FPS or resolve the 20 FPS intro dip.
+The source-only draft is retained at
+`patches/compiler/drafts/host-single-probe-edge-filter.patch`; it is not applied
+to the production source or build recipe.
+
+Local evidence is under `build/performance-focus-20261007/`: both native
+profiles/rankings, `profile-summary-v1.json` (SHA-256
+`8dbeed8f01d5bfa61159ddb9080906a85b87fc50309c848c5dba4fae80c67dd6`),
+`edge-host1/work/result.json`, `edge-host1/tests4/result.json`,
+`edge-capture-comparison-v2.json` (SHA-256
+`5231d56e3cae2ad2dba3783e80f426a800d22effb65b012906b86725a14fbb82`)
+and `edge-timing-summary-v2.json` (SHA-256
+`7c88457f4a78c4eb3d56be6d53547b18a09e57fabc15dd1be5bcf8ef867acbe3`).
+
+Next prioritize translated-code/dispatch and remaining dynamic observer cost,
+using actual instruction profiles and CPU/RAM/budget/continuation contracts.
+Worker draw-plan construction is a larger identified target than FIFO copying.
+Stream-packet preparation may be reduced through an explicit sink capability
+while preserving diagnostic sequences/counters/errors and full trace observers;
+it is a narrower unimplemented experiment, not an established speedup. Avoid a
+GD initializer or renderer-library rewrite without evidence of time spent there.
+Installed binaries and the gated tester remain unchanged. Tingle rescue wait-skip
+stays disabled, and every earlier negative experiment remains recorded.
