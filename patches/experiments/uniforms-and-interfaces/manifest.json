@@ -1,0 +1,281 @@
+{
+  "status": "EXPERIMENTAL_SOURCE_ONLY_HANDOFF",
+  "snapshot_utc": "2026-10-08T20:11:49.315530+00:00",
+  "files": [
+    {
+      "path": "CPU_QUALIFICATION.md",
+      "bytes": 3719,
+      "sha256": "275823ff7722035f76d89f662295e14be32881cab30b776ca65238d35c33838d"
+    },
+    {
+      "path": "CREDITS.md",
+      "bytes": 702,
+      "sha256": "f931e5aab605af6a0235e2ec2ee33a71cc61c9f9c81596830b1fcc0fe508bee0"
+    },
+    {
+      "path": "GPU_QUALIFICATION.md",
+      "bytes": 5895,
+      "sha256": "f5292c68eac41f40d460625710de417b684cd942b328d0f8752f4da6fd39721d"
+    },
+    {
+      "path": "INTERFACE_DESIGN.md",
+      "bytes": 6223,
+      "sha256": "b0d1fee22396514422935bdd77c89cc5d1ab2963a988b565989a88c36474d5f9"
+    },
+    {
+      "path": "README.md",
+      "bytes": 8068,
+      "sha256": "e183ddff6e16f544a8be21066267494c7de4c175990338197f96c94e1a3fdb78"
+    },
+    {
+      "path": "UNIFORM_DESIGN.md",
+      "bytes": 4307,
+      "sha256": "ac7d21108f48edf57f8e75d0e36c5ff9825586790ccedfcd94b5e0ca835442fa"
+    },
+    {
+      "path": "allowlist.json",
+      "bytes": 2671,
+      "sha256": "ae411713d2e9712bcd7e56d4c1d34bbe1e719b60341286ed1be8a60db38dfa42"
+    },
+    {
+      "path": "bindings/interface-source.json",
+      "bytes": 2107,
+      "sha256": "f446b61fe5c22feb964229d474c1f2590015dccd3d8d6c3b34b06ef9d76853b3"
+    },
+    {
+      "path": "bindings/uniform-source.json",
+      "bytes": 9626,
+      "sha256": "64e39f9cdd446858952190cc5076e537a81632d738e8de0d0075b234ed3c246a"
+    },
+    {
+      "path": "construction.json",
+      "bytes": 6386,
+      "sha256": "e3df82774c3e1c1e39712b8ccff9ab8ec101b56f27dec5709f7c9f36f761c901"
+    },
+    {
+      "path": "evidence/qualification.json",
+      "bytes": 16672,
+      "sha256": "43f5802b4c92fc4f1410f13464309a27fa3fde505d4022f1c4233899939222e2"
+    },
+    {
+      "path": "licenses/GXRuntime-LICENSE",
+      "bytes": 35802,
+      "sha256": "c3069321e339a754d810a467c8bdd13a4cc3be8c8d46bf55b6ba0d0478cd41ea"
+    },
+    {
+      "path": "licenses/aurora-LICENSE",
+      "bytes": 1093,
+      "sha256": "037e7ddff10abcc8471581dade6906de6b28ae6fcb8126bb2e65e34c67c61c06"
+    },
+    {
+      "path": "licenses/recompcore-COPYING",
+      "bytes": 504,
+      "sha256": "0a9aa900c1df0ce1f810905bdc3693e9ea703e6860453fc5c67f21e1b63d8621"
+    },
+    {
+      "path": "licenses/root-LICENSE",
+      "bytes": 35823,
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+    },
+    {
+      "path": "patches/01-sparse-uniforms.patch",
+      "bytes": 66099,
+      "sha256": "3c6a3645870245d970dfd72c9b6902925b826c9d9e2611f237ea1b65ad3a0727"
+    },
+    {
+      "path": "patches/02-specialized-interfaces.patch",
+      "bytes": 11812,
+      "sha256": "1370230a861fe99f433a6e84a068507c64fd784f75f1cadd661e38a0a5135fbb"
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp",
+      "bytes": 104476,
+      "sha256": "faae7dacf725b0a7d053a5ef1bf775cc2d7224eda0009bdb6ad1ee85af13f34a"
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp",
+      "bytes": 7703,
+      "sha256": "3b10e786653d0f20b3650339e79791d1673f83e888b01c3538a0c5376ab41046"
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp",
+      "bytes": 36678,
+      "sha256": "dd7f334f5a41e5dfe9c5e5b948ff1d31fe6c55a5d93761107ab4fe7c1e0f3c92"
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp",
+      "bytes": 61222,
+      "sha256": "48dec8e0c869a4668c0df6812047c255f9ce7637bcb00aea4a60f30b40d67bec"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/common.cpp",
+      "bytes": 114970,
+      "sha256": "39bf11162470d068683fcbfda6e95c96148c5dbf6188e5696d9373da265b70dd"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/common.hpp",
+      "bytes": 15004,
+      "sha256": "7a36d2af23ef15ff9fa5b371e901b2fc6f387183af97418c10563960ce86055b"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp",
+      "bytes": 103933,
+      "sha256": "cbe774aa74ec30bb8d5532d6273682a77f923d53b564016994b07edb5193ab69"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp",
+      "bytes": 7621,
+      "sha256": "3dfa2e6705944963e2497a9fee0390ae038297b0d26b3a8d3029ae00e5b2fa96"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp",
+      "bytes": 53244,
+      "sha256": "810bef0ec2376fb2795b9289b5825898285be9143d997fa98230b15ca0786f7d"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/vertex_uniform_cache.hpp",
+      "bytes": 5120,
+      "sha256": "ae4d0a1d17c881a00e916b2643ccee50484a84906b6ab476c343c800396e4730"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/vertex_uniform_types.hpp",
+      "bytes": 315,
+      "sha256": "19dbc6ca8f1f10dea2b24f2971728a46c39f5ba4d9596cf8cf3be37e607b9753"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp",
+      "bytes": 36647,
+      "sha256": "3c8f5b0586387b0cd8883120dc71e345651a5445bff6a9565d506b953bd82b43"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp",
+      "bytes": 57058,
+      "sha256": "92462cbc789ccc236d5c29208b19e1efe7975f9472e1ed61766fdbd832c18949"
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/gxcore/src/gxcore_uber.cpp",
+      "bytes": 37001,
+      "sha256": "7e871e62e23bb15d22906de874f0b99858804798a998c8d0da148d3a3a3f7963"
+    },
+    {
+      "path": "tests/control/include/gxruntime/gxcore/shader.hpp",
+      "bytes": 34820,
+      "sha256": "b6ad2494309195fb7677ef6951bcfac735e17f6c25f438d6a9238bcdda7bcd47"
+    },
+    {
+      "path": "tests/control/src/gxcore_shader.cpp",
+      "bytes": 53527,
+      "sha256": "1e500f0432a3fcbf2023e3a6e4745f21553598db955339373f56e76f1a815615"
+    },
+    {
+      "path": "tests/control/src/gxcore_uber.cpp",
+      "bytes": 35872,
+      "sha256": "31359d23b73811584397e0604c26491715c687208e5bbe05c0c45acb621173ee"
+    },
+    {
+      "path": "tests/interface-cpu/control/include/gxruntime/gxcore/shader.hpp",
+      "bytes": 36669,
+      "sha256": "b8e3892519cc52a500e5efe003f20ce4b1015b0bd0be9087bbc0a825468c6a3b"
+    },
+    {
+      "path": "tests/interface-cpu/control/src/gxcore_shader.cpp",
+      "bytes": 57080,
+      "sha256": "2af526cd61e16eef75d942560979c6261e0618ac68609602d37171ec61c65eb0"
+    },
+    {
+      "path": "tests/interface-cpu/interface_test.cpp",
+      "bytes": 7809,
+      "sha256": "b529fa23bbb2aa0d897e472e03cfa9f4f10ebc9f2b74bc1db5878beb1173cd17"
+    },
+    {
+      "path": "tests/post-vs-negative/post_vs_failure.cpp",
+      "bytes": 2198,
+      "sha256": "dabd8273eddbeaf3a78e25163a9c34a8e75a31a73019468e4525bd72e49cb751"
+    },
+    {
+      "path": "tests/runtime_env_exact.hpp",
+      "bytes": 276,
+      "sha256": "5f0e2d7153e3ca9a9eae0ed5a6e7c36327fecc8bd845c79249582beddfb3fa03"
+    },
+    {
+      "path": "tests/sparse_uniform_test.cpp",
+      "bytes": 18904,
+      "sha256": "a09170591c0e4f200b9561ca26fc514e87ed5db48878d74b2fd79777c7d899b1"
+    },
+    {
+      "path": "tests/staging_budget.hpp",
+      "bytes": 2274,
+      "sha256": "b3b367c753b69119398fd4bbfdf0746b476ba40038deead9568149378005a41d"
+    },
+    {
+      "path": "tests/uniform_pixels_test.cpp",
+      "bytes": 51157,
+      "sha256": "975efdc9d5a4b1ab3ca186ce0a454e2aca5ec120f8bef6370b3ddab97c1dddd5"
+    },
+    {
+      "path": "tools/gpu-provenance/cases.cpp.inc",
+      "bytes": 5144,
+      "sha256": "3ca0f4e89ad5c2f95ca02cd541a08948542202a8af6a9549247931aa5020798a"
+    },
+    {
+      "path": "tools/gpu-provenance/prepare_fixture.py",
+      "bytes": 16207,
+      "sha256": "9df54ffa8c503d2c976b7905e32b1f2c602974bd782af7766cfa84ba2cc8fe43"
+    },
+    {
+      "path": "tools/interface-cpu/PROVENANCE.md",
+      "bytes": 670,
+      "sha256": "c5173e16d09e5c62b1a35ef6cec834ee3c934e4174bb9ba833bfb548b932a585"
+    },
+    {
+      "path": "tools/interface-cpu/prepare.py",
+      "bytes": 1151,
+      "sha256": "877f9073563ba9778137e828e2949bb35983bd70468b16fbeea8fdea50e0bd12"
+    },
+    {
+      "path": "tools/interface-cpu/prepare_runner.py",
+      "bytes": 2210,
+      "sha256": "5d95b76163695796cf9432d846d60fe5e33e91a09f5c18fb87cc87fa6987cc5a"
+    },
+    {
+      "path": "tools/interface-cpu/run_cpu.py",
+      "bytes": 7845,
+      "sha256": "ff18b6669236d03a937768346884bcf74083233aec08de2134591bc95c8bd789"
+    },
+    {
+      "path": "tools/post-vs-negative/PROVENANCE.md",
+      "bytes": 724,
+      "sha256": "78ce5c2e95056aa8b4ba16cd37cac260b9133bb63e3fb2762817713e88bd410c"
+    },
+    {
+      "path": "tools/post-vs-negative/run.py",
+      "bytes": 4904,
+      "sha256": "9cf82af85a8bac45d1cc37cd0b85df310d6b5722e440161304383299a9f9adee"
+    },
+    {
+      "path": "tools/prepare_interfaces.py",
+      "bytes": 10960,
+      "sha256": "2d56800b2a2eeb0f90b547529fac12ded40e5a76b6faa32858385a157f2469b8"
+    },
+    {
+      "path": "tools/refresh_manifest.py",
+      "bytes": 1293,
+      "sha256": "a1fd6714baf562a54fd95f19c803c05d5254253d9809d66ff8e994812b494346"
+    },
+    {
+      "path": "tools/run_gpu_fixture.py",
+      "bytes": 16234,
+      "sha256": "734744d5967ddbef77f697bda976658abd717819764a6372064e5df242211347"
+    },
+    {
+      "path": "tools/run_uniform_cpu.py",
+      "bytes": 8303,
+      "sha256": "573f935ffc25367ed0723aea2caae39e4a21ed50966986129b7d89d3c87ca1d8"
+    },
+    {
+      "path": "tools/verify_handoff.py",
+      "bytes": 2422,
+      "sha256": "c4c6575df7dae7215fc5adb49a2b65830d962e265073030a6a7da13482878b9f"
+    }
+  ]
+}

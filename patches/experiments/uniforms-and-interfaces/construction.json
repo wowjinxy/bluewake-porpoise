@@ -1,0 +1,175 @@
+{
+  "status": "SOURCE_ONLY_CONSTRUCTION_NOT_QUALIFICATION",
+  "files": [
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/common.cpp",
+      "sha256": "39bf11162470d068683fcbfda6e95c96148c5dbf6188e5696d9373da265b70dd",
+      "bytes": 114970
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/common.hpp",
+      "sha256": "7a36d2af23ef15ff9fa5b371e901b2fc6f387183af97418c10563960ce86055b",
+      "bytes": 15004
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp",
+      "sha256": "cbe774aa74ec30bb8d5532d6273682a77f923d53b564016994b07edb5193ab69",
+      "bytes": 103933
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp",
+      "sha256": "3dfa2e6705944963e2497a9fee0390ae038297b0d26b3a8d3029ae00e5b2fa96",
+      "bytes": 7621
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp",
+      "sha256": "810bef0ec2376fb2795b9289b5825898285be9143d997fa98230b15ca0786f7d",
+      "bytes": 53244
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/vertex_uniform_cache.hpp",
+      "sha256": "ae4d0a1d17c881a00e916b2643ccee50484a84906b6ab476c343c800396e4730",
+      "bytes": 5120
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/aurora/lib/gfx/vertex_uniform_types.hpp",
+      "sha256": "19dbc6ca8f1f10dea2b24f2971728a46c39f5ba4d9596cf8cf3be37e607b9753",
+      "bytes": 315
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp",
+      "sha256": "3c8f5b0586387b0cd8883120dc71e345651a5445bff6a9565d506b953bd82b43",
+      "bytes": 36647
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp",
+      "sha256": "92462cbc789ccc236d5c29208b19e1efe7975f9472e1ed61766fdbd832c18949",
+      "bytes": 57058
+    },
+    {
+      "path": "sources/uniforms/GXRuntime/graphics/gxcore/src/gxcore_uber.cpp",
+      "sha256": "7e871e62e23bb15d22906de874f0b99858804798a998c8d0da148d3a3a3f7963",
+      "bytes": 37001
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp",
+      "sha256": "48dec8e0c869a4668c0df6812047c255f9ce7637bcb00aea4a60f30b40d67bec",
+      "bytes": 61222
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp",
+      "sha256": "dd7f334f5a41e5dfe9c5e5b948ff1d31fe6c55a5d93761107ab4fe7c1e0f3c92",
+      "bytes": 36678
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp",
+      "sha256": "faae7dacf725b0a7d053a5ef1bf775cc2d7224eda0009bdb6ad1ee85af13f34a",
+      "bytes": 104476
+    },
+    {
+      "path": "sources/interfaces/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp",
+      "sha256": "3b10e786653d0f20b3650339e79791d1673f83e888b01c3538a0c5376ab41046",
+      "bytes": 7703
+    },
+    {
+      "path": "bindings/uniform-source.json",
+      "sha256": "64e39f9cdd446858952190cc5076e537a81632d738e8de0d0075b234ed3c246a",
+      "bytes": 9626
+    },
+    {
+      "path": "bindings/interface-source.json",
+      "sha256": "f446b61fe5c22feb964229d474c1f2590015dccd3d8d6c3b34b06ef9d76853b3",
+      "bytes": 2107
+    },
+    {
+      "path": "patches/01-sparse-uniforms.patch",
+      "sha256": "3c6a3645870245d970dfd72c9b6902925b826c9d9e2611f237ea1b65ad3a0727",
+      "bytes": 66099
+    },
+    {
+      "path": "patches/02-specialized-interfaces.patch",
+      "sha256": "1370230a861fe99f433a6e84a068507c64fd784f75f1cadd661e38a0a5135fbb",
+      "bytes": 11812
+    },
+    {
+      "path": "tests/sparse_uniform_test.cpp",
+      "sha256": "a09170591c0e4f200b9561ca26fc514e87ed5db48878d74b2fd79777c7d899b1",
+      "bytes": 18904
+    },
+    {
+      "path": "tests/staging_budget.hpp",
+      "sha256": "b3b367c753b69119398fd4bbfdf0746b476ba40038deead9568149378005a41d",
+      "bytes": 2274
+    },
+    {
+      "path": "tests/runtime_env_exact.hpp",
+      "sha256": "5f0e2d7153e3ca9a9eae0ed5a6e7c36327fecc8bd845c79249582beddfb3fa03",
+      "bytes": 276
+    },
+    {
+      "path": "UNIFORM_DESIGN.md",
+      "sha256": "ac7d21108f48edf57f8e75d0e36c5ff9825586790ccedfcd94b5e0ca835442fa",
+      "bytes": 4307
+    },
+    {
+      "path": "INTERFACE_DESIGN.md",
+      "sha256": "b0d1fee22396514422935bdd77c89cc5d1ab2963a988b565989a88c36474d5f9",
+      "bytes": 6223
+    },
+    {
+      "path": "tests/uniform_pixels_test.cpp",
+      "sha256": "3a169a981d4a81d03998950d72aca1cf6f6608564ee2b8d4aa7f2ead4fd4674d",
+      "bytes": 48293
+    },
+    {
+      "path": "tools/prepare_interfaces.py",
+      "sha256": "2d56800b2a2eeb0f90b547529fac12ded40e5a76b6faa32858385a157f2469b8",
+      "bytes": 10960
+    },
+    {
+      "path": "tools/run_uniform_cpu.py",
+      "sha256": "573f935ffc25367ed0723aea2caae39e4a21ed50966986129b7d89d3c87ca1d8",
+      "bytes": 8303
+    },
+    {
+      "path": "tools/run_gpu_fixture.py",
+      "sha256": "7514bc890bbcc8c26e8ad483dd9f9c190a6d584eb31990e5b3f3a10a45fc1077",
+      "bytes": 13906
+    },
+    {
+      "path": "tests/control/include/gxruntime/gxcore/shader.hpp",
+      "sha256": "b6ad2494309195fb7677ef6951bcfac735e17f6c25f438d6a9238bcdda7bcd47",
+      "bytes": 34820
+    },
+    {
+      "path": "tests/control/src/gxcore_shader.cpp",
+      "sha256": "1e500f0432a3fcbf2023e3a6e4745f21553598db955339373f56e76f1a815615",
+      "bytes": 53527
+    },
+    {
+      "path": "tests/control/src/gxcore_uber.cpp",
+      "sha256": "31359d23b73811584397e0604c26491715c687208e5bbe05c0c45acb621173ee",
+      "bytes": 35872
+    },
+    {
+      "path": "licenses/aurora-LICENSE",
+      "sha256": "037e7ddff10abcc8471581dade6906de6b28ae6fcb8126bb2e65e34c67c61c06",
+      "bytes": 1093
+    },
+    {
+      "path": "licenses/GXRuntime-LICENSE",
+      "sha256": "c3069321e339a754d810a467c8bdd13a4cc3be8c8d46bf55b6ba0d0478cd41ea",
+      "bytes": 35802
+    },
+    {
+      "path": "licenses/recompcore-COPYING",
+      "sha256": "0a9aa900c1df0ce1f810905bdc3693e9ea703e6860453fc5c67f21e1b63d8621",
+      "bytes": 504
+    },
+    {
+      "path": "licenses/root-LICENSE",
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+      "bytes": 35823
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "status": "SOURCE_ONLY_UNCOMPILED",
+  "created_utc": "2026-10-08T19:32:39.113304+00:00",
+  "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-uniforms-20261008\\source2\\tree",
+  "changes": {
+    "GXRuntime/graphics/gxcore/src/gxcore_shader.cpp": {
+      "before": "92462cbc789ccc236d5c29208b19e1efe7975f9472e1ed61766fdbd832c18949",
+      "after": "48dec8e0c869a4668c0df6812047c255f9ce7637bcb00aea4a60f30b40d67bec",
+      "bytes": 61222
+    },
+    "GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp": {
+      "before": "3c8f5b0586387b0cd8883120dc71e345651a5445bff6a9565d506b953bd82b43",
+      "after": "dd7f334f5a41e5dfe9c5e5b948ff1d31fe6c55a5d93761107ab4fe7c1e0f3c92",
+      "bytes": 36678
+    },
+    "GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp": {
+      "before": "cbe774aa74ec30bb8d5532d6273682a77f923d53b564016994b07edb5193ab69",
+      "after": "faae7dacf725b0a7d053a5ef1bf775cc2d7224eda0009bdb6ad1ee85af13f34a",
+      "bytes": 104476
+    },
+    "GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp": {
+      "before": "3dfa2e6705944963e2497a9fee0390ae038297b0d26b3a8d3029ae00e5b2fa96",
+      "after": "3b10e786653d0f20b3650339e79791d1673f83e888b01c3538a0c5376ab41046",
+      "bytes": 7703
+    }
+  },
+  "preserved": {
+    "GXRuntime/graphics/aurora/lib/gfx/common.cpp": "39bf11162470d068683fcbfda6e95c96148c5dbf6188e5696d9373da265b70dd",
+    "GXRuntime/graphics/aurora/lib/gfx/common.hpp": "7a36d2af23ef15ff9fa5b371e901b2fc6f387183af97418c10563960ce86055b",
+    "GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp": "810bef0ec2376fb2795b9289b5825898285be9143d997fa98230b15ca0786f7d",
+    "GXRuntime/graphics/aurora/lib/gfx/vertex_uniform_cache.hpp": "ae4d0a1d17c881a00e916b2643ccee50484a84906b6ab476c343c800396e4730",
+    "GXRuntime/graphics/aurora/lib/gfx/vertex_uniform_types.hpp": "19dbc6ca8f1f10dea2b24f2971728a46c39f5ba4d9596cf8cf3be37e607b9753",
+    "GXRuntime/graphics/gxcore/src/gxcore_uber.cpp": "7e871e62e23bb15d22906de874f0b99858804798a998c8d0da148d3a3a3f7963"
+  },
+  "patch_sha256": "1370230a861fe99f433a6e84a068507c64fd784f75f1cadd661e38a0a5135fbb"
+}

@@ -1,0 +1,387 @@
+{
+  "status": "EXPERIMENTAL_CANDIDATES_IMPLEMENTED_NOT_PROMOTED",
+  "snapshot_utc": "2026-10-08T20:11:48.932874+00:00",
+  "active_recipe_changed": false,
+  "installed_executable_replaced": false,
+  "performance_qualified": false,
+  "ordinary_full_game_qualified": false,
+  "uniform_cpu_checks_each_mode": 16242119,
+  "interface_cpu_cases_each_mode": 4112,
+  "interface_cpu_checks_each_mode": 218546,
+  "post_vs_bypass_wrong_bytes": 5664,
+  "post_vs_repaired_wrong_bytes": 0,
+  "gpu_authored_cases": 89,
+  "gpu_exact_rgba8_d32_comparisons": 1691,
+  "gpu_interface_default_shader_pairs": 768,
+  "gpu_validation_errors": 0,
+  "gpu_limits": [
+    "Synthetic shader/binding/fetch equality only; no speed measurement or native gameplay qualification.",
+    "Fixed bank ranges and nonzero dynamic offsets exercise GPU bindings; production staging/deduplication/failure rollback require separate CPU/backend gates.",
+    "Uber compares against matching baseline uber; this does not certify unsupported late-Z/early-depth equivalence to specialized shaders or actual async factory transitions.",
+    "All texture map slots share one authored image, not different movie planes.",
+    "No renderer pipeline factory, early-depth multipass, Smooth Motion or presentation path runs here."
+  ],
+  "uniform_authored_1000_draw_copied_bytes": {
+    "complete": 2832000,
+    "sparse": 160000
+  },
+  "uniform_authored_1000_draw_allocated_bytes": {
+    "complete": 3070560,
+    "sparse": 255904
+  },
+  "fixture_bytes_are_not_native_performance": true,
+  "uniform_host_compiled_translation_units": 53,
+  "interface_host_additional_translation_units": 12,
+  "uniform_host_sha256": "101e2d2f96241abb42b8ddc6bdc67be52f32055900581e2cc290ee5df42f2eda",
+  "interface_host_sha256": "0f5efd84b3eed3c4d7fbf737ec879962d7c3d1e89c8ba55e7f952ff8c7cf4234",
+  "tested_comparator_host_sha256": "7c32e473d137900b684e15afbf40f515e0e1c77a3fbd0fbb959e6cec3efc589a",
+  "shared_module_sha256": "976184c642ac87fdf026f181e90c1a1c3875bbbb833aad2d62174ca71dfc0916",
+  "ordinary_native_comparisons": [
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-a-repeatability.json",
+        "sha256": "6e500089e90f4219a5bb62fab17037167bc27c89a1216756f163a46a90611e1a",
+        "bytes": 13433,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 1,
+      "complete_checkpoint_count": 6
+    },
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-a-vs-b-full.json",
+        "sha256": "8fcf6fbe7074cd611a8f4f878ecbba61ea00d59585eaa3958ab1f17fcebb0cd4",
+        "bytes": 13476,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 1,
+      "complete_checkpoint_count": 6
+    },
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-a-vs-b-sparse.json",
+        "sha256": "0826998ae0dd6deedd52273848db3f0ff8088c912588d807ca8b66216b0ecccc",
+        "bytes": 13367,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 1,
+      "complete_checkpoint_count": 6
+    },
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-b-full-vs-sparse.json",
+        "sha256": "c9ada1444227ca94e71ed5806f57d2c4290479c9ecc65f6ab9d3b096f8f15d5d",
+        "bytes": 13392,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 2,
+      "complete_checkpoint_count": 6
+    },
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-b-vs-c-full-interface.json",
+        "sha256": "1af1f74812fc3e49aa67639b0aaf2f8ce654c0485ea99e1399336ddd5c4947c6",
+        "bytes": 13528,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 1,
+      "complete_checkpoint_count": 6
+    },
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-b-vs-c-pruned.json",
+        "sha256": "3104594c967fc34f6c5fbad0f6244d018d87062301e276f1fa46cf61cbd07b5c",
+        "bytes": 13406,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 2,
+      "complete_checkpoint_count": 6
+    },
+    {
+      "receipt": {
+        "path": "build/k7-uniforms-20261008/native2/correctness2-c-full-vs-pruned.json",
+        "sha256": "ef4acdcce10b5116ba496120501cd691cfd938c5abad3fc3dcde1315bf561485",
+        "bytes": 13651,
+        "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES"
+      },
+      "captured_p6_equal": true,
+      "matching_complete_checkpoints": 1,
+      "complete_checkpoint_count": 6
+    }
+  ],
+  "ordinary_native_execution_cases": [
+    {
+      "case": "normal-a15",
+      "original_status": "PASS",
+      "warmth": true,
+      "terminal_pipelines_made": 0,
+      "all_other_checks": true
+    },
+    {
+      "case": "normal-b16-full",
+      "original_status": "FAIL_PRESERVED",
+      "warmth": false,
+      "terminal_pipelines_made": 375,
+      "all_other_checks": true
+    },
+    {
+      "case": "normal-b16-sparse",
+      "original_status": "FAIL_PRESERVED",
+      "warmth": false,
+      "terminal_pipelines_made": 240,
+      "all_other_checks": true
+    },
+    {
+      "case": "normal-c17-full-interface",
+      "original_status": "FAIL_PRESERVED",
+      "warmth": false,
+      "terminal_pipelines_made": 132,
+      "all_other_checks": true
+    },
+    {
+      "case": "normal-c17-pruned",
+      "original_status": "FAIL_PRESERVED",
+      "warmth": false,
+      "terminal_pipelines_made": 160,
+      "all_other_checks": true
+    }
+  ],
+  "previous_host_repeatability_complete_checkpoints": 1,
+  "native_captured_frame_retrace": 1100,
+  "native_route_retraces": 1800,
+  "native_state_parity_unresolved": true,
+  "sparse_same_host_abba": {
+    "status": "FAIL_ANALYSIS_GATE_PRESERVED",
+    "error": "RuntimeError('Strict ABBA route workload equality failed; metrics retained for descriptive use only')",
+    "warm_cache_status": "PASS_STRICT_WARM_CACHE_GATE",
+    "dawn_status": "PASS_ZERO_NEW_DAWN_KEYS",
+    "descriptive_metrics_only": true,
+    "performance_qualified": false,
+    "percent_changes": {
+      "cpu_seconds": -3.799768709730711,
+      "wall_seconds": -2.5810815059221337,
+      "process_cycles": -3.116336837711675
+    },
+    "paired_percent_changes": [
+      {
+        "cpu_seconds": -5.755871650678134,
+        "wall_seconds": -4.678731318845619,
+        "process_cycles": -4.573490657261781
+      },
+      {
+        "cpu_seconds": -1.8481848184818461,
+        "wall_seconds": -0.49278091689760606,
+        "process_cycles": -1.6657484362430863
+      }
+    ],
+    "workload_differences": {
+      "submitted": [
+        8431724,
+        8431724,
+        8431724,
+        8431716
+      ],
+      "planned": [
+        8431724,
+        8431724,
+        8431724,
+        8431716
+      ],
+      "noops": [
+        3024,
+        3024,
+        3024,
+        3008
+      ]
+    },
+    "terminal_clocks_equal": true,
+    "all_four_terminal_pipeline_creations": 0,
+    "new_semantic_configurations": 0,
+    "new_dawn_keys": 0
+  },
+  "additional_timing_groups_not_run_reason": "Workload equality failed and ordinary complete-state parity is unresolved; no net or interface timing claim.",
+  "original_install_player_k7_diagnostics_foreign_edits_preserved": true,
+  "native_input_files_rehashed_after_batch": 417,
+  "personal_tester_input_files_exactly_equal_native_inputs": 417,
+  "active_dependency_lock_synchronized_through": 165,
+  "focused_packaging_tests_passed": 23,
+  "native_limits": [
+    "Seven comparisons have exact captured P6 bytes at retrace1100, not equality of every rendered frame.",
+    "Complete state differs at later checkpoints even in the unchanged comparator repeat; this does not identify a cause or exclude candidate-specific differences.",
+    "Common-seed candidate executions preserve failed warmth receipts from opposite-mode pipeline reconstruction. Semantic/frame comparison explicitly separates that performance gate.",
+    "Derived selected-profile pipeline databases share exact normalized GX payloads, non-GX rows and Dawn bytes; they are separate declared inputs, not byte-identical pipeline databases.",
+    "Unpaced hidden intro throughput under current background load is not displayed FPS, hardware GPU time or whole-game performance."
+  ],
+  "receipts": {
+    "uniform_cpu": {
+      "path": "build/k7-uniforms-20261008/source2/cpu-attempt1/result.json",
+      "sha256": "a3667f050c05a612ed63a7723a9113fd535698ba9fa8a2d28913c4796f5f6603",
+      "bytes": 185534,
+      "status": "PASS_CURRENT_SPARSE_CPU_ASAN_O3"
+    },
+    "interface_cpu": {
+      "path": "build/k7-interfaces-20261008/cpu1/attempt1/result.json",
+      "sha256": "00a503c54c20c8ed0183cb98140d5aa6562be360415227c6de1804713e30e257",
+      "bytes": 148068,
+      "status": "PASS_INTERFACE_CPU_ASAN_O3"
+    },
+    "post_vs_negative": {
+      "path": "build/k7-uniforms-20261008/negative1/attempt1/result.json",
+      "sha256": "6b7c119e63c7236e563a223fa5d5c1ecadb406709fa016377beb36eec57a56f0",
+      "bytes": 250502,
+      "status": "PASS_EXPECTED_NEGATIVE_AND_REPAIRED_POST_VS"
+    },
+    "gpu": {
+      "path": "build/k7-uniforms-20261008/gpu1/attempt2/result.json",
+      "sha256": "2bac3a8b55ee8e548bae08f6b69751ab78f4a040bd53a57780d943297b91a351",
+      "bytes": 2692639,
+      "status": "PASS_ACTUAL_OFFSCREEN_D3D12_BASELINE_UNIFORM_INTERFACE_RGBA8_AND_D32_PARITY"
+    },
+    "uniform_host": {
+      "path": "build/k7-uniforms-20261008/build1/work2/result.json",
+      "sha256": "c375f59d94aa362e7f99c01a18ffec39a72d9f9b0eeb9f57817fcf3bb00879c1",
+      "bytes": 7207376,
+      "status": "PASS_PRIVATE_SPARSE53_TU_HOST_SDK_BUILD_NOT_GAME_QUALIFIED"
+    },
+    "interface_host": {
+      "path": "build/k7-interfaces-20261008/build1/work1/result.json",
+      "sha256": "43d7e8c8e3e85d27d5b2c463e8e31681528a1b13f6a719d4d5524746c6c2d544",
+      "bytes": 1675176,
+      "status": "PASS_PRIVATE_INTERFACES12_TU_HOST_SDK_BUILD_NOT_GAME_QUALIFIED"
+    },
+    "patch_reproduction": {
+      "path": "build/k7-uniforms-20261008/patch-check1/result.json",
+      "sha256": "d5020551156cd4f752b0ff74819fcd2610e0de4caebabe24215b52f05f613ac2",
+      "bytes": 6391,
+      "status": "PASS_TEMPORARY_INDEX_PATCH_REPRODUCTION_NO_LIVE_CHANGES"
+    },
+    "ordinary_native_batch": {
+      "path": "build/k7-uniforms-20261008/native2/normal-batch2.json",
+      "sha256": "c2be4f9b4fca22d830b7ee86a6d2a66fb5d9f898fe2a7bda6e6da9b8035f1163",
+      "bytes": 1736,
+      "status": "ORDINARY_CORRECTNESS_COMPARISONS_COMPLETE_ORIGINAL_FAILURES_PRESERVED"
+    },
+    "profile_cache_derivation": {
+      "path": "build/k7-uniforms-20261008/native2/profile-seeds1.json",
+      "sha256": "43ff8ee9cd3de3b2d8127cef6728d83a00d4fca73465e4c004ef5ba1c27232f0",
+      "bytes": 101438,
+      "status": "PASS_DERIVED_EQUAL_CORPUS_PRIVATE_PROFILE_SEEDS"
+    },
+    "native_analysis_schema_revision": {
+      "path": "build/k7-uniforms-20261008/native2/analysis-helper-revision1.json",
+      "sha256": "b6507cfe63e2337932f9296c3b5a2beb0b6a8b003ac8b2844c1419a2ab9a7c11",
+      "bytes": 1117,
+      "status": "PRESERVED_FROZEN_ANALYSE_SCHEMA_DEFECT_NEW_HELPER"
+    },
+    "native_correctness_warmth_separation": {
+      "path": "build/k7-uniforms-20261008/native2/correctness-helper-revision2.json",
+      "sha256": "b238b18d9ee3fb305434d3336017073fb4ce56758d817ce07af1df2b4914085a",
+      "bytes": 800,
+      "status": "NEW_ORDINARY_CORRECTNESS_COMPARATOR_CACHE_WARMTH_SEPARATE"
+    },
+    "native_profile_helper_revision": {
+      "path": "build/k7-uniforms-20261008/native2/profile-helper-revision3.json",
+      "sha256": "e5df5169d9e2401e8cbba735b6d2a34e028571699366aad8397a3dc64ac56ae4",
+      "bytes": 3299,
+      "status": "FROZEN_NEW_PROFILE_HELPERS_ORIGINALS_UNCHANGED"
+    },
+    "native_final_index": {
+      "path": "build/k7-uniforms-20261008/native2/final-native-summary1.json",
+      "sha256": "e2fc1d49031b21bd703ccc57ea9dbe4abd7d6aabe8eae131612631c60108bc09",
+      "bytes": 24259,
+      "status": "COMPLETED_PRIVATE_NATIVE_PASS_BOUNDED_EXPERIMENTAL_NOT_PROMOTION_QUALIFIED"
+    },
+    "native_sparse_timing": {
+      "path": "build/k7-uniforms-20261008/native2/profile3-sparse-mechanism-analysis1.json",
+      "sha256": "fa45435c32b1e1eac2d87648bb7b9867f7dc1947d0bfd58bf33dec862304a9ff",
+      "bytes": 26043,
+      "status": "FAIL_ANALYSIS_GATE_PRESERVED"
+    },
+    "native_sparse_warmth": {
+      "path": "build/k7-uniforms-20261008/native2/profile3-sparse-mechanism-strict1.json",
+      "sha256": "4246c25c7c44d25221566f877402d603e0ce2a8870e25b5513ffd81b35dca2d4",
+      "bytes": 1011022,
+      "status": "PASS_STRICT_WARM_CACHE_GATE"
+    },
+    "native_sparse_dawn": {
+      "path": "build/k7-uniforms-20261008/native2/profile3-sparse-mechanism-dawn1.json",
+      "sha256": "c70fdb6135853c1db3ef96b39d008a160d888f09eefbcbef8273988793ae7d1a",
+      "bytes": 1379,
+      "status": "PASS_ZERO_NEW_DAWN_KEYS"
+    },
+    "final_preservation": {
+      "path": "build/k7-uniforms-20261008/final-preservation1.json",
+      "sha256": "079b97be860c7926d5e731b135c232b7b0f554975b1f46f4ac912e1dcb33c771",
+      "bytes": 2227,
+      "status": "PASS_PRESERVED"
+    },
+    "postbatch_assets": {
+      "path": "build/k7-uniforms-20261008/native1/asset-inputs1-afterbatch1.json",
+      "sha256": "741af79d8db70334b8d679e6fdadb09b4652994e69c0883806eb6bd7117c1db1",
+      "bytes": 268744,
+      "status": "PASS_ASSET_INPUTS_AND_ROUTING_UNCHANGED"
+    },
+    "personal_tester_inputs": {
+      "path": "build/k7-uniforms-20261008/playtest1/inputs1.json",
+      "sha256": "5e8c69fb186781b10e673257aab9cf1754f4c0f1717a173ad75e097b382aa9cd",
+      "bytes": 191272,
+      "status": "PASS_PRIVATE_TESTER_INPUTS_EQUAL_NATIVE_INPUTS"
+    },
+    "active_lock_repair": {
+      "path": "build/k7-uniforms-20261008/lock-repair1.json",
+      "sha256": "5d0fb26e17c554da7829760bb0a17dfe19f608bf496abe29f93355c3a9a88a43",
+      "bytes": 485,
+      "status": "PASS_ACTIVE0165_DEPENDENCY_LOCK_SYNCHRONIZED"
+    },
+    "focused_final_checks": {
+      "path": "build/k7-uniforms-20261008/final-checks1.json",
+      "sha256": "7571130ff81d0115fb69abf850762ede5fe84523b9b120794a9cdaf313af1993",
+      "bytes": 4669,
+      "status": "PASS_FOCUSED_FINAL_SOURCE_AND_PACKAGING_CHECKS"
+    },
+    "personal_tester_prepared_not_launched": {
+      "path": "build/k7-uniforms-20261008/playtest1/ready.json",
+      "sha256": "0c1b52bcf16865c93df00bd90ea5ff92d4f472ff8e41aebe6d14e78e3ebf9624",
+      "bytes": 5795,
+      "status": "PERSONAL_EXPERIMENTAL_TESTER_READY_NOT_LAUNCHED"
+    }
+  },
+  "retained_failures": [
+    {
+      "path": "build/k7-uniforms-20261008/source1/cpu-attempt1/result.json",
+      "reason": "Runner redundant nostdinc++ preprocessing warning under Werror."
+    },
+    {
+      "path": "build/k7-uniforms-20261008/source1/cpu-attempt2/result.json",
+      "reason": "Authored fixture requested sixteen TEV stages against current eight-entry limit."
+    },
+    {
+      "path": "build/k7-uniforms-20261008/build1/work1/failure.json",
+      "reason": "Overstrict expected consumer count; final build uses complete measured closure plus explicit conservative HUD rebuild."
+    },
+    {
+      "path": "build/k7-uniforms-20261008/gpu1/attempt1/result.json",
+      "reason": "Fixture automatic bind-group layout omitted a conservative unused light bank. Corrected explicit dynamic layout matches production."
+    },
+    {
+      "path": "build/k7-uniforms-20261008/native2/analysis-helper-revision1.json",
+      "reason": "Frozen inherited analyser expected obsolete preservation keys; a separate helper implements the actual frozen snapshot schema."
+    },
+    {
+      "path": "build/k7-uniforms-20261008/native2/normal-b16-full/result.json",
+      "reason": "Opposite-mode cached startup reconstruction made the zero-pipeline-creation warmth gate fail; no semantic configuration miss. Original failed result remains intact."
+    },
+    {
+      "path": "build/k7-uniforms-20261008/native2/profile3-sparse-mechanism-analysis1.json",
+      "reason": "Final full control executed eight fewer submissions/planned draws and sixteen fewer noops. Descriptive timing is retained; exact matched-workload gate failed."
+    }
+  ],
+  "prior_negative_experiments_preserved": true,
+  "tingle_rescue_wait_skip_enabled": false
+}

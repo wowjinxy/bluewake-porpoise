@@ -7,3 +7,5 @@ patches/experiments/gpu-raw-stripecross/** -text whitespace=blank-at-eol,blank-a
 patches/experiments/gpu-raw-stripecross/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
 patches/experiments/selective-vertices/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 patches/experiments/selective-vertices/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
+patches/experiments/uniforms-and-interfaces/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+patches/experiments/uniforms-and-interfaces/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
