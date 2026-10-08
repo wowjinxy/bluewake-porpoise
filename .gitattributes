@@ -2,3 +2,6 @@
 patches/recompcore/*.patch text eol=lf
 patches/recompcore/active.json text eol=lf
 patches/*/drafts/* text eol=lf
+# Experimental source manifests pin exact bytes, including frozen line endings.
+patches/experiments/gpu-raw-stripecross/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+patches/experiments/gpu-raw-stripecross/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol

@@ -1,0 +1,193 @@
+{
+  "status": "INACTIVE_SOURCE_EXPERIMENT_NO_RELIABLE_SPEEDUP",
+  "source_head": "2c9dd7de8947b5fcda98f7086454f51905bb12d5",
+  "snapshot_utc": "2026-10-08T06:39:09.087070+00:00",
+  "private_handoff_manifest_sha256": "012861df05484495e915e14f96f26c7652959f5cd4daa0969fcbc2fd96f6bf0e",
+  "files": [
+    {
+      "path": "CACHE-RESTART.md",
+      "bytes": 1937,
+      "sha256": "1489f715afd144c6eddfd9124a5452efca001da37a2525cca27831fd06644157"
+    },
+    {
+      "path": "INTEGRATION.md",
+      "bytes": 9486,
+      "sha256": "32eafba6d33cace81523231b64a9dad08b8a8e3ac5aeaff412e4ecb818841aca"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2372,
+      "sha256": "6eb4ed5007ca5a20d032ed750ef7c780a11e81e74854d1a7f69b4fac350055b5"
+    },
+    {
+      "path": "RESULTS.md",
+      "bytes": 6324,
+      "sha256": "4c9e0fa98e1563e5abe46308329ad17262e6141eaa193dbe83775f66b7fbe44c"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 6190,
+      "sha256": "585c95067451b1e8847f469a28ed7adda3b03c0f4454af608a09562b86220462"
+    },
+    {
+      "path": "evidence/native-and-loaded-results.json",
+      "bytes": 30526,
+      "sha256": "ac6c93a04df1930a5b42ce05088f861f08ca6dd99117867a48e977b423d20626"
+    },
+    {
+      "path": "fixtures/native_stripe_test.c",
+      "bytes": 9803,
+      "sha256": "b4111450953279d14fab7c9087891b2ba94061c038a7521023d2538160779390"
+    },
+    {
+      "path": "fixtures/qualified-command-recipes.json",
+      "bytes": 61231,
+      "sha256": "42e47bb1a9abea82fbe6f892437d7044104c32b3dab708e84c2b65cc96fc4bca"
+    },
+    {
+      "path": "fixtures/raw_pixels_test.cpp",
+      "bytes": 23323,
+      "sha256": "76f5f4915d841e5a4317a9ebb153479a0e8b5a7439a9fdec5b963c6ab471aa7f"
+    },
+    {
+      "path": "fixtures/raw_plan_helpers.cpp",
+      "bytes": 3263,
+      "sha256": "a048b270262915c27108a09c9bc50e09ed2baae17d3bfc16bb28893c60696752"
+    },
+    {
+      "path": "fixtures/raw_plan_test.cpp",
+      "bytes": 9347,
+      "sha256": "5b25edf5f9f9846b1d4d53789073820585cface3d1d5321daf145ec77e9972bc"
+    },
+    {
+      "path": "patches/01-renderer-v3-root-relative.patch",
+      "bytes": 21161,
+      "sha256": "676273112534bd2887c303bd3abfbe1d480c7b52667aac21e96a4b7065eb39ab"
+    },
+    {
+      "path": "patches/02-host-policy-v5.patch",
+      "bytes": 9675,
+      "sha256": "a43f113f10ee52f6ddff417b091fcad8c8841b1c47aa92d4d6775d421c5cd2a0"
+    },
+    {
+      "path": "patches/03-native-stripe-new-sources.patch",
+      "bytes": 7890,
+      "sha256": "d227e91473fcd97f7bef0d87c9a8b77f2ef46795b690326f74dc6c5ec003eafa"
+    },
+    {
+      "path": "source-base-pins.json",
+      "bytes": 11463,
+      "sha256": "ae53a4bc9445b84e8fe43cfc33becaa515feeed555ca6c6ad3827717f1b6f37f"
+    },
+    {
+      "path": "sources/cmake/composite/native_stripe.c",
+      "bytes": 6833,
+      "sha256": "5b56dea9ddf671a73c1887c47483b32361d7fa346754e6b23a8e3521d6a81e1b"
+    },
+    {
+      "path": "sources/cmake/composite/native_stripe.h",
+      "bytes": 719,
+      "sha256": "97c1ebfae4490444bb10cd005aef8f7c73111c1b96f10e59a71232d5a378c758"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/backends/aurora/aurora_backend.cpp",
+      "bytes": 35482,
+      "sha256": "26b820150bcd060a80ae1e4e3634a73e5fbec819407da35b8c1d91453bd62f0f"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/backends/aurora/aurora_backend_private.h",
+      "bytes": 10473,
+      "sha256": "96f38306fd0f499469613bc785838589b59a2aa76c8484d136966e8d190c8e72"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/backends/aurora/aurora_graphics.cpp",
+      "bytes": 104460,
+      "sha256": "8b9942f050f464b80e0aed5c718b61a9c690ee14a7e6cc0922578d6464ba1588"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp",
+      "bytes": 101017,
+      "sha256": "88bc5391fde53439e9ef5421adb415d523c52e948018489debeabf502db69477"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp",
+      "bytes": 7693,
+      "sha256": "8d556d9c3aa13799b1c00312c116b888433455ab32203108ea78e33b327ebbe3"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp",
+      "bytes": 54543,
+      "sha256": "d7791dfa7877201bbf505fce1e8960809c7ccd8714494cd9ba8ab4822f77f08f"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp",
+      "bytes": 14205,
+      "sha256": "d7b6a4f97a5c8918c6951202e55feba7410ed9be0adf2cc50bb530c1ec1021ec"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp",
+      "bytes": 29600,
+      "sha256": "7c0e59ce40210dd08c94a05013c79ffab9f0544c1a8a5a2771721280cb8542df"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore.cpp",
+      "bytes": 94649,
+      "sha256": "f641231235b33f191f0a50507b9efe8bafc4a81a97d6378099b513260f2cf49f"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp",
+      "bytes": 54765,
+      "sha256": "25ebdcdafdf73827f91c5214014607dcb5d15bb18a53491934015473671cf773"
+    },
+    {
+      "path": "sources/ref/recompcore/GXRuntime/include/gxruntime/aurora_backend.h",
+      "bytes": 6808,
+      "sha256": "42118dee519d748caae9346423a53557b6b7e3fd36016e7c9a69efa3604481d4"
+    },
+    {
+      "path": "sources/runtime/host/src/hud_renderer.cpp",
+      "bytes": 2263,
+      "sha256": "8694b6eac885dff92d34217b3145d831e6e4f3d80d89dae24fe8a82f49ea5f31"
+    },
+    {
+      "path": "sources/runtime/host/src/main.c",
+      "bytes": 867722,
+      "sha256": "294ab0abad3deceb76efd7941a623b366e23bb0f17b242b8efbecaa7b2fcadc6"
+    },
+    {
+      "path": "tools/extract_decoder.py",
+      "bytes": 809,
+      "sha256": "bbbe811a8959de4e95c5aa40e2fbbd5d443cd9eb6d66bae3633d4545c175a3ef"
+    },
+    {
+      "path": "tools/prepare_frozen_stripe.py",
+      "bytes": 4770,
+      "sha256": "a93af01bc17fdc76dd6c93e7d53ca7e16f87f7324d6c4399824a309ec17aa1ea"
+    },
+    {
+      "path": "tools/verify_handoff.py",
+      "bytes": 1024,
+      "sha256": "aaf11f5d0fc6c55091f9a71f047afe9dcc38b3a7659bdb6fdbafa6a7c07dfd25"
+    },
+    {
+      "path": "validation-summary.json",
+      "bytes": 4553,
+      "sha256": "54ceeceaa101fe15abea18679ef9762fe59a3c7048b8a8d53dfc2dca99c6474d"
+    }
+  ],
+  "selected_backend": "v3-compact",
+  "selected_host": "root-host5",
+  "selected_module": "module976 native StripeCross adapter",
+  "normal_guest_state_qualified": false,
+  "performance_qualified": false,
+  "active_config_modified": false,
+  "excluded": [
+    "binaries",
+    "game data",
+    "saves",
+    "generated translated game source",
+    "literal game-body oracle"
+  ],
+  "compiler_jobs": 0,
+  "native_launches": 0
+}

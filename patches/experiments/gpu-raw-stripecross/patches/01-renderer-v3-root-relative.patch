@@ -1,0 +1,431 @@
+--- a/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp
++++ b/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp
+@@ -121,7 +121,7 @@
+   // across draws (no per-draw allocation of the vertex and index arrays).
+   void build_draw_plan_into(const gxruntime::aurora_recomp::ConsumedDraw& draw,
+                             GapCounters& counters, CachedVertexAttrs* cached,
+-                            DrawPlan& plan) const;
++                            DrawPlan& plan, bool allow_raw_pos_uv = false) const;
+ 
+   std::uint32_t bp(std::uint8_t reg) const { return bp_regs_[reg]; }
+   bool bp_valid(std::uint8_t reg) const { return bp_valid_[reg]; }
+@@ -190,6 +190,12 @@
+   // flushed (its geometry is in the pass) — so a GPU observer can resolve the
+   // EFB into a texture at the copy's stream position.
+   using CopyObserver = void (*)(const EfbCopyCommand& cmd, void* user);
++  // Worker-only. Policy must certify current interpolation, diagnostics and
++  // plan-filter support. Null policy preserves the complete legacy route.
++  using RawVertexPullPolicy = bool (*)(const GxCoreState& state, void* user);
++  void set_raw_vertex_pull_policy(RawVertexPullPolicy policy, void* user) {
++    raw_vertex_pull_policy_ = policy; raw_vertex_pull_user_ = user;
++  }
+ 
+   GxCoreSink();
+ 
+@@ -249,6 +255,8 @@
+   std::uint32_t scope_left_ = 0;
+   std::uint32_t scope_part_ = 0;
+   bool scope_indexed_ = false;
++  RawVertexPullPolicy raw_vertex_pull_policy_ = nullptr;
++  void* raw_vertex_pull_user_ = nullptr;
+   PlanFilter plan_filter_ = nullptr;
+   void* plan_filter_user_ = nullptr;
+   PlanObserver plan_observer_ = nullptr;
+--- a/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
++++ b/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp
+@@ -484,6 +484,10 @@
+   PipelineKey pipeline{};
+   PixelShaderConstants pixel_constants{}; // S14 TEV color/konst/alpha uniforms
+   std::uint32_t vertex_count = 0;
++  // Private opt-in: exact direct BE-f32 XYZ/ST payload, borrowed until submit.
++  // The submission layer copies match_payload into owned frame storage.
++  bool gpu_raw_pos_uv = false;
++  std::uint32_t raw_pos_mtx_row = 0; // exact unused decoded slot for legacy fallback
+   // The draw's raw FIFO vertex payload (per-vertex indices and direct
+   // attributes) and its command, for matching one model's draw across frames.
+   // Borrowed from the consumed draw: valid only while the plan is submitted.
+@@ -608,6 +612,10 @@
+ // reversed-Z (graphics/aurora lib/gx/gx.hpp UseReversedZ); bind groups are
+ // group(1)=dynamic uniform, group(2)=texture+sampler.
+ std::string generate_wgsl(const ShaderKey& key);
++// Same transform/lighting/TEV body; only vertex input decoding moves to GPU.
++std::string generate_raw_pos_uv_wgsl(const ShaderKey& key);
++// Exact legacy fallback; false leaves a malformed plan unchanged.
++bool materialize_raw_pos_uv(DrawPlan& plan);
+ bool channel_lit_path(const ShaderKey& k, unsigned j);
+ 
+ // The ubershader (gxcore_uber.cpp): one module for any key, which it reads
+--- a/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore.cpp
++++ b/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore.cpp
+@@ -654,7 +654,7 @@
+ void GxCoreState::build_draw_plan_into(const ar::ConsumedDraw& draw,
+                                        GapCounters& counters,
+                                        CachedVertexAttrs* cached,
+-                                       DrawPlan& plan) const {
++                                       DrawPlan& plan, bool allow_raw_pos_uv) const {
+   {
+     // Every field to its default, from one copy made once; the vertex and
+     // index arrays keep their capacity, and the vertex constants stay as they
+@@ -1331,6 +1331,20 @@
+ 
+   // Vertex decode to the fixed layout.
+   plan.vertex_count = draw.vertex_count;
++  const bool raw_pos_uv = allow_raw_pos_uv && walk.entry_count == 2u &&
++      walk.vertex_size == 20u && !walk.has_pos_mtx_idx && !walk.has_tex_mtx_idx &&
++      !walk.has_normal && !walk.has_nbt && !walk.has_color[0] && !walk.has_color[1] &&
++      walk.uv_mask == 1u &&
++      walk.entries[0].kind == WalkEntry::kPos && walk.entries[0].vcd_type == 1u &&
++      walk.entries[0].format == 4u && walk.entries[0].count == 3u &&
++      walk.entries[0].element_size == 12u &&
++      walk.entries[1].kind == WalkEntry::kTex && walk.entries[1].vcd_type == 1u &&
++      walk.entries[1].format == 4u && walk.entries[1].count == 2u &&
++      walk.entries[1].out_slot == 0u && walk.entries[1].element_size == 8u &&
++      static_cast<std::uint64_t>(draw.vertex_count) * 20u == draw.vertex_payload.size();
++  plan.gpu_raw_pos_uv = raw_pos_uv;
++  plan.raw_pos_mtx_row = draw.current_pn_matrix * 3u;
++  if (!raw_pos_uv) {
+   plan.vertices.assign(
+       static_cast<std::size_t>(draw.vertex_count) * kVertexFloats, 0.f);
+   const std::uint8_t* payload = draw.vertex_payload.data();
+@@ -1488,6 +1502,8 @@
+     std::memcpy(out_vertex + kVertexTexMtxIdxHiOffset / 4u,
+                 &texmtxidx_packed_hi, sizeof texmtxidx_packed_hi);
+   }
++
++  } // Legacy vertex decode; the raw route retains the same uniforms below.
+ 
+   // Uniforms. Most draws are made with the transform state of the draw
+   // before them (96 percent in the Forsaken Fortress, 17,500 draws a frame):
+@@ -1959,7 +1975,7 @@
+   // on the loader's m_remaining==0 vertex). N/B/T are appended in the fixed
+   // vertex layout at these float slots.
+   if (cached != nullptr) {
+-    if (plan.vertex_count > 0u) {
++    if (plan.vertex_count > 0u && (walk.has_normal || walk.has_nbt)) {
+       const float* last =
+           plan.vertices.data() +
+           static_cast<std::size_t>(plan.vertex_count - 1u) * kVertexFloats;
+@@ -1980,6 +1996,31 @@
+   return;
+ }
+ 
++bool materialize_raw_pos_uv(DrawPlan& plan) {
++  if (!plan.gpu_raw_pos_uv) return true;
++  if (!plan.ok || plan.vertex_count == 0u || plan.match_payload == nullptr ||
++      static_cast<std::uint64_t>(plan.vertex_count) * 20u != plan.match_payload_size ||
++      plan.pipeline.shader.has_pos_mtx_idx != 0u ||
++      plan.pipeline.shader.has_tex_mtx_idx != 0u) return false;
++  std::vector<float> decoded(static_cast<std::size_t>(plan.vertex_count) * kVertexFloats, 0.f);
++  for (std::uint32_t v = 0; v < plan.vertex_count; ++v) {
++    float* out = decoded.data() + static_cast<std::size_t>(v) * kVertexFloats;
++    const auto* in = plan.match_payload + static_cast<std::size_t>(v) * 20u;
++    out[0] = decode_scaled(in, 4u, 1.f);
++    out[1] = decode_scaled(in + 4u, 4u, 1.f);
++    out[2] = decode_scaled(in + 8u, 4u, 1.f);
++    for (unsigned c = 4; c < 12; ++c) out[c] = 1.f;
++    out[12] = decode_scaled(in + 12u, 4u, 1.f);
++    out[13] = decode_scaled(in + 16u, 4u, 1.f);
++    // PNMTXIDX is absent, so the generated shader uses posnormalmatrix.
++    const std::uint32_t posmtx = plan.raw_pos_mtx_row;
++    std::memcpy(out + 3, &posmtx, sizeof posmtx);
++  }
++  plan.vertices = std::move(decoded);
++  plan.gpu_raw_pos_uv = false;
++  return true;
++}
++
+ // --- Sink ---------------------------------------------------------------------
+ 
+ GxCoreSink::GxCoreSink() {
+@@ -1995,7 +2036,9 @@
+     return;
+   DrawPlan& plan = self->scratch_plan_;
+   self->pending_state_.build_draw_plan_into(draw, self->counters_,
+-                                            &self->cached_attrs_, plan);
++                                            &self->cached_attrs_, plan,
++      self->raw_vertex_pull_policy_ != nullptr &&
++      self->raw_vertex_pull_policy_(self->pending_state_, self->raw_vertex_pull_user_));
+   // A draw scope: the next draws with positions of their own, up to its
+   // count, are its emitter's; any other draw ends it. A count with bit 23
+   // set is a cloth's strips, which index their positions.
+--- a/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
++++ b/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore_shader.cpp
+@@ -755,7 +755,7 @@
+          static_cast<MatSource>(alp.matsource) == MatSource::Register;
+ }
+ 
+-std::string generate_wgsl(const ShaderKey& key) {
++static std::string generate_wgsl_impl(const ShaderKey& key, bool raw_pos_uv) {
+ 
+   std::string out;
+   out.reserve(4096);
+@@ -908,6 +908,14 @@
+     }
+   }
+ 
++  if (raw_pos_uv) {
++    emit(out, "@group(0) @binding(0) var<storage, read> gx_raw_vertices: array<u32>;\n"
++              "fn gx_raw_f32(i: u32) -> f32 {\n"
++              "    let x = gx_raw_vertices[i];\n"
++              "    let y = ((x & 255u) << 24u) | ((x & 65280u) << 8u) |\n"
++              "            ((x >> 8u) & 65280u) | ((x >> 24u) & 255u);\n"
++              "    return bitcast<f32>(y);\n}\n");
++  }
+   // Fixed vertex input layout (kVertexStrideBytes); unused inputs are ignored.
+   emit(out, "struct VertexIn {\n"
+             "    @location(0) rawpos: vec3f,\n"
+@@ -948,8 +956,20 @@
+   if (chan1_lit)
+     emit_lighting_chan(out, key, 1u);
+ 
+-  emit(out, "@vertex\nfn vs_main(in: VertexIn) -> VertexOut {\n"
+-            "    var o: VertexOut;\n");
++  if (raw_pos_uv) {
++    emit(out, "@vertex\nfn vs_main(@builtin(vertex_index) vertex: u32,\n"
++              "                   @builtin(instance_index) word_base: u32) -> VertexOut {\n"
++              "    let p = word_base + vertex * 5u;\n"
++              "    var in: VertexIn;\n"
++              "    in.rawpos = vec3f(gx_raw_f32(p), gx_raw_f32(p + 1u), gx_raw_f32(p + 2u));\n"
++              "    in.rawcolor0 = vec4f(1.0);\n"
++              "    in.rawcolor1 = vec4f(1.0);\n"
++              "    in.rawtex0 = vec2f(gx_raw_f32(p + 3u), gx_raw_f32(p + 4u));\n"
++              "    var o: VertexOut;\n");
++  } else {
++    emit(out, "@vertex\nfn vs_main(in: VertexIn) -> VertexOut {\n"
++              "    var o: VertexOut;\n");
++  }
+   if (key.has_pos_mtx_idx != 0) {
+     emit(out, "    let posidx = i32(in.posmtx);\n"
+               "    let p0 = vsc.transformmatrices[posidx];\n"
+@@ -1171,4 +1191,11 @@
+   return out;
+ }
+ 
++std::string generate_wgsl(const ShaderKey& key) {
++  return generate_wgsl_impl(key, false);
++}
++std::string generate_raw_pos_uv_wgsl(const ShaderKey& key) {
++  return generate_wgsl_impl(key, true);
++}
++
+ } // namespace gxruntime::gxcore
+--- a/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
++++ b/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+@@ -32,6 +32,7 @@
+   PipelineRef pipeline;
+   PipelineRef depthPipeline; // early-Z depth-only pass, 0 when unnecessary
+   Range vertRange;
++  Range rawPosUvRange; // owned BE-f32 vertex/storage range; nonempty selects GPU pulling
+   Range idxRange;
+   Range uniformRange;       // VertexShaderConstants (group 1)
+   // The constants blended toward the previous frame, used while the
+@@ -83,13 +84,14 @@
+ // v9: GXSetZCompLoc early depth adds a depth-only pipeline variant. v10:
+ // RGB and alpha blending carry donor-exact independent factors. v11: BP SU
+ // texture-coordinate scales enlarge pixel constants and alter TEV WGSL.
+-constexpr uint32_t GXCorePipelineConfigVersion = 13;
++constexpr uint32_t GXCorePipelineConfigVersion = 14;
+ 
+ struct PipelineConfig {
+   uint32_t version = GXCorePipelineConfigVersion;
+   gxruntime::gxcore::PipelineKey key;
+   uint32_t msaaSamples = 1;
+   uint32_t depthOnly = 0;
++  uint32_t rawPosUv = 0; // versioned geometry mode, never inferred from vertices
+ };
+ static_assert(std::has_unique_object_representations_v<PipelineConfig>);
+ 
+@@ -115,6 +117,12 @@
+ // format to RGBA8, S13 A3), viewport state, and a queued draw command on the
+ // current pass. False = plan not drawable.
+ bool submit_draw_plan(const gxruntime::gxcore::DrawPlan& plan);
++struct RawVertexPullStats {
++  uint64_t submitted = 0, vertices = 0, rawBytes = 0, avoidedDecodedBytes = 0;
++  uint64_t fallbackPipeline = 0, fallbackInterpolation = 0, fallbackDiagnostics = 0;
++};
++// Recording-thread counters; inspect only after FIFO/render drains.
++const RawVertexPullStats& raw_vertex_pull_stats();
+ // Waits until the helper thread has matched and blended every draw submitted
+ // so far (end_frame calls it before a frame packet is handed on).
+ void wait_interp_jobs();
+--- a/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
++++ b/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+@@ -420,7 +420,10 @@
+   CHECK(key.shader.use_dst_alpha == 0 ||
+             webgpu::g_dualSourceBlendingSupported,
+         "GX destination alpha requires WebGPU dual-source blending");
+-  std::string wgsl = uber ? gxc::generate_uber_wgsl(key.shader.use_dst_alpha != 0) : gxc::generate_wgsl(key.shader);
++  CHECK(config.rawPosUv == 0u || !uber, "Raw geometry requires a specialized pipeline");
++  std::string wgsl = uber ? gxc::generate_uber_wgsl(key.shader.use_dst_alpha != 0)
++                         : config.rawPosUv != 0u ? gxc::generate_raw_pos_uv_wgsl(key.shader)
++                                                : gxc::generate_wgsl(key.shader);
+   if (depthOnly) {
+     wgsl += "\n@fragment\nfn fs_depth_only() -> @location(0) vec4f {\n"
+             "    return vec4f(0.0);\n}\n";
+@@ -678,8 +681,8 @@
+           wgpu::VertexState{
+               .module = module,
+               .entryPoint = "vs_main",
+-              .bufferCount = 1,
+-              .buffers = &vertexLayout,
++              .bufferCount = config.rawPosUv != 0u ? 0u : 1u,
++              .buffers = config.rawPosUv != 0u ? nullptr : &vertexLayout,
+           },
+       .primitive =
+           wgpu::PrimitiveState{
+@@ -888,8 +891,9 @@
+       setGroup1(part);
+       if (pixel)
+         setGroup2(part);
+-      const int32_t baseVertex = setVertices(part);
+-      pass.DrawIndexed(part.indexCount, 1, part.firstIndex, baseVertex);
++      const int32_t baseVertex = data.rawPosUvRange.size != 0u ? 0 : setVertices(part);
++      pass.DrawIndexed(part.indexCount, 1, part.firstIndex, baseVertex,
++                       data.rawPosUvRange.size != 0u ? data.rawPosUvRange.offset / 4u : 0u);
+     }
+   };
+   if (uberDraw) {
+@@ -1480,7 +1484,33 @@
+                  plan.pixel_constants.kcolors[i][2], plan.pixel_constants.kcolors[i][3]);
+ }
+ 
++static RawVertexPullStats g_rawVertexPullStats;
++const RawVertexPullStats& raw_vertex_pull_stats() { return g_rawVertexPullStats; }
++
+ bool submit_draw_plan(const gxc::DrawPlan& plan) {
++  if (plan.gpu_raw_pos_uv) {
++    const bool interpolation = frame_interp::enabled();
++    const bool diagnostics = frame_interp::tracing() ||
++        std::getenv("DOL_GXCORE_PLAN_TEX") != nullptr ||
++        std::getenv("DOL_GXCORE_DRAW_DUMP") != nullptr;
++    PipelineConfig rawConfig{.version = GXCorePipelineConfigVersion,
++                             .key = plan.pipeline, .msaaSamples = get_sample_count(),
++                             .depthOnly = 0u, .rawPosUv = 1u};
++    const auto rawPipeline = pipeline_ref(rawConfig);
++    bool ready = pipeline_ready(rawPipeline);
++    if (needs_early_depth_emulation(plan.pipeline)) {
++      rawConfig.depthOnly = 1u;
++      ready = ready && pipeline_ready(pipeline_ref(rawConfig));
++    }
++    if (interpolation || diagnostics || ubershader_mode() == 2 || !ready) {
++      if (interpolation) ++g_rawVertexPullStats.fallbackInterpolation;
++      else if (diagnostics) ++g_rawVertexPullStats.fallbackDiagnostics;
++      else ++g_rawVertexPullStats.fallbackPipeline;
++      gxc::DrawPlan legacy = plan;
++      if (!gxc::materialize_raw_pos_uv(legacy)) return false;
++      return submit_draw_plan(legacy);
++    }
++  }
+   if (!plan.ok || plan.vertex_count == 0 || plan.indices.empty()) {
+     return false;
+   }
+@@ -1862,8 +1892,10 @@
+   }
+ 
+   const bool tev = plan.pipeline.shader.tev_valid != 0 || plan.pipeline.shader.hud_tint != 0;
+-  const size_t vertBytes = plan.vertices.size() * sizeof(float);
++  const size_t vertexStride = plan.gpu_raw_pos_uv ? 20u : gxc::kVertexStrideBytes;
++  const size_t vertBytes = plan.gpu_raw_pos_uv ? plan.match_payload_size : plan.vertices.size() * sizeof(float);
+   const size_t indexBytes = plan.indices.size() * sizeof(uint16_t);
++  const size_t rawBytes = plan.gpu_raw_pos_uv ? plan.match_payload_size : 0u;
+   const size_t pixelUniformBytes = tev ? sizeof(plan.pixel_constants) : 0;
+   // One comparison for the three de-duplications below (the vertex block, the
+   // in-between frame's pool and its block): most draws repeat the constants of
+@@ -1924,9 +1956,9 @@
+   }
+   // (Room too for a pixel block of the ubershader's, should the draw need one.)
+   const size_t pixelRoom = pixelUniformBytes + sizeof(gxc::UberPixelConstants);
+-  if (!staging_has_capacity(vertBytes + gxc::kVertexStrideBytes, indexBytes, sizeof(plan.constants), pixelRoom)) {
++  if (!staging_has_capacity(vertBytes + vertexStride, indexBytes, sizeof(plan.constants), pixelRoom)) {
+     if (!segment_frame() ||
+-        !staging_has_capacity(vertBytes + gxc::kVertexStrideBytes, indexBytes, sizeof(plan.constants), pixelRoom)) {
++        !staging_has_capacity(vertBytes + vertexStride, indexBytes, sizeof(plan.constants), pixelRoom)) {
+       Log.error("GXCore draw exceeds an empty Aurora staging segment");
+       return false;
+     }
+@@ -1950,6 +1982,8 @@
+       .version = GXCorePipelineConfigVersion,
+       .key = plan.pipeline,
+       .msaaSamples = get_sample_count(),
++      .depthOnly = 0u,
++      .rawPosUv = plan.gpu_raw_pos_uv ? 1u : 0u,
+   };
+   const PipelineRef pipeline = pipeline_ref(colorConfig);
+   PipelineRef depthPipeline = 0;
+@@ -1973,7 +2007,7 @@
+   PipelineRef uberPipeline = 0;
+   Range uberPixelRange{};
+   BindGroupRef uberTextureBindGroup = 0;
+-  if (uberMode != 0 && (uberMode == 2 || !pipeline_ready(pipeline) ||
++  if (!plan.gpu_raw_pos_uv && uberMode != 0 && (uberMode == 2 || !pipeline_ready(pipeline) ||
+                         (depthPipeline != 0 && !pipeline_ready(depthPipeline)))) {
+     // All eight texmap slots: on the single-texmap path the draw's texture in
+     // every one (as its own shader samples slot 0 whatever the stage's texmap
+@@ -2054,7 +2088,7 @@
+     const char* env = std::getenv("DOL_AURORA_GXCORE_BATCH");
+     return env == nullptr || env[0] != '0';
+   }();
+-  const size_t vertexOffset = next_vertex_offset(gxc::kVertexStrideBytes);
++  const size_t vertexOffset = next_vertex_offset(vertexStride);
+   DrawData* batch = nullptr;
+   uint32_t firstVertex = 0;
+   if (batching && !matchHere) {
+@@ -2067,10 +2101,11 @@
+         last->interpUniformRange.size == 0 && last->interpVertRange.size == 0 &&
+         (interpolating ? last->interpJob != UINT32_MAX && last->interpJob + last->batchSize == next_interp_job()
+                        : last->interpJob == UINT32_MAX) &&
+-        last->vertRange.offset % gxc::kVertexStrideBytes == 0 &&
++        (last->rawPosUvRange.size != 0u) == plan.gpu_raw_pos_uv &&
++        last->vertRange.offset % vertexStride == 0 &&
+         last->vertRange.offset + last->vertRange.size == vertexOffset &&
+         last->idxRange.offset + last->idxRange.size == next_index_offset()) {
+-      const size_t first = (vertexOffset - last->vertRange.offset) / gxc::kVertexStrideBytes;
++      const size_t first = (vertexOffset - last->vertRange.offset) / vertexStride;
+       if (first + plan.vertex_count <= 65536u) {
+         batch = last;
+         firstVertex = static_cast<uint32_t>(first);
+@@ -2080,8 +2115,15 @@
+ 
+   // On a whole vertex: render() draws it at a base vertex of the whole buffer.
+   const auto vertRange = push_verts_strided(
+-      reinterpret_cast<const uint8_t*>(plan.vertices.data()),
+-      vertBytes, gxc::kVertexStrideBytes);
++      plan.gpu_raw_pos_uv ? plan.match_payload : reinterpret_cast<const uint8_t*>(plan.vertices.data()),
++      vertBytes, vertexStride);
++  const auto rawRange = plan.gpu_raw_pos_uv ? vertRange : Range{};
++  if (plan.gpu_raw_pos_uv) {
++    ++g_rawVertexPullStats.submitted;
++    g_rawVertexPullStats.vertices += plan.vertex_count;
++    g_rawVertexPullStats.rawBytes += rawBytes;
++    g_rawVertexPullStats.avoidedDecodedBytes += static_cast<uint64_t>(plan.vertex_count) * gxc::kVertexStrideBytes;
++  }
+   Range idxRange;
+   if (batch != nullptr) {
+     static std::vector<uint16_t> rebased;
+@@ -2110,6 +2152,7 @@
+     batch->indexCount += indexCount;
+     batch->idxRange.size += idxRange.size;
+     batch->vertRange.size = static_cast<uint32_t>(vertRange.offset + vertRange.size - batch->vertRange.offset);
++    if (plan.gpu_raw_pos_uv) batch->rawPosUvRange = batch->vertRange;
+     ++g_mergedDrawCallCount;
+     return true;
+   }
+@@ -2117,6 +2160,7 @@
+       .pipeline = pipeline,
+       .depthPipeline = depthPipeline,
+       .vertRange = vertRange,
++      .rawPosUvRange = rawRange,
+       .idxRange = idxRange,
+       .uniformRange = uniformRange,
+       .interpUniformRange = interpUniformRange,
+--- a/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
++++ b/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
+@@ -713,7 +713,7 @@
+ static absl::flat_hash_set<HashType> g_uberStates;
+ 
+ static void queue_ubershader_state(const gxcore::PipelineConfig& config) {
+-  if (ubershader_mode() == 0 || config.depthOnly != 0u)
++  if (ubershader_mode() == 0 || config.depthOnly != 0u || config.rawPosUv != 0u)
+     return;
+   gxcore::PipelineConfig uber = config;
+   uber.key.shader = {};

@@ -1017,3 +1017,69 @@ SHA-256 `074dca302d94a45b170e0dfeecade4a2b0a192f095526396eb9d1ff82d1725a1`;
 `0d1b37681724943f15e93dfb18a891ae98d72b012eb20439a7e6782f368b2071`.
 This inspection launched no game, changed no installed binary/settings/save,
 and used no desktop input. Tingle rescue wait-skip remains disabled.
+
+### October 8, 2026: inactive GPU vertex-decoding experiment
+
+The follow-up native sampling identified `JPADrawExecStripeCross::exec`
+(`0x80263A68..0x802643B0`) as the most frequently observed named geometry
+producer in this intro sample. Sampling is attribution evidence, not an exact
+exclusive CPU cost or a predicted speedup. The inactive implementation and
+results are preserved in
+[`patches/experiments/gpu-raw-stripecross/README.md`](../../patches/experiments/gpu-raw-stripecross/README.md).
+
+The GPU path decodes strictly eligible direct big-endian F32 XYZ/ST vertices
+from raw FIFO bytes. A separate CPU shortcut retains the original particle FP
+operations and guest live-outs, combining the final ten FIFO writes. Particle
+simulation and geometry calculations still run on the CPU. Neither path is in
+the active runtime recipe or installed tester.
+
+The actual D3D12 pixel fixture passed 13 cases/26 frames without pixel or
+validation differences; the planner fixture passed 814 cases. The CPU-tail
+fixture passed 80,000 accepted cases and 54 unchanged declines. An actual cached
+startup failure was reproduced and fixed in the private host by preventing raw
+pipeline configurations from entering the decoded ubershader queue. Earlier
+failures and their receipts remain preserved.
+
+The fixed native candidate completed the 1,800-VI intro with the captured image
+byte-identical to the installed control, but **normal-setting complete guest
+state equality was not established**. Differences also occurred with both new
+paths disabled, and one exact old-control repeat varied in MEM1. Disabling both
+color and depth EFB peeks produced six complete matching CPU/MEM1/MEM2/REL
+checkpoints and the matching full image. This controlled diagnostic suggests
+readback-related variation; it does not identify every normal-setting byte
+difference or qualify the normal settings.
+
+At the maintainer's request, seven serialized hidden comparisons proceeded
+under the current background load. One-second pre-case CPU samples ranged from
+29.10% to 52.64%; these are not continuous load measurements. All seven cases
+completed with clean renderer counters, actual intended path admissions and no
+dynamic shader compilation. The primary ABBA observations averaged 47.016 s
+process CPU/31.868 s wall for the installed control and 49.313 s/33.367 s for
+both paths enabled. The pairs disagreed, and the strict workload-equality gate
+failed because submitted-command/noop counts varied. These descriptive means
+are **not a qualified performance regression or improvement**. Separate CPU-only
+and GPU-only observations were single runs, so neither establishes a path's gain.
+
+Decision: **experimental, inactive, no reliable speedup established**. Do not
+promote this candidate or repeat unchanged timings as proof of improvement.
+Normal-setting state differences require attribution before promotion; this
+experimental blocker does not block unrelated core gameplay or tester work.
+The installed tester, 450 original player files/nine directories, other agents'
+three tracked changes, and the original slowdown capture/analysis were all
+verified unchanged. Tingle rescue wait-skip remains disabled. No visible game,
+physical input, installation, tester ZIP or public upload was performed.
+
+Private receipts under `build/gpu-offload-20261008/native1/`:
+
+- `loaded-cases1.json`: completed cases and preservation, SHA-256
+  `fb2176d78942b44a50f0af18bb466309eb5422d10a66248a86055891d69d7eec`.
+- `loaded-abba1-failure.json`: strict workload gate remains failed.
+- `loaded-descriptive1.json`: descriptive loaded observations, SHA-256
+  `cd234038113ac90d88d31b85cfb8da4d279262e8daeead556a9e3357495b9d2c`.
+- `checkpoint-comparison1.json`: unresolved normal-setting state failure,
+  SHA-256 `0ed5e0f7b9ca3a3c9c2333b1d3c57fa2914900d1ae38822d01e5270a57477772`.
+- `checkpoint-control-repeat1.json`: retained control-repeat variation,
+  SHA-256 `0487eaa30d1482a89d036f19df44fe9bb61118eb626453ed6b72adfd3f6a1b34`.
+- `checkpoint-efb0-comparison1.json`: controlled peek-disabled state/image
+  equality, SHA-256
+  `a9fffc279d517baaf4855c308844ba8755ee234d142b9be0390237032f30466d`.

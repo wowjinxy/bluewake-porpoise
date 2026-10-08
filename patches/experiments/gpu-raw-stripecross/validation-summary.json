@@ -1,0 +1,80 @@
+{
+  "backend-source-v3": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\backend-design1\\source-receipt-v3.json",
+    "sha256": "7dca6a87027a897e1888ef84ec63696cd06482b85e1676a1dcd288f96da1fbb0",
+    "status": "PRIVATE_SOURCE_V3_FROZEN_NOT_COMPILED"
+  },
+  "host-source-v5": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\root-host5\\source-pins.json",
+    "sha256": "07940798b25bfaca6a553085461d83bef3e8ce7a9cbd16498def2a04d8bde4f5",
+    "status": "PRIVATE_OPT_IN_SOURCE_OVERLAY_NOT_BUILT"
+  },
+  "stripe-preparation": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\particle-design1\\prepare-receipt.json",
+    "sha256": "60d82c32ad6e7c6d0233f5b94fac5df1aea51913b75ed36f411bb6a529fd8c7b",
+    "status": "PRIVATE_LITERAL_ORACLE_AND_FOUR_INSERTIONS_READY_NOT_COMPILED"
+  },
+  "gpu-pixels": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\backend-design1\\fixture-attempt3\\result.json",
+    "sha256": "da0c7a26bb8ff47e815a44a82cf29f17e7fad8615dbc7cf0a91805a5108ad736",
+    "status": "PASS_OFFSCREEN_D3D12_RAW_VS_DECODED_PIXELS",
+    "actual_dependencies": {
+      "0": 272,
+      "1": 211
+    },
+    "pixels": {
+      "cases_passed": 13,
+      "submitted_frames": 26,
+      "checks": 213411,
+      "uncaptured_errors": 0,
+      "channel_tolerance": 0,
+      "synthetic_only": true,
+      "window_or_surface": false
+    },
+    "execution_logs": [
+      {
+        "role": "GPU-pixels",
+        "text": "D3D12 adapter: NVIDIA GeForce RTX 3070 / D3D12 driver version 32.0.16.1088, type=1\nquad-white-gpu-vs-decoded: max-channel-error=0 mismatches=0\nquad-register-TEV-gpu-vs-decoded: max-channel-error=0 mismatches=0\nquad-TEV-alpha-blend-gpu-vs-decoded: max-channel-error=0 mismatches=0\nquad-destination-alpha-gpu-vs-decoded: max-channel-error=0 mismatches=0\nquad-variable-UV-gpu-vs-decoded: max-channel-error=0 mismatches=0\nquad-variable-UV-TEV-gpu-vs-decoded: max-channel-error=0 mismatches=0\nbounded-scissor-gpu-vs-decoded: max-channel-error=0 mismatches=0\nfractional-transform-gpu-vs-decoded: max-channel-error=0 mismatches=0\nperspective-transform-gpu-vs-decoded: max-channel-error=0 mismatches=0\ngeometry-texcoord-gpu-vs-decoded: max-channel-error=0 mismatches=0\ncached-normal-texcoord-gpu-vs-decoded: max-channel-error=0 mismatches=0\nsix-vertex-stripe-gpu-vs-decoded: max-channel-error=0 mismatches=0\nordered-state-and-overlap-gpu-vs-decoded: max-channel-error=0 mismatches=0\nOffscreen D3D12 GPU BE-f32 pull: 13 cases/26 frames, 213411 checks PASS\n"
+      }
+    ]
+  },
+  "raw-plan": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\backend-design1\\plan-fixture-attempt3\\result.json",
+    "sha256": "5f6759c3dabac56b31d18fe5ac934fe91a4268333a6720948c2fa9f24bf7e082",
+    "status": "PASS_ACTUAL_RAW_ADMISSION_AND_EXACT_LEGACY_MATERIALIZATION",
+    "actual_dependencies": {
+      "0": 227,
+      "1": 209
+    },
+    "pixels": null,
+    "execution_logs": [
+      {
+        "role": "CPU-plan",
+        "text": "PASS raw admission/materialization cases=814 admitted=330 declined=484 checks=9768\n"
+      }
+    ]
+  },
+  "cpu-stripe": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\particle-design1\\fixture-attempt1\\result.json",
+    "sha256": "847f24ef0515386b28fb3fc55d80704b2bf66c53d41fb670970f2b037d5ad185",
+    "status": "PASS_LITERAL_FROZEN_STRIPE_TAIL_DIFFERENTIAL",
+    "actual_dependencies": null,
+    "pixels": null,
+    "execution_logs": [
+      {
+        "role": "run-literal-stripe-fixture",
+        "text": "[native-gpu-stripe] first=40000/26 second=40000/26 (native/declined)\nPASS exact frozen prepaid StripeCross tails accepted=80000 declined=54 direct_bulk=one batch_flush=none RAM=33554432 suffix=5/4 cycles=unchanged\n"
+      }
+    ]
+  },
+  "module-build": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\particle-design1\\module-attempt1\\result.json",
+    "sha256": "370f797baa6e4c6c7ab1a5e575831cb06d3e3aab6c8b47e778934693aff15426",
+    "status": "PASS_PRIVATE_TWO_TU_GPU_STRIPE_MODULE_NOT_RUNTIME_QUALIFIED",
+    "artifact_reference_only_not_included": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\gpu-offload-20261008\\particle-design1\\module-attempt1\\gGZLE01_recomp.dll",
+      "bytes": 410201088,
+      "sha256": "7b10569a929e183ad31aa863b1f21edb689f0e5ee4da1a96016eb50ee3d551e3"
+    }
+  }
+}

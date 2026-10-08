@@ -1,0 +1,877 @@
+{
+  "status": "INACTIVE_NO_RELIABLE_PERFORMANCE_GAIN",
+  "snapshot_utc": "2026-10-08 06:29 UTC",
+  "receipts": {
+    "v2-startup-merged-failure": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\both-checkpoint1\\result.json",
+      "sha256": "c28b8ce63624a6bb4ab2d946aaf68da3bc1e2fe6478b6e6f7faeafbefa58b74c",
+      "status": "FAIL_PRESERVED"
+    },
+    "v2-startup-unmerged-failure": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\both-checkpoint-unmerged1\\result.json",
+      "sha256": "77e93665e21531bead01d16d4857fc78ee711677f515748c051f2d9f8c5c03fa",
+      "status": "FAIL_PRESERVED"
+    },
+    "v3-normal-cached-restart": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\both-checkpoint2\\result.json",
+      "sha256": "59db7cf68c5f3b36822c40ce4e755c5ef1f96aa7de62e42d5a394eb04f1f87d4",
+      "status": "PASS"
+    },
+    "normal-new-both-comparison": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\checkpoint-comparison1.json",
+      "sha256": "0ed5e0f7b9ca3a3c9c2333b1d3c57fa2914900d1ae38822d01e5270a57477772",
+      "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES",
+      "full_p6_equal": true,
+      "matching_checkpoints": 1,
+      "differences": [
+        {
+          "retrace": 600,
+          "fields": {
+            "cpu": [
+              "1949446791DF88990187A2AFED4177EA",
+              "38EF5F7E036BE763E9EC350A5DAD22FE"
+            ],
+            "mem1": [
+              "009951577AB5A6E953F6BE1C5817581D",
+              "DA5D210F18F5171BDBF3E5232943855C"
+            ]
+          }
+        },
+        {
+          "retrace": 900,
+          "fields": {
+            "cpu": [
+              "63657B941248CA120B263CEACD7E0E73",
+              "39CC773B70951F608D3C004DD1B6592C"
+            ],
+            "mem1": [
+              "A34251C5E559B2FFA5E5FC0A01A52733",
+              "4D915357738F35FF60E7E060661724F5"
+            ]
+          }
+        },
+        {
+          "retrace": 1200,
+          "fields": {
+            "mem1": [
+              "1399EE6FD7490A621A1A0E63CC02F8D1",
+              "B4AB061650943A8ACABFE2C4F31387B6"
+            ]
+          }
+        },
+        {
+          "retrace": 1500,
+          "fields": {
+            "mem1": [
+              "AE021C49B9342DAC68A21B1769E3B0AA",
+              "4F52BF2255A58663DF47590DD28EADCE"
+            ]
+          }
+        },
+        {
+          "retrace": 1800,
+          "fields": {
+            "mem1": [
+              "5AA8B1ECBEAEE02B1AA6D7C05EE4554D",
+              "A54BB6AA9B4ECF595036F57AA026B836"
+            ]
+          }
+        }
+      ]
+    },
+    "normal-new-off-comparison": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\checkpoint-off-comparison1.json",
+      "sha256": "3d36b5deb5bf863e7950abc085cd4eb20c6a4008e5532175064f336d033bfa35",
+      "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES",
+      "full_p6_equal": true,
+      "matching_checkpoints": 1,
+      "differences": [
+        {
+          "retrace": 600,
+          "fields": {
+            "cpu": [
+              "1949446791DF88990187A2AFED4177EA",
+              "DDE29CCB1095402D919FE33EA3A876CC"
+            ],
+            "mem1": [
+              "009951577AB5A6E953F6BE1C5817581D",
+              "7298B12D7EF8844B14F2B5AFBE4BBFD3"
+            ]
+          }
+        },
+        {
+          "retrace": 900,
+          "fields": {
+            "mem1": [
+              "A34251C5E559B2FFA5E5FC0A01A52733",
+              "DFCB6DBD43D21E5911E620AF28B013A6"
+            ]
+          }
+        },
+        {
+          "retrace": 1200,
+          "fields": {
+            "mem1": [
+              "1399EE6FD7490A621A1A0E63CC02F8D1",
+              "F61A64622BAB3C1790D96096EEA69D1F"
+            ]
+          }
+        },
+        {
+          "retrace": 1500,
+          "fields": {
+            "mem1": [
+              "AE021C49B9342DAC68A21B1769E3B0AA",
+              "2EBE55591CEABC352EC53212460124D3"
+            ]
+          }
+        },
+        {
+          "retrace": 1800,
+          "fields": {
+            "mem1": [
+              "5AA8B1ECBEAEE02B1AA6D7C05EE4554D",
+              "37DDFFB9ADF2CCBF1E2D5DF174A2B2AB"
+            ]
+          }
+        }
+      ]
+    },
+    "normal-installed-control-repeat": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\checkpoint-control-repeat1.json",
+      "sha256": "0487eaa30d1482a89d036f19df44fe9bb61118eb626453ed6b72adfd3f6a1b34",
+      "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES",
+      "full_p6_equal": true,
+      "matching_checkpoints": 5,
+      "differences": [
+        {
+          "retrace": 600,
+          "fields": {
+            "mem1": [
+              "009951577AB5A6E953F6BE1C5817581D",
+              "B2552440F2FD6EFB6D0AAC1B25A99264"
+            ]
+          }
+        }
+      ]
+    },
+    "diagnostic-efb-peeks-disabled": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\checkpoint-efb0-comparison1.json",
+      "sha256": "a9fffc279d517baaf4855c308844ba8755ee234d142b9be0390237032f30466d",
+      "status": "PASS_SIX_COMPLETE_GUEST_CHECKPOINTS_AND_PIXELS",
+      "full_p6_equal": true,
+      "matching_checkpoints": 6,
+      "differences": []
+    },
+    "loaded-case-validation": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-cases1.json",
+      "sha256": "fb2176d78942b44a50f0af18bb466309eb5422d10a66248a86055891d69d7eec",
+      "status": "PASS_COMPLETED_NATIVE_CASES_AND_PRESERVATION"
+    },
+    "loaded-strict-abba-failure": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-abba1-failure.json",
+      "sha256": "5f51f26021af9ac6d72267bfc401f2d56acff615660ff27fd54efc9bbf05d382",
+      "status": "FAIL_STRICT_ABBA_WORKLOAD_EQUALITY_PRESERVED"
+    },
+    "loaded-test-policy": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\limited-loaded-timing-policy1.json",
+      "sha256": "10b7d6248681604f7a55d3d7b7b55114d1a8c4c8a0be3b0775cbc598f961c600",
+      "status": "PREDECLARED_USER_REQUESTED_LOADED_COMPARISON_KEEP_EXPERIMENTAL"
+    },
+    "quiet-preflight-failure": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\quiet-control-a1.json",
+      "sha256": "7b324616ef3e3aea3068e9b503d5b9d951eff78ef5defbb6b5e3ac0b39ae6872",
+      "status": "FAIL_BACKGROUND_BUSY_PRESERVED"
+    },
+    "load-sample-control-loaded-a1": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-control-loaded-a1.json",
+      "sha256": "c5eea586d1b5319b74d05fb1865c07ca7d2ce605ccceef13683c66757026c5b9",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "load-sample-both-loaded-b1": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-both-loaded-b1.json",
+      "sha256": "f4e55c3441af0931340bbe4ba712329f03129d59542cd3dff20e410ba80ce2ad",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "load-sample-both-loaded-b2": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-both-loaded-b2.json",
+      "sha256": "7ebc361ca5b10796406e910ed230f500ba9fd46aa59e497e686ff29558446b48",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "load-sample-control-loaded-a2": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-control-loaded-a2.json",
+      "sha256": "c5fab188b4330e5426aaf213c0c811ebb9e505f31d21b468ddd6e3cd8a8f13ac",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "load-sample-off-loaded1": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-off-loaded1.json",
+      "sha256": "320a6a1ba9cdd0d32a9ca1f1daa9486ff9e79b94040d1786d78bba1917ec84b5",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "load-sample-cpu-loaded1": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-cpu-loaded1.json",
+      "sha256": "0ffa9f72aac23074495c2dd0c2633ae4b8c73bf2c79faa519e7c5e01a9f6774d",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "load-sample-gpu-loaded1": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-quiet-gpu-loaded1.json",
+      "sha256": "50b501e1f302d829baf3baa56a7ebe58c4b09f2745efbb3502eb33be036e252c",
+      "status": "PASS_LOADED_COMPARISON_ONLY"
+    },
+    "loaded-descriptive": {
+      "retained_private_path": "build\\gpu-offload-20261008\\native1\\loaded-descriptive1.json",
+      "sha256": "cd234038113ac90d88d31b85cfb8da4d279262e8daeead556a9e3357495b9d2c",
+      "status": "DESCRIPTIVE_LOADED_OBSERVATIONS_NO_QUALIFIED_GAIN"
+    }
+  },
+  "loaded_timings_descriptive_only": [
+    {
+      "case": "control-loaded-a1",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "0",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "0"
+      },
+      "host_sha256": "469f83a72d80a31b3235cbce5e6f3149922db03add022e6f09ce22cce1f43195",
+      "module_sha256": "976184c642ac87fdf026f181e90c1a1c3875bbbb833aad2d62174ca71dfc0916",
+      "cpu_seconds": 46.296875,
+      "wall_seconds": 31.282000000122935,
+      "total_system_busy_percent": 30.865384615384617,
+      "gx_summary": {
+        "submitted": 8431716,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431716,
+        "skipped": 0,
+        "noops": 3008,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3008,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209669,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": null,
+      "stripe": null
+    },
+    {
+      "case": "both-loaded-b1",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "1",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "1"
+      },
+      "host_sha256": "508656271902f8d2dd8280e4d769452fd6c3fd96222322577151032f9f93c598",
+      "module_sha256": "7b10569a929e183ad31aa863b1f21edb689f0e5ee4da1a96016eb50ee3d551e3",
+      "cpu_seconds": 52.28125,
+      "wall_seconds": 35.4839999997057,
+      "total_system_busy_percent": 40.72265625,
+      "gx_summary": {
+        "submitted": 8431716,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431716,
+        "skipped": 0,
+        "noops": 3008,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3008,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209669,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": {
+        "submitted": 39926,
+        "vertices": 582328,
+        "raw_bytes": 11646560,
+        "avoided_decoded_bytes": 76867296,
+        "fallback_pipeline": 0,
+        "fallback_interpolation": 0,
+        "fallback_diagnostics": 0
+      },
+      "stripe": {
+        "first_admitted": 114237,
+        "first_declined": 0,
+        "second_admitted": 114211,
+        "second_declined": 0
+      }
+    },
+    {
+      "case": "both-loaded-b2",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "1",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "1"
+      },
+      "host_sha256": "508656271902f8d2dd8280e4d769452fd6c3fd96222322577151032f9f93c598",
+      "module_sha256": "7b10569a929e183ad31aa863b1f21edb689f0e5ee4da1a96016eb50ee3d551e3",
+      "cpu_seconds": 46.34375,
+      "wall_seconds": 31.25,
+      "total_system_busy_percent": 32.30769230769231,
+      "gx_summary": {
+        "submitted": 8431724,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431724,
+        "skipped": 0,
+        "noops": 3024,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3024,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209677,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": {
+        "submitted": 39926,
+        "vertices": 582328,
+        "raw_bytes": 11646560,
+        "avoided_decoded_bytes": 76867296,
+        "fallback_pipeline": 0,
+        "fallback_interpolation": 0,
+        "fallback_diagnostics": 0
+      },
+      "stripe": {
+        "first_admitted": 114224,
+        "first_declined": 0,
+        "second_admitted": 114221,
+        "second_declined": 0
+      }
+    },
+    {
+      "case": "control-loaded-a2",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "0",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "0"
+      },
+      "host_sha256": "469f83a72d80a31b3235cbce5e6f3149922db03add022e6f09ce22cce1f43195",
+      "module_sha256": "976184c642ac87fdf026f181e90c1a1c3875bbbb833aad2d62174ca71dfc0916",
+      "cpu_seconds": 47.734375,
+      "wall_seconds": 32.45299999974668,
+      "total_system_busy_percent": 42.88461538461539,
+      "gx_summary": {
+        "submitted": 8431724,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431724,
+        "skipped": 0,
+        "noops": 3024,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3024,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209677,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": null,
+      "stripe": null
+    },
+    {
+      "case": "off-loaded1",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "0",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "0"
+      },
+      "host_sha256": "508656271902f8d2dd8280e4d769452fd6c3fd96222322577151032f9f93c598",
+      "module_sha256": "7b10569a929e183ad31aa863b1f21edb689f0e5ee4da1a96016eb50ee3d551e3",
+      "cpu_seconds": 48.453125,
+      "wall_seconds": 33.032000000122935,
+      "total_system_busy_percent": 30.859375,
+      "gx_summary": {
+        "submitted": 8431724,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431724,
+        "skipped": 0,
+        "noops": 3024,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3024,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209677,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": {
+        "submitted": 0,
+        "vertices": 0,
+        "raw_bytes": 0,
+        "avoided_decoded_bytes": 0,
+        "fallback_pipeline": 0,
+        "fallback_interpolation": 0,
+        "fallback_diagnostics": 0
+      },
+      "stripe": {
+        "first_admitted": 0,
+        "first_declined": 114217,
+        "second_admitted": 0,
+        "second_declined": 114216
+      }
+    },
+    {
+      "case": "cpu-loaded1",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "0",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "1"
+      },
+      "host_sha256": "508656271902f8d2dd8280e4d769452fd6c3fd96222322577151032f9f93c598",
+      "module_sha256": "7b10569a929e183ad31aa863b1f21edb689f0e5ee4da1a96016eb50ee3d551e3",
+      "cpu_seconds": 45.578125,
+      "wall_seconds": 31.54699999978766,
+      "total_system_busy_percent": 29.1015625,
+      "gx_summary": {
+        "submitted": 8431724,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431724,
+        "skipped": 0,
+        "noops": 3024,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3024,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209677,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": {
+        "submitted": 0,
+        "vertices": 0,
+        "raw_bytes": 0,
+        "avoided_decoded_bytes": 0,
+        "fallback_pipeline": 0,
+        "fallback_interpolation": 0,
+        "fallback_diagnostics": 0
+      },
+      "stripe": {
+        "first_admitted": 114216,
+        "first_declined": 0,
+        "second_admitted": 114215,
+        "second_declined": 0
+      }
+    },
+    {
+      "case": "gpu-loaded1",
+      "switches": {
+        "DOL_GXCORE_GPU_RAW_POS_UV": "1",
+        "BLUEWAKE_GPU_STRIPE_TAILS": "0"
+      },
+      "host_sha256": "508656271902f8d2dd8280e4d769452fd6c3fd96222322577151032f9f93c598",
+      "module_sha256": "7b10569a929e183ad31aa863b1f21edb689f0e5ee4da1a96016eb50ee3d551e3",
+      "cpu_seconds": 49.71875,
+      "wall_seconds": 33.92199999978766,
+      "total_system_busy_percent": 52.63671875,
+      "gx_summary": {
+        "submitted": 8431716,
+        "rejected": 0,
+        "failed": 0,
+        "planned": 8431716,
+        "skipped": 0,
+        "noops": 3008,
+        "cull_all": 0,
+        "missing_vcd": 0,
+        "vertex_decode_failures": 0,
+        "projection_missing": 0,
+        "payload_empty": 0,
+        "walk_underivable": 0,
+        "stride_mismatch": 0,
+        "topology_unsupported": 0,
+        "payload_overrun": 0,
+        "topology_zero_quads": 3008,
+        "topology_zero_triangles": 0,
+        "topology_zero_triangle_strip": 0,
+        "topology_zero_triangle_fan": 0,
+        "topology_zero_lines": 0,
+        "topology_zero_line_strip": 0,
+        "topology_zero_points": 0,
+        "topology_zero_unknown": 0,
+        "array_unresolved": 0,
+        "array_out_of_bounds": 0,
+        "unsupported_texgen": 0,
+        "texgen_count_overflow": 0,
+        "texgen_count_5": 8112,
+        "texgen_count_6": 0,
+        "texgen_count_7": 0,
+        "texgen_count_8plus": 0,
+        "texgen_emboss_cached_nbt": 0,
+        "texgen_source_normal": 0,
+        "texgen_source_normal_default": 0,
+        "texgen_source_colors": 0,
+        "texgen_source_binormal": 0,
+        "texgen_source_tex47": 0,
+        "texgen_source_unknown": 0,
+        "per_vertex_tex_mtx": 0,
+        "per_vertex_normal_matrix": 1030672,
+        "unresolved_tex_matrix": 0,
+        "normals_ignored": 51840,
+        "lighting_ignored": 0,
+        "tlut_texture": 420237,
+        "alpha_compare_ignored": 0,
+        "tev_stages_over": 0,
+        "tev_multi_texmap": 1119627,
+        "texcoord_scale_active": 8209669,
+        "texcoord_scale_mismatch": 4157033,
+        "efb_copy_ignored": 0,
+        "efb_copies": 1594,
+        "efb_copy_depth": 752,
+        "efb_display_copies": 1032,
+        "fog_ignored": 0,
+        "indirect_active": 70,
+        "indirect_ignored": 0,
+        "logic_op_ignored": 0,
+        "dst_alpha_active": 752,
+        "early_depth_active": 3703171,
+        "ztexture_active": 0,
+        "ztexture_ignored": 0
+      },
+      "raw": {
+        "submitted": 39926,
+        "vertices": 582328,
+        "raw_bytes": 11646560,
+        "avoided_decoded_bytes": 76867296,
+        "fallback_pipeline": 0,
+        "fallback_interpolation": 0,
+        "fallback_diagnostics": 0
+      },
+      "stripe": {
+        "first_admitted": 0,
+        "first_declined": 114209,
+        "second_admitted": 0,
+        "second_declined": 114191
+      }
+    }
+  ],
+  "normal_complete_guest_state_qualified": false,
+  "efb_zero_diagnostic_six_checkpoint_hashes_and_p6_equal": true,
+  "efb_zero_disables_both_color_and_depth": true,
+  "performance_qualified": false,
+  "install_or_activation_authorized_by_this_bundle": false,
+  "control_means": {
+    "cpu_seconds": 47.015625,
+    "wall_seconds": 31.867499999934807,
+    "process_cycles": 168164988059.0
+  },
+  "candidate_means": {
+    "cpu_seconds": 49.3125,
+    "wall_seconds": 33.36699999985285,
+    "process_cycles": 176866813884.5
+  },
+  "descriptive_mean_percent_changes": {
+    "cpu_seconds": 4.885343968095723,
+    "wall_seconds": 4.705420883097555,
+    "process_cycles": 5.174576423986066
+  },
+  "descriptive_pair_percent_changes": [
+    {
+      "cpu_seconds": 12.926088423894711,
+      "wall_seconds": 13.432644970162567,
+      "process_cycles": 13.054580401450156
+    },
+    {
+      "cpu_seconds": -2.9132569558101507,
+      "wall_seconds": -3.7068992073339024,
+      "process_cycles": -2.4905178705765585
+    }
+  ],
+  "single_observation_attribution_percent_changes": {
+    "cpu-loaded1": {
+      "cpu_seconds": -5.933569816188323,
+      "wall_seconds": -4.495640591940386,
+      "process_cycles": -4.080849850792079
+    },
+    "gpu-loaded1": {
+      "cpu_seconds": 2.6120606256046397,
+      "wall_seconds": 2.694356986138935,
+      "process_cycles": 3.1860063225080726
+    }
+  }
+}
