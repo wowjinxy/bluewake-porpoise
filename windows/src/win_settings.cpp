@@ -29,6 +29,7 @@
 #include "settings_catalog.h"
 #include "hud_host.h"
 #include "health_host.h"
+#include "fps_watch.h"
 #include "settings_presets.h"
 #include "card_menu.h"
 #include "asset_pack_menu.h"
@@ -113,6 +114,7 @@ bool g_preset_popup, g_cancel_preset;
 bool g_preview_page_visible;
 std::string g_preview_path, g_preview_message;
 Uint64 g_dirty_at, g_first_frame_at;
+Uint64 g_slowdown_notice_until;
 bool g_placed;
 ImFont* g_menu_font = nullptr;
 ImFont* g_menu_large_font = nullptr;
@@ -693,11 +695,36 @@ void tab_mods() {
     bw_asset_pack_menu_draw();
 }
 
+const char* slowdown_marker_text(unsigned status) {
+    switch (status) {
+    case BLUEWAKE_FPS_MARKER_PENDING: return "Slowdown marked; waiting for the game.";
+    case BLUEWAKE_FPS_MARKER_CAPTURING: return "Slowdown marked; recording the next 5 seconds.";
+    case BLUEWAKE_FPS_MARKER_COMPLETE: return "Slowdown capture saved in the session log.";
+    case BLUEWAKE_FPS_MARKER_UNAVAILABLE: return "Slowdown capture is unavailable.";
+    default: return "Press F7 during a slowdown to mark it.";
+    }
+}
+
+void mark_slowdown() {
+    const bool accepted = bluewake_fps_watch_mark_slowdown();
+    g_slowdown_notice_until = SDL_GetTicks() + 8000;
+    if (accepted) set_menu_open(false);
+}
+
 void tab_developer() {
     ImGui::SeparatorText("Diagnostics");
     const AuroraStats* stats = aurora_get_stats();
     ImGui::Text("Rendered %.1f FPS / game %.1f FPS", aurora::gfx::calculate_fps(), aurora::gfx::calculate_game_fps());
     if (stats != nullptr) ImGui::Text("Queued shader pipelines: %u", stats->queuedPipelines);
+    const unsigned marker_status = bluewake_fps_watch_marker_status();
+    const bool marker_busy = marker_status == BLUEWAKE_FPS_MARKER_PENDING || marker_status == BLUEWAKE_FPS_MARKER_CAPTURING;
+    ImGui::BeginDisabled(marker_busy);
+    if (ImGui::Button("Mark slowdown (F7)")) mark_slowdown();
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("%s", slowdown_marker_text(marker_status));
+    ImGui::TextWrapped("Records up to 15 seconds before the mark and 5 seconds after it in the session log. The menu closes so the game can continue.");
+    ImGui::Text("Markers this session: %u", bluewake_fps_watch_marker_count());
+    ImGui::TextWrapped("Logs: %slogs", g_data_dir.c_str());
     if (ImGui::Button("Open the session logs")) open_folder(g_data_dir + "logs");
     ImGui::Spacing();
     ImGui::TextUnformatted("Experimental debug save states");
@@ -1329,6 +1356,28 @@ void draw_controls_save_notice(SDL_Window* w) {
     ImGui::End();
 }
 
+void draw_slowdown_notice(SDL_Window* w) {
+    if (g_slowdown_notice_until == 0) return;
+    const unsigned status = bluewake_fps_watch_marker_status();
+    const bool active = status == BLUEWAKE_FPS_MARKER_PENDING || status == BLUEWAKE_FPS_MARKER_CAPTURING;
+    if (!active && SDL_GetTicks() > g_slowdown_notice_until) return;
+    const float scale = ui_scale(w);
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 12 * scale, io.DisplaySize.y - 12 * scale),
+                           ImGuiCond_Always, ImVec2(1, 1));
+    ImGui::SetNextWindowSize(ImVec2(std::max(1.f, std::min(440 * scale, io.DisplaySize.x - 24 * scale)), 0), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                                  ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    if (ImGui::Begin("##bluewake-slowdown", nullptr, flags)) {
+        ImGui::SetWindowFontScale(scale / g_font_scale);
+        ImGui::TextWrapped("%s", slowdown_marker_text(status));
+        ImGui::TextWrapped("F1 > Developer > Open the session logs");
+    }
+    ImGui::End();
+}
+
 // Every presented frame, on the main thread, inside Aurora's frame.
 void frame(void*) {
     SDL_Window* w = game_window();
@@ -1399,6 +1448,7 @@ void frame(void*) {
         draw_menu(w);
     draw_hint(w);
     draw_controls_save_notice(w);
+    draw_slowdown_notice(w);
     if (g_dirty && SDL_GetTicks() - g_dirty_at > 1000 && !g_menu_open)
         save_file();
 }
@@ -1421,6 +1471,7 @@ void bw_settings_ui_test_reset(const char* data_dir, const Settings& saved) {
     g_safe_mode = g_menu_open = g_toggle_menu = g_toggle_fullscreen = g_dirty = false;
     g_preset_popup = g_cancel_preset = g_placed = false;
     g_first_frame_at = g_dirty_at = 0;
+    g_slowdown_notice_until = 0;
     g_environment.clear();
     g_restart = RestartRequest{};
     g_font_scale = 1.f;
@@ -1433,6 +1484,7 @@ void bw_settings_ui_test_draw() {
     bluewake_controls_menu_tick(SDL_GetTicks());
     if (g_menu_open) draw_menu(nullptr);
     draw_controls_save_notice(nullptr);
+    draw_slowdown_notice(nullptr);
 }
 const Settings& bw_settings_ui_test_session() { return g_session; }
 const Settings& bw_settings_ui_test_saved() { return g_saved; }
@@ -1665,7 +1717,7 @@ extern "C" int bw_settings_key(unsigned virtual_key, int alt) {
             bluewake_controls_menu_cancel_capture();
             return 1;
         }
-        if (virtual_key == VK_F1 || virtual_key == VK_F6 || virtual_key == VK_F8 ||
+        if (virtual_key == VK_F1 || virtual_key == VK_F6 || virtual_key == VK_F7 || virtual_key == VK_F8 ||
             virtual_key == VK_F9 || virtual_key == VK_F10 || virtual_key == VK_F11 ||
             (virtual_key == VK_RETURN && alt)) {
             bluewake_controls_menu_reject_reserved_key();
@@ -1699,6 +1751,9 @@ extern "C" int bw_settings_key(unsigned virtual_key, int alt) {
         return 1;
     case VK_F6:
         bluewake_save_state_hotkey(false);
+        return 1;
+    case VK_F7:
+        mark_slowdown();
         return 1;
     case VK_F8:
         bluewake_save_state_hotkey(true);

@@ -905,3 +905,70 @@ Private receipts under `build/performance-focus-20261007/`:
   `5793e943beccf2f04de81e0942fc5cc8bb8e0268b9b3628b1cba12af0e2f14eb`.
 - `certified-timing-observation-v1.json`, SHA-256
   `958344b73784b52f9d7dd30f7079203b9455600a35e81c7faee930879b91eee7`.
+
+### Player-triggered slowdown capture (F7)
+
+Press **F7 when a slowdown happens**, then keep playing for about five seconds.
+A passive on-screen notice confirms the request and completion. The same action
+is available under **F1 > Developer > Diagnostics > Mark slowdown (F7)**; it
+closes the menu after accepting the mark. A second request during capture is
+ignored. F6 save-state and F8 load-state remain unchanged. Existing keyboard
+profiles using F7 migrate only those slots to Unbound; other mappings and
+controller profiles are preserved.
+
+The normal session log, opened from **F1 > Developer > Open the session logs**,
+contains `[slowdown] begin/end` and chronological `[slowdown-sample]` records:
+up to fifteen seconds of existing history and five seconds after the request.
+Default log location is `%APPDATA%/BlueWake/logs/`; `BLUEWAKE_DATA_DIR` can
+redirect it. Early exit, unavailable history or held-game gaps are explicitly
+reported rather than filled with invented samples.
+
+Samples reuse the existing approximately once-per-second worker/audio timing
+snapshot. F7 does not enable per-GX-call profiling. The idle path adds bounded
+history bookkeeping and uses the already-read retrace clock. The report separates
+VI retraces (`vi_hz`), game submissions (`game_fps`), displayed frames
+(`shown_fps`) and speed relative to 59.94 Hz (`speed_pct`). Interpolation mode,
+frame counts, worst observed retrace wall gap, host/worker CPU, draw counts,
+shader pipeline creation, audio queue/drop/throttle counts, and stage/room/player
+position accompany those rates. Title/no-Link, held, fast-forward, no-present,
+counter reset and intervals crossing the mark are flagged. Submit/drawable wait
+is host-side timing, not a hardware GPU execution measurement; timing fields can
+overlap. A marker identifies a useful interval, not an exclusive bottleneck.
+
+Qualification on the accepted counter-isolation host, with the same translated
+module `976184c6`: the focused fake-clock FPS fixture passed; optimized and ASan
+runs of the actual offscreen settings UI, virtual controller bindings and controls
+menu passed. These cover F7/button/status paths, busy requests, early exits,
+no additional worker snapshot queries, and exact old-F7 profile migration.
+
+Three serialized hidden native intro cases passed. The candidate matches all
+six complete CPU/MEM1/MEM2/REL checkpoints and all 1,228,335 bytes of the
+853x480 P6 capture. A real marker request at VI900 produced thirteen history
+samples and six after samples, ending with `partial=0 reason=complete`. Every
+marker line reached the actual private asynchronous session file unchanged.
+All 449 original player files/nine directories and 46 installed files were
+identical before and after. No physical input, visible game, public upload or
+performance benchmark occurred. These checks do not replace the user's
+visible play test or establish a new performance gain.
+
+Local receipts under `build/slowdown-marker-20261007/`:
+
+- `host1/verification2/result.json`, SHA-256
+  `38025d36d0ac43d74447dc56c4c37ae33d30aeae9981a3bc23fd0b61b42275f9`.
+- `fps-tests1/work/result.json`, SHA-256
+  `757989212c03db5797f9692c17cb7f31932e6b715f698e3c15494da451687183`.
+- `ui-tests1/result.json`, SHA-256
+  `fb46b460fb73fc38036ece9464bdc4d7c4f0a95f07da2aa01bea44022d1743ec`.
+- `checkpoint-comparison1.json`, SHA-256
+  `440513087bb25fd64fdf1c22d6ba4c34f125912e3670b87e576a5a55e8ae1680`.
+- `native-qualification1.json`, SHA-256
+  `f93a59a17a0efcb82c927e43cb1038a5cf8a2803909d6788ffb8406ae1e14f79`.
+
+Host candidate SHA-256:
+`469f83a72d80a31b3235cbce5e6f3149922db03add022e6f09ce22cce1f43195`.
+Only five host translation units were rebuilt. The accepted aligned counter
+archive, translated module and all other link inputs are retained. The original
+raw resource-section check failed because the larger host moved seven resource
+data RVAs; a separate bounded resource-tree check proves all payloads and every
+other resource-section byte exact. Private harness/parser negatives remain
+preserved. Tingle rescue wait-skip remains disabled.

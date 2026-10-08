@@ -466,7 +466,7 @@ extern "C" void bluewake_controls_menu_draw(void) {
         if (ImGui::BeginTabItem("Keyboard")) {
             bool enabled = snapshot.keyboard_enabled;
             if (row_checkbox("Keyboard controls enabled", &enabled)) bluewake_controls_set_keyboard_enabled(enabled);
-            ImGui::TextWrapped("Keyboard and controller can both control your Link. F1, Escape, F5, F6, F8, F9, F10 and F11 remain reserved.");
+            ImGui::TextWrapped("Keyboard and controller can both control your Link. F1, Escape, F5, F6, F7, F8, F9, F10 and F11 remain reserved. F7 marks a slowdown for the session log.");
             ImGui::SeparatorText("Game buttons");
             binding_rows(true, false, snapshot);
             ImGui::SeparatorText("Sticks and triggers");

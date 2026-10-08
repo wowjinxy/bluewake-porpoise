@@ -5,6 +5,9 @@
 #include "gxruntime/aurora_backend.h"
 
 #include <stdio.h>
+#include <limits.h>
+#include <stdatomic.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -89,6 +92,31 @@ static unsigned long long g_retrace;
 static unsigned long long g_dips;
 static unsigned g_last_pipelines;
 
+// Game-thread-owned history. UI threads touch only this packed status/ID word.
+// Publishing them together prevents a consumer observing pending with an old ID.
+static atomic_uint_fast64_t g_marker_control = ATOMIC_VAR_INIT(BLUEWAKE_FPS_MARKER_UNAVAILABLE);
+enum { kMarkerHistory = 16, kMarkerLine = 1024 };
+enum {
+    kMarkerHeld = 1u, kMarkerFast = 2u, kMarkerTitle = 4u,
+    kMarkerNoLink = 8u, kMarkerNoPresent = 16u, kMarkerReset = 32u
+};
+typedef struct SlowdownSample {
+    unsigned long long wall_us, interval_us, retrace, max_gap_us;
+    unsigned long long game, rendered_draws, display_copies, audio_throttles, audio_dropped;
+    unsigned long long interp_frames, interpolated, interp_draws, rejected, unmatched;
+    double vi_hz, game_fps, shown_fps, busy, gx_cpu, interp_cpu, render_cpu;
+    double drain_ms, present_ms, submit_drawable_ms;
+    unsigned flags, pipelines, event;
+    int room, audio_queued_ms, steps;
+    bool smooth;
+    char stage[9];
+    float x, y, z;
+} SlowdownSample;
+static SlowdownSample g_marker_history[kMarkerHistory];
+static unsigned g_marker_next, g_marker_used, g_marker_id, g_marker_after;
+static unsigned long long g_marker_at, g_marker_deadline, g_marker_last_wall, g_marker_max_gap;
+static bool g_marker_clock_reset, g_exit_registered;
+
 // The session's slow seconds, summed for [perf-summary]: every ten minutes and at
 // exit, by cause and by place, so a long log says where it was slow in one line.
 enum { kCauses = 8, kPlaces = 12 };
@@ -107,10 +135,115 @@ static double g_lowest_speed = 1.0;
 static int g_logged_smooth = -1, g_logged_steps = -1;
 
 static unsigned long long now_us(clockid_t clock) {
+#ifdef BLUEWAKE_FPS_WATCH_TEST
+    extern unsigned long long bluewake_fps_watch_test_now_us(int clock);
+    return bluewake_fps_watch_test_now_us((int)clock);
+#else
     struct timespec ts;
     clock_gettime(clock, &ts);
     return (unsigned long long)ts.tv_sec * 1000000ull + (unsigned long long)ts.tv_nsec / 1000ull;
+#endif
 }
+
+unsigned bluewake_fps_watch_marker_status(void) {
+    return (unsigned)(atomic_load_explicit(&g_marker_control, memory_order_acquire) & 7u);
+}
+
+unsigned bluewake_fps_watch_marker_count(void) {
+    return (unsigned)(atomic_load_explicit(&g_marker_control, memory_order_acquire) >> 3u);
+}
+
+bool bluewake_fps_watch_mark_slowdown(void) {
+    uint_fast64_t old = atomic_load_explicit(&g_marker_control, memory_order_acquire);
+    for (;;) {
+        const unsigned status = (unsigned)(old & 7u);
+        if ((status != BLUEWAKE_FPS_MARKER_IDLE && status != BLUEWAKE_FPS_MARKER_COMPLETE) ||
+            (old >> 3u) >= UINT_MAX)
+            return false;
+        const uint_fast64_t next = (((old >> 3u) + 1u) << 3u) | BLUEWAKE_FPS_MARKER_PENDING;
+        if (atomic_compare_exchange_weak_explicit(&g_marker_control, &old, next,
+                                                  memory_order_acq_rel, memory_order_acquire))
+            return true;
+    }
+}
+
+static void marker_finish(bool partial, const char* reason) {
+    fprintf(stderr, "[slowdown] end id=%u after=%u partial=%u reason=%s\n",
+            g_marker_id, g_marker_after, partial ? 1u : 0u, reason);
+    atomic_store_explicit(&g_marker_control,
+                         ((uint_fast64_t)g_marker_id << 3u) | BLUEWAKE_FPS_MARKER_COMPLETE,
+                         memory_order_release);
+}
+
+static void marker_print_sample(const SlowdownSample* sample, const char* phase) {
+    char line[kMarkerLine];
+    // Each line is bounded independently of guest strings/numbers. Sixteen
+    // history lines plus the begin line fit below 20 KiB in the existing pipe.
+    snprintf(line, sizeof line,
+             "[slowdown-sample] id=%u phase=%s wall_us=%llu interval_ms=%.1f retrace=%llu "
+             "vi_hz=%.1f game_fps=%.1f speed_pct=%.1f shown_fps=%.1f max_retrace_wall_ms=%.1f "
+             "cpu=%.1f gx_cpu=%.1f interp_cpu=%.1f render_cpu=%.1f "
+             "gx_wait_ms=%.1f present_ms=%.1f submit_drawable_ms=%.1f "
+             "game=%llu render_draws=%llu copies=%llu pipelines=%u audio_ms=%d throttles=%llu dropped=%llu "
+             "smooth=%u steps=%d target_fps=%.0f interp_frames=%llu interpolated=%llu "
+             "interp_draws=%llu rejected=%llu unmatched=%llu "
+             "stage=%s room=%d event=%u pos=%.6g,%.6g,%.6g "
+             "held=%u fast_forward=%u title_stage=%u no_link=%u no_present=%u reset=%u crosses_marker=%u",
+             g_marker_id, phase, sample->wall_us, (double)sample->interval_us / 1000.0, sample->retrace,
+             sample->vi_hz, sample->game_fps, sample->vi_hz / 59.94 * 100.0,
+             sample->shown_fps, (double)sample->max_gap_us / 1000.0,
+             sample->busy, sample->gx_cpu, sample->interp_cpu, sample->render_cpu,
+             sample->drain_ms, sample->present_ms, sample->submit_drawable_ms,
+             sample->game, sample->rendered_draws, sample->display_copies, sample->pipelines,
+             sample->audio_queued_ms, sample->audio_throttles, sample->audio_dropped,
+             sample->smooth ? 1u : 0u, sample->steps, target_fps(sample->smooth, sample->steps),
+             sample->interp_frames, sample->interpolated, sample->interp_draws, sample->rejected, sample->unmatched,
+             sample->stage, sample->room, sample->event, sample->x, sample->y, sample->z,
+             !!(sample->flags & kMarkerHeld), !!(sample->flags & kMarkerFast),
+             !!(sample->flags & kMarkerTitle), !!(sample->flags & kMarkerNoLink),
+             !!(sample->flags & kMarkerNoPresent), !!(sample->flags & kMarkerReset),
+             sample->wall_us > g_marker_at && sample->interval_us > sample->wall_us - g_marker_at);
+    fprintf(stderr, "%s\n", line);
+}
+
+void bluewake_fps_watch_service(void) {
+    uint_fast64_t control = atomic_load_explicit(&g_marker_control, memory_order_acquire);
+    unsigned status = (unsigned)(control & 7u);
+    if (status == BLUEWAKE_FPS_MARKER_PENDING) {
+        const uint_fast64_t capturing = (control & ~(uint_fast64_t)7u) | BLUEWAKE_FPS_MARKER_CAPTURING;
+        if (!atomic_compare_exchange_strong_explicit(&g_marker_control, &control, capturing,
+                                                     memory_order_acq_rel, memory_order_acquire))
+            return;
+        g_marker_id = (unsigned)(capturing >> 3u);
+        g_marker_after = 0;
+        g_marker_at = now_us(CLOCK_MONOTONIC);
+        g_marker_deadline = g_marker_at + 5000000ull;
+        fprintf(stderr, "[slowdown] begin id=%u wall_us=%llu before_seconds=15 after_seconds=5 "
+                        "timing=approximate submit_drawable_is_host_wait=1\n", g_marker_id, g_marker_at);
+        for (unsigned i = 0; i < g_marker_used; ++i) {
+            const SlowdownSample* sample = &g_marker_history[(g_marker_next + kMarkerHistory - g_marker_used + i) % kMarkerHistory];
+            if (sample->wall_us <= g_marker_at && g_marker_at - sample->wall_us <= 15000000ull)
+                marker_print_sample(sample, "before");
+        }
+        return;
+    }
+    // main services requests before collecting this retrace. Leave the exact
+    // deadline's final sample to that collection; a held guest with no samples
+    // gets one second's grace, then an explicitly partial terminal record.
+    if (status == BLUEWAKE_FPS_MARKER_CAPTURING && now_us(CLOCK_MONOTONIC) >= g_marker_deadline + 1000000ull)
+        marker_finish(true, "deadline-no-sample-partial");
+}
+
+static void marker_at_exit(void) {
+    if (bluewake_fps_watch_marker_status() == BLUEWAKE_FPS_MARKER_PENDING)
+        bluewake_fps_watch_service();
+    if (bluewake_fps_watch_marker_status() == BLUEWAKE_FPS_MARKER_CAPTURING)
+        marker_finish(true, "exit-partial");
+}
+
+#ifdef BLUEWAKE_FPS_WATCH_TEST
+void bluewake_fps_watch_test_finish(void) { marker_at_exit(); }
+#endif
 
 static void count_place(const char* stage, int room) {
     for (unsigned i = 0; i < kPlaces; ++i) {
@@ -150,7 +283,10 @@ static void print_summary(const char* when) {
             g_lowest_speed * 100.0, g_pipelines_made, below ? causes : " none", below ? places : " none");
 }
 
-static void print_summary_at_exit(void) { print_summary("exit"); }
+static void print_summary_at_exit(void) {
+    marker_at_exit();
+    print_summary("exit");
+}
 
 static void log_settings(bool smooth, int steps) {
     if ((int)smooth == g_logged_smooth && steps == g_logged_steps)
@@ -183,6 +319,84 @@ static float read_f32(CPUState* cpu, u32 address) {
     return value;
 }
 
+static unsigned long long marker_delta(unsigned long long current, unsigned long long previous, unsigned* flags) {
+    if (current < previous) {
+        *flags |= kMarkerReset;
+        return 0;
+    }
+    return current - previous;
+}
+
+static void marker_collect(unsigned long long wall, unsigned long long cpu_us,
+                           const DolAuroraFrameTiming* now, unsigned pipelines_total,
+                           unsigned pipelines_before, bool fast_forward, u32 link, bool smooth, int steps) {
+    SlowdownSample sample = {0};
+    sample.wall_us = wall;
+    sample.retrace = g_retrace;
+    sample.interval_us = marker_delta(wall, g_last_wall_us, &sample.flags);
+    sample.max_gap_us = g_marker_max_gap;
+    g_marker_max_gap = 0;
+    if (g_marker_clock_reset) sample.flags |= kMarkerReset;
+    g_marker_clock_reset = false;
+    const double interval = sample.interval_us ? (double)sample.interval_us : 1.0;
+    const double seconds = interval / 1e6;
+    sample.vi_hz = (double)marker_delta(g_retrace, g_last_retrace, &sample.flags) / seconds;
+    sample.shown_fps = (double)marker_delta(now->shown, g_last.shown, &sample.flags) / seconds;
+    sample.busy = 100.0 * (double)marker_delta(cpu_us, g_last_cpu_us, &sample.flags) / interval;
+    sample.gx_cpu = 100.0 * (double)marker_delta(now->gx_worker_cpu_us, g_last.gx_worker_cpu_us, &sample.flags) / interval;
+    sample.interp_cpu = 100.0 * (double)marker_delta(now->interp_helper_cpu_us, g_last.interp_helper_cpu_us, &sample.flags) / interval;
+    sample.render_cpu = 100.0 * (double)marker_delta(now->render_worker_cpu_us, g_last.render_worker_cpu_us, &sample.flags) / interval;
+    // Absolute milliseconds spent within this recorded interval. These overlap:
+    // submit/drawable is part of present, not GPU hardware execution duration.
+    sample.drain_ms = (double)marker_delta(now->drain_us, g_last.drain_us, &sample.flags) / 1000.0;
+    sample.present_ms = (double)marker_delta(now->present_us, g_last.present_us, &sample.flags) / 1000.0;
+    sample.submit_drawable_ms = (double)marker_delta(now->end_frame_us, g_last.end_frame_us, &sample.flags) / 1000.0;
+    sample.game = marker_delta(now->presents, g_last.presents, &sample.flags);
+    sample.game_fps = (double)sample.game / seconds;
+    sample.interp_frames = marker_delta(now->interp_frames, g_last.interp_frames, &sample.flags);
+    sample.interpolated = marker_delta(now->interp_interpolated, g_last.interp_interpolated, &sample.flags);
+    sample.interp_draws = marker_delta(now->interp_draws, g_last.interp_draws, &sample.flags);
+    sample.rejected = marker_delta(now->interp_rejected, g_last.interp_rejected, &sample.flags);
+    sample.unmatched = marker_delta(now->interp_unmatched, g_last.interp_unmatched, &sample.flags);
+    sample.smooth = smooth;
+    sample.steps = steps;
+    sample.rendered_draws = marker_delta(now->draws, g_last.draws, &sample.flags);
+    sample.display_copies = marker_delta(now->display_copies, g_last.display_copies, &sample.flags);
+    sample.audio_throttles = marker_delta(now->audio_throttles, g_last.audio_throttles, &sample.flags);
+    sample.audio_dropped = marker_delta(now->audio_dropped, g_last.audio_dropped, &sample.flags);
+    sample.pipelines = (unsigned)marker_delta(pipelines_total, pipelines_before, &sample.flags);
+    sample.audio_queued_ms = now->audio_queued_ms;
+    if (marker_delta(now->held_us, g_last.held_us, &sample.flags)) sample.flags |= kMarkerHeld;
+    if (fast_forward) sample.flags |= kMarkerFast;
+    if (!sample.game) sample.flags |= kMarkerNoPresent;
+    const bool player_valid = link >= 0x80000000u && link <= 0x81800000u - kPos - 12u;
+    if (!player_valid) sample.flags |= kMarkerNoLink;
+    for (u32 i = 0; i < 8u; ++i) {
+        const unsigned c = mem_read8(g_cpu, kCurStage + i);
+        sample.stage[i] = c == 0u || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                          (c >= '0' && c <= '9') || c == '_' || c == '-' ? (char)c : '?';
+    }
+    // sea_T is the intro/title stage. A missing Link is recorded independently;
+    // invalid/absent player pointers are never dereferenced for position.
+    if (strcmp(sample.stage, "sea_T") == 0) sample.flags |= kMarkerTitle;
+    sample.room = (int)(signed char)mem_read8(g_cpu, kStayRoom);
+    sample.event = mem_read8(g_cpu, kEventMode);
+    if (player_valid) {
+        sample.x = read_f32(g_cpu, link + kPos);
+        sample.y = read_f32(g_cpu, link + kPos + 4u);
+        sample.z = read_f32(g_cpu, link + kPos + 8u);
+    }
+    g_marker_history[g_marker_next] = sample;
+    g_marker_next = (g_marker_next + 1u) % kMarkerHistory;
+    if (g_marker_used < kMarkerHistory) ++g_marker_used;
+    if (bluewake_fps_watch_marker_status() == BLUEWAKE_FPS_MARKER_CAPTURING && wall > g_marker_at) {
+        marker_print_sample(&sample, "after");
+        ++g_marker_after;
+        if (wall >= g_marker_deadline)
+            marker_finish(g_marker_after < 5u, g_marker_after < 5u ? "deadline-partial" : "complete");
+    }
+}
+
 // BLUEWAKE_TEST_PLACE=retrace:x:y:z (testing only): Link stood at x, y, z of
 // the current stage from that retrace, held there for a few, so a view can be
 // reached without a route to it.
@@ -197,12 +411,23 @@ static unsigned g_stall_ms[16];
 static unsigned g_stall_count;
 
 void bluewake_fps_watch_attach(CPUState* cpu) {
+    marker_at_exit();
+    atomic_store_explicit(&g_marker_control, BLUEWAKE_FPS_MARKER_UNAVAILABLE, memory_order_release);
     g_cpu = cpu;
     const char* on = getenv("BLUEWAKE_FPS_WATCH");
     g_enabled = on == NULL || on[0] != '0';
     log_device();
-    if (g_enabled)
+    g_marker_next = g_marker_used = g_marker_id = g_marker_after = 0;
+    g_marker_at = g_marker_deadline = g_marker_last_wall = g_marker_max_gap = 0;
+    g_marker_clock_reset = false;
+    g_last_wall_us = g_last_cpu_us = g_last_retrace = 0;
+    atomic_store_explicit(&g_marker_control,
+                         g_enabled && cpu != NULL ? BLUEWAKE_FPS_MARKER_IDLE : BLUEWAKE_FPS_MARKER_UNAVAILABLE,
+                         memory_order_release);
+    if (g_enabled && !g_exit_registered) {
         atexit(print_summary_at_exit);
+        g_exit_registered = true;
+    }
     const char* place = getenv("BLUEWAKE_TEST_PLACE");
     if (place != NULL &&
         sscanf(place, "%llu:%f:%f:%f", &g_place_retrace, &g_place[0], &g_place[1], &g_place[2]) != 4)
@@ -258,6 +483,15 @@ void bluewake_fps_watch_retrace(void) {
     if (!g_enabled || g_cpu == NULL)
         return;
     const unsigned long long wall = now_us(CLOCK_MONOTONIC);
+    if (g_marker_last_wall != 0u) {
+        if (wall >= g_marker_last_wall) {
+            const unsigned long long gap = wall - g_marker_last_wall;
+            if (gap > g_marker_max_gap) g_marker_max_gap = gap;
+        } else {
+            g_marker_clock_reset = true;
+        }
+    }
+    g_marker_last_wall = wall;
     if (g_last_wall_us == 0u) {
         g_last_wall_us = wall;
         g_last_cpu_us = now_us(CLOCK_THREAD_CPUTIME_ID);
@@ -271,6 +505,7 @@ void bluewake_fps_watch_retrace(void) {
     DolAuroraFrameTiming now;
     dol_aurora_frame_timing(&now);
     const unsigned pipelines_total = bluewake_host_pipelines_created();
+    const unsigned pipelines_before = g_last_pipelines;
     const unsigned pipelines = pipelines_total >= g_last_pipelines ? pipelines_total - g_last_pipelines : 0u;
     g_last_pipelines = pipelines_total;
     g_pipelines_made += pipelines;
@@ -299,10 +534,12 @@ void bluewake_fps_watch_retrace(void) {
     const u32 link = mem_read32(g_cpu, kPlayerPointer);
     // ... nor one in which the host held the guest (a menu, the background).
     const bool held = now.held_us - g_last.held_us > 100000ull;
-    const bool skip = bluewake_fast_load_fast_forward() || now.shown == g_last.shown || speed > 1.05 || held ||
-                      link < 0x80000000u || link >= 0x81800000u;
+    const bool fast_forward = bluewake_fast_load_fast_forward();
     const bool smooth = aurora_get_frame_interpolation();
     const int steps = aurora_get_frame_interp_steps();
+    marker_collect(wall, cpu_us, &now, pipelines_total, pipelines_before, fast_forward, link, smooth, steps);
+    const bool skip = fast_forward || now.shown == g_last.shown || speed > 1.05 || held ||
+                      link < 0x80000000u || link >= 0x81800000u;
     log_settings(smooth, steps);
     if (!skip)
         ++g_watched_seconds;

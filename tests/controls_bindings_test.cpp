@@ -18,6 +18,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -57,6 +58,42 @@ void expect_rejected(const std::filesystem::path& path,const std::string& data){
     assert(before.controller_axes[0].axis==after.controller_axes[0].axis);
     assert(id==bluewake_controls_selected());assert(was_dirty==bluewake_controls_dirty());assert(applied==writes);
     assert(std::strlen(bluewake_controls_error())!=0);
+}
+void f7_profile_migration(const std::filesystem::path& path, const std::string& original) {
+    auto replace_slot = [](std::string& text, const char* field, unsigned slot, int value) {
+        size_t at = text.find(field);
+        assert(at != std::string::npos);
+        at += std::strlen(field);
+        for (unsigned i = 0; i < slot; ++i) {
+            at = text.find(',', at);
+            assert(at != std::string::npos);
+            ++at;
+        }
+        const auto end = text.find_first_of(",\n", at);
+        assert(end != std::string::npos);
+        text.replace(at, end - at, std::to_string(value));
+    };
+    std::string previous = original, migrated = original;
+    // All keyboard binding families are migrated, including an alternate host
+    // action. Exact writer output proves every other value/profile survives.
+    for (const auto& slot : {std::pair{"key_buttons=", 2u}, {"key_axes=", 5u}, {"host_keys=", 1u}}) {
+        replace_slot(previous, slot.first, slot.second, SDL_SCANCODE_F7);
+        replace_slot(migrated, slot.first, slot.second, PAD_KEY_INVALID);
+    }
+    write(path, previous);
+    assert(bluewake_controls_load());
+    assert(bluewake_controls_dirty());
+    BluewakeControlsSnapshot state{};
+    bluewake_controls_snapshot(&state);
+    assert(state.key_buttons[2] == PAD_KEY_INVALID && state.key_axes[5] == PAD_KEY_INVALID &&
+           state.action_keys[0][1] == PAD_KEY_INVALID);
+    assert(std::strstr(bluewake_controls_status(), "old F7 bindings") != nullptr);
+    assert(save());
+    assert(read(path) == migrated);
+    assert(bluewake_controls_load() && !bluewake_controls_dirty());
+    write(path, original);
+    assert(bluewake_controls_load());
+    assert(save() && read(path) == original);
 }
 void trigger_modifier_contract(SDL_Gamepad& pad,SDL_Gamepad& other,const std::filesystem::path& file) {
     BluewakeControlsSnapshot original{},other_original{},state{};
@@ -348,6 +385,9 @@ int main(){
     assert(state.key_buttons[7]==SDL_SCANCODE_SPACE);assert(state.controller_axes[0].axis==SDL_GAMEPAD_AXIS_LEFTY);
     assert(!bluewake_controls_set_key(false,7,SDL_SCANCODE_F1));
     assert(!bluewake_controls_set_key(false,7,SDL_SCANCODE_F6));
+    assert(bluewake_controls_key_reserved(SDL_SCANCODE_F7));
+    assert(!bluewake_controls_set_key(false,7,SDL_SCANCODE_F7));
+    assert(!bluewake_controls_set_key(true,0,SDL_SCANCODE_F7));
     assert(!bluewake_controls_set_key(false,7,SDL_SCANCODE_COUNT));
     assert(!bluewake_controls_set_button(7,SDL_GAMEPAD_BUTTON_COUNT));
     assert(!bluewake_controls_set_button(7,SDL_GAMEPAD_BUTTON_BACK));
@@ -439,6 +479,7 @@ int main(){
     assert(!bluewake_controls_set_action_key(0,2,SDL_SCANCODE_V));
     assert(!bluewake_controls_set_action_key(BLUEWAKE_CONTROLS_ACTIONS,0,SDL_SCANCODE_V));
     assert(!bluewake_controls_set_action_key(0,0,SDL_SCANCODE_F1));
+    assert(!bluewake_controls_set_action_key(0,0,SDL_SCANCODE_F7));
     assert(!bluewake_controls_set_action_button(0,SDL_GAMEPAD_BUTTON_BACK));
     assert(!bluewake_controls_set_action_button(BLUEWAKE_CONTROLS_ACTIONS,SDL_GAMEPAD_BUTTON_NORTH));
     assert(bluewake_controls_set_keyboard_enabled(true));
@@ -549,6 +590,7 @@ int main(){
     replacement_contract(root,file);missing_target_load_contract(root,file);concurrent_saves(root,file);
     write(file,action_good);assert(bluewake_controls_load());
 #endif
+    f7_profile_migration(file, action_good);
     bad=action_good;const auto host_at=bad.find("host_keys=");bad.replace(host_at,bad.find('\n',host_at)-host_at,"host_keys=58,-1,225,229,-1,-1,43,-1");expect_rejected(file,bad);
     bad=action_good;const auto host_buttons=bad.find("host_buttons=");bad.replace(host_buttons,bad.find('\n',host_buttons)-host_buttons,"host_buttons=4,7,8,9");expect_rejected(file,bad); // Back reserved.
     // Reaching the profile limit cannot leave an old device's actions active

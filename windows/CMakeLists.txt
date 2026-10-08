@@ -708,6 +708,7 @@ target_link_libraries(bluewake_memory_card_io_test PRIVATE bluewake_posix_compat
 
     add_executable(bluewake_fps_watch_test
         ${BLUEWAKE_REPO_ROOT}/tests/fps_watch_test.c ${BLUEWAKE_HOST_SRC}/fps_watch.c)
+    target_compile_definitions(bluewake_fps_watch_test PRIVATE BLUEWAKE_FPS_WATCH_TEST=1)
     target_include_directories(bluewake_fps_watch_test PRIVATE
         ${BLUEWAKE_HOST_SRC} ${BLUEWAKE_COMPAT_INCLUDES})
     target_compile_options(bluewake_fps_watch_test PRIVATE ${BLUEWAKE_COMPAT_FORCE_INCLUDE})

@@ -11,6 +11,7 @@
 #include "card_menu.h"
 #include "asset_pack_menu.h"
 #include "network_menu.h"
+#include "fps_watch.h"
 #include "controls_test_support.h"
 #include <aurora/aurora.h>
 #include <aurora/gfx.h>
@@ -48,6 +49,11 @@ void bw_settings_ui_mock_initialize() {
 void bw_settings_ui_mock_preview_bind(BwAudioPreview* preview) { preview_handle = preview; }
 void bw_settings_ui_mock_preview_selection(const std::string& utf8) { preview_selection = utf8; }
 unsigned bw_settings_ui_mock_preview_picker_calls() { return preview_picker_calls; }
+void bw_settings_ui_mock_marker_state(unsigned status, unsigned count) {
+    assert(status <= BLUEWAKE_FPS_MARKER_UNAVAILABLE);
+    effects.slowdown_status = status;
+    effects.slowdown_count = count;
+}
 std::wstring bw_settings_ui_test_preview_file() {
     ++preview_picker_calls;
     return preview_selection.empty() ? std::wstring() : std::filesystem::u8path(preview_selection).wstring();
@@ -60,6 +66,17 @@ BwSettingsUiEffects bw_settings_ui_mock_effects() {
 }
 
 extern "C" {
+bool bluewake_fps_watch_mark_slowdown(void) {
+    ++effects.slowdown_requests;
+    if (effects.slowdown_status == BLUEWAKE_FPS_MARKER_PENDING ||
+        effects.slowdown_status == BLUEWAKE_FPS_MARKER_CAPTURING ||
+        effects.slowdown_status == BLUEWAKE_FPS_MARKER_UNAVAILABLE) return false;
+    effects.slowdown_status = BLUEWAKE_FPS_MARKER_PENDING;
+    ++effects.slowdown_count;
+    return true;
+}
+unsigned bluewake_fps_watch_marker_status(void) { return effects.slowdown_status; }
+unsigned bluewake_fps_watch_marker_count(void) { return effects.slowdown_count; }
 void bluewake_quick_items_configure(bool enabled) { ++effects.quick_items_calls; effects.quick_items_enabled = enabled; }
 void bluewake_enhancement_faster_wind(bool enabled) { ++effects.faster_wind_calls; effects.faster_wind_enabled = enabled; }
 void bluewake_enhancement_faster_boots(bool enabled) { ++effects.faster_boots_calls; effects.faster_boots_enabled = enabled; }

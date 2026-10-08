@@ -334,11 +334,24 @@ template<size_t N> void write_numbers(std::ostream& out, const char* name, const
     for (size_t i = 0; i < N; ++i) out << (i ? "," : "") << values[i];
     out << '\n';
 }
-bool parse(std::istream& in, Settings& candidate) {
+bool parse(std::istream& in, Settings& candidate, unsigned& migrated_f7) {
     unsigned global_seen = 0;
     std::vector<unsigned> profile_seen;
     int section = -2;
     int version = 0;
+    migrated_f7 = 0;
+    // F7 became a host diagnostic key after profiles already allowed it. Only
+    // retire those slots; rejecting the file would discard unrelated mappings.
+    auto load_key = [&](int value, int32_t& destination) {
+        if (value == SDL_SCANCODE_F7) {
+            destination = PAD_KEY_INVALID;
+            ++migrated_f7;
+            return true;
+        }
+        if (bluewake_controls_key_reserved(value)) return false;
+        destination = value;
+        return true;
+    };
     keyboard_defaults(candidate.keyboard);
     std::string line;
     while (std::getline(in, line)) {
@@ -370,8 +383,8 @@ bool parse(std::istream& in, Settings& candidate) {
         if (section == -1) {
             if (name == "version") { bit = 1; if (value != "1" && value != "2" && value != "3" && value != "4") return false; version = value[0] - '0'; }
             else if (name == "keyboard_enabled") { bit = 2; if (!numbers(value, values, 1) || (values[0] != 0 && values[0] != 1)) return false; candidate.keyboard.keyboard_enabled = values[0] != 0; }
-            else if (name == "key_buttons") { bit = 4; if (!numbers(value, values, 12)) return false; for (unsigned i=0;i<12;++i) { if (bluewake_controls_key_reserved(values[i])) return false; candidate.keyboard.key_buttons[i]=values[i]; } }
-            else if (name == "key_axes") { bit = 8; if (!numbers(value, values, 10)) return false; for (unsigned i=0;i<10;++i) { if (bluewake_controls_key_reserved(values[i])) return false; candidate.keyboard.key_axes[i]=values[i]; } }
+            else if (name == "key_buttons") { bit = 4; if (!numbers(value, values, 12)) return false; for (unsigned i=0;i<12;++i) if (!load_key(values[i], candidate.keyboard.key_buttons[i])) return false; }
+            else if (name == "key_axes") { bit = 8; if (!numbers(value, values, 10)) return false; for (unsigned i=0;i<10;++i) if (!load_key(values[i], candidate.keyboard.key_axes[i])) return false; }
             else if (name == "automatic") { bit = 16; if (!numbers(value, values, 1) || (values[0] != 0 && values[0] != 1)) return false; candidate.automatic = values[0] != 0; }
             else if (name == "preferred_guid") { bit = 32; if (!value.empty() && !guid_valid(value)) return false; candidate.preferred_guid=value; }
             else if (name == "preferred_serial") { bit = 64; if (!unhex(value, candidate.preferred_serial)) return false; }
@@ -379,8 +392,7 @@ bool parse(std::istream& in, Settings& candidate) {
                 const unsigned count = version >= 3 ? BLUEWAKE_CONTROLS_ACTIONS * 2u : 6u;
                 bit = 128; if (version < 2 || !numbers(value, values, count)) return false;
                 for (unsigned i = 0; i < count; ++i) {
-                    if (bluewake_controls_key_reserved(values[i])) return false;
-                    candidate.keyboard.action_keys[i / 2][i % 2] = values[i];
+                    if (!load_key(values[i], candidate.keyboard.action_keys[i / 2][i % 2])) return false;
                 }
             }
             if (!bit || global_seen & bit) return false;
@@ -948,9 +960,11 @@ bool bluewake_controls_load(void){
     const auto size=file.tellg();if(size<0||size>262144)return fail("Invalid controls.ini size");file.seekg(0);
 #endif
     Settings candidate;
-    if(!parse(file,candidate))return fail("Invalid controls.ini; current controls were preserved");
-    saved=std::move(candidate);selected=0;dirty=false;apply_keyboard=true;apply_controller=true;
-    error.clear();status="Controls loaded";bluewake_controls_refresh();
+    unsigned migrated_f7 = 0;
+    if(!parse(file,candidate,migrated_f7))return fail("Invalid controls.ini; current controls were preserved");
+    saved=std::move(candidate);selected=0;dirty=migrated_f7!=0;apply_keyboard=true;apply_controller=true;
+    error.clear();status=migrated_f7 ? "Controls loaded; old F7 bindings are now Unbound (F7 marks slowdowns)" : "Controls loaded";
+    bluewake_controls_refresh();
     // Reloading identical mappings must still require held host actions to release.
     bluewake_controls_cancel_actions();return true;
 }
@@ -959,5 +973,5 @@ const char* bluewake_controls_error(void){return error.c_str();}
 const char* bluewake_controls_status(void){return status.c_str();}
 const char* bluewake_controls_button_name(unsigned slot){return slot<12?button_names[slot]:"";}
 const char* bluewake_controls_axis_name(unsigned slot){return slot<10?axis_names[slot]:"";}
-bool bluewake_controls_key_reserved(int32_t scancode){return !valid_key(scancode)||scancode==SDL_SCANCODE_UNKNOWN||scancode==SDL_SCANCODE_ESCAPE||scancode==SDL_SCANCODE_F1||scancode==SDL_SCANCODE_F5||scancode==SDL_SCANCODE_F6||scancode==SDL_SCANCODE_F8||scancode==SDL_SCANCODE_F9||scancode==SDL_SCANCODE_F10||scancode==SDL_SCANCODE_F11;}
+bool bluewake_controls_key_reserved(int32_t scancode){return !valid_key(scancode)||scancode==SDL_SCANCODE_UNKNOWN||scancode==SDL_SCANCODE_ESCAPE||scancode==SDL_SCANCODE_F1||scancode==SDL_SCANCODE_F5||scancode==SDL_SCANCODE_F6||scancode==SDL_SCANCODE_F7||scancode==SDL_SCANCODE_F8||scancode==SDL_SCANCODE_F9||scancode==SDL_SCANCODE_F10||scancode==SDL_SCANCODE_F11;}
 }

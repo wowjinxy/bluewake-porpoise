@@ -11,6 +11,7 @@
 #include "settings_catalog.h"
 #include "controls_bindings.h"
 #include "controls_menu.h"
+#include "fps_watch.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -122,6 +123,77 @@ void search(const char* query) {
     frame();
 }
 void clear_search() { click("Clear"); }
+void slowdown_marker_ui_checks(const std::filesystem::path& file) {
+    const auto profile_before = read_file(file);
+    const auto settings_before = read_file(file.parent_path() / "settings.ini");
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false);
+    frame();
+    require(!bw_settings_ui_test_menu_open(), "Marker hotkey fixture must start in the game");
+    bw_settings_ui_mock_marker_state(BLUEWAKE_FPS_MARKER_IDLE, 0);
+    const auto requests_before = bw_settings_ui_mock_effects().slowdown_requests;
+    require(bw_settings_key(0x76, 0) == 1, "Actual F7 handler did not consume the diagnostic key");
+    frame();
+    require(!bw_settings_ui_test_menu_open() &&
+            bw_settings_ui_mock_effects().slowdown_requests == requests_before + 1 &&
+            bluewake_fps_watch_marker_count() == 1,
+            "F7 did not request exactly one marker while leaving the game open");
+    require(rendered_text.find("Slowdown marked; waiting for the game.") != std::string::npos,
+            "F7 did not draw the pending acknowledgement");
+    auto* notice = ImGui::FindWindowByName("##bluewake-slowdown");
+    const auto passive = ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    require(notice && (notice->Flags & passive) == passive, "Marker acknowledgement can take input or focus");
+    require(bw_settings_key(0x76, 0) == 1 && bluewake_fps_watch_marker_count() == 1,
+            "An F7 press while pending created a duplicate marker");
+    bw_settings_ui_mock_marker_state(BLUEWAKE_FPS_MARKER_CAPTURING, 1);
+    frame();
+    require(rendered_text.find("recording the next 5 seconds") != std::string::npos,
+            "Active marker status was not shown");
+    bw_settings_ui_mock_marker_state(BLUEWAKE_FPS_MARKER_COMPLETE, 1);
+    frame();
+    require(rendered_text.find("Slowdown capture saved in the session log.") != std::string::npos,
+            "Completed marker status was not shown");
+    SDL_Event reopen{}; reopen.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    reopen.gbutton.button = SDL_GAMEPAD_BUTTON_BACK;
+    require(bluewake_settings_menu_event(&reopen), "Cannot reopen settings for marker button");
+    frame(); frame();
+    click("Developer");
+    require(rendered_text.find("15 seconds before") != std::string::npos &&
+            rendered_text.find("5 seconds after") != std::string::npos &&
+            rendered_text.find("logs") != std::string::npos && has_item("Open the session logs"),
+            "Diagnostic panel omitted capture window or log location");
+    click("Mark slowdown (F7)");
+    require(!bw_settings_ui_test_menu_open() && bluewake_fps_watch_marker_count() == 2,
+            "Accepted marker button did not close settings and enqueue once");
+    require(bluewake_settings_menu_event(&reopen), "Cannot reopen pending marker settings");
+    frame(); frame();
+    require((item("Mark slowdown (F7)").item_flags & ImGuiItemFlags_Disabled) != 0,
+            "Marker button was enabled while a capture was pending");
+    // Reserved keys must stay in binding capture, rather than invoke the host
+    // action or overwrite a saved gameplay mapping.
+    const auto captured_requests = bw_settings_ui_mock_effects().slowdown_requests;
+    require(bluewake_controls_menu_begin_capture(BLUEWAKE_CAPTURE_KEY_BUTTON, 7), "Cannot start key capture");
+    require(bw_settings_key(0x76, 0) == 1 && bluewake_controls_menu_capturing() &&
+            bw_settings_ui_mock_effects().slowdown_requests == captured_requests,
+            "F7 bypassed binding capture or triggered a marker while rebinding");
+    SDL_Event key{}; key.type = SDL_EVENT_KEY_DOWN; key.key.scancode = SDL_SCANCODE_F7;
+    require(bluewake_settings_menu_event(&key) && bluewake_controls_menu_capturing(),
+            "SDL binding capture accepted the reserved F7 key");
+    bluewake_controls_menu_cancel_capture();
+    bw_settings_ui_mock_marker_state(BLUEWAKE_FPS_MARKER_UNAVAILABLE, 2);
+    frame();
+    click("Mark slowdown (F7)");
+    require(bw_settings_ui_test_menu_open() && bluewake_fps_watch_marker_count() == 2 &&
+            rendered_text.find("Slowdown capture is unavailable.") != std::string::npos,
+            "Rejected marker button closed settings or reported a saved capture");
+    require(bw_settings_key(0x75, 0) == 1 && bw_settings_key(0x77, 0) == 1 &&
+            bw_settings_ui_mock_effects().state_requests == 0,
+            "Existing F6/F8 menu protection changed");
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, true);
+    frame();
+    require(!bw_settings_ui_test_menu_open(), "Cannot close marker fixture menu");
+    require(read_file(file) == profile_before && read_file(file.parent_path() / "settings.ini") == settings_before,
+            "Diagnostic marker changed saved controls or settings");
+}
 #ifdef _WIN32
 void controls_save_retry_ui_checks(const std::filesystem::path& file) {
     ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false);
@@ -763,6 +835,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
         controls_save_retry_ui_checks(controls_file);
 #endif
+        slowdown_marker_ui_checks(controls_file);
         bw_settings_ui_mock_preview_bind(nullptr);
         preview.reset();
         const auto effects = bw_settings_ui_mock_effects();
@@ -770,7 +843,7 @@ int main(int argc, char** argv) {
                 effects.state_requests == 0, "Headless UI test reached a native/GPU/state/quit operation");
         ImGui::DestroyContext();
         std::ofstream(folder / "result.txt") << "PASS: actual draw_menu, search/results, preset preview/cancel/Escape/section apply, "
-            "launch override separation, atomic save, GUID/serial profile preservation and reload. No SDL init/video/native input.\n";
+            "launch override separation, atomic save, GUID/serial profile preservation and reload, F7/button markers and passive status. No SDL init/video/native input.\n";
         std::cout << "PASS actual headless ImGui settings UI; evidence: " << folder.string() << '\n';
         return 0;
     } catch (const std::exception& error) {

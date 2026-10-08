@@ -3,6 +3,10 @@
 
 #include "core/cpu.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // A [fps-dip] line when presentation falls below 95% of the selected 30/60/120
 // FPS mode: the frames shown, the game's speed, how many game frames
 // got an in-between frame, the draws rejected or unmatched, the stage, room and
@@ -14,6 +18,22 @@
 void bluewake_fps_watch_attach(CPUState* cpu);
 // Once per retrace.
 void bluewake_fps_watch_retrace(void);
+
+enum BluewakeFpsMarkerStatus {
+    BLUEWAKE_FPS_MARKER_IDLE = 0,
+    BLUEWAKE_FPS_MARKER_PENDING = 1,
+    BLUEWAKE_FPS_MARKER_CAPTURING = 2,
+    BLUEWAKE_FPS_MARKER_COMPLETE = 3,
+    BLUEWAKE_FPS_MARKER_UNAVAILABLE = 4
+};
+// Thread-safe request/status only. A second press while pending/capturing is
+// rejected. Count is the number of accepted marker IDs in this attachment.
+bool bluewake_fps_watch_mark_slowdown(void);
+unsigned bluewake_fps_watch_marker_status(void);
+unsigned bluewake_fps_watch_marker_count(void);
+// Game thread only, including held retraces. Consumes requests and deadlines;
+// no guest reads, worker queries or clock read while idle.
+void bluewake_fps_watch_service(void);
 
 // Pure classification shared with the synthetic regression. NULL means no dip.
 const char* bluewake_fps_watch_reason(double shown, double speed, bool smooth,
@@ -34,5 +54,14 @@ const char* bluewake_fps_watch_cause(double speed, double game_busy, double gx_w
 double bluewake_fps_watch_cpu_percent(unsigned long long current,
                                      unsigned long long previous,
                                      unsigned long long wall_us);
+
+#ifdef BLUEWAKE_FPS_WATCH_TEST
+// Exercises the same terminal path as atexit without ending the fixture.
+void bluewake_fps_watch_test_finish(void);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

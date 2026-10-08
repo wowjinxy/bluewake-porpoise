@@ -492,6 +492,7 @@ static bool host_noninteractive_contract(const char* phase) {
 // Internal guest-controller qualification; never reads or drives desktop input.
 static bool g_shortcut_test_enabled;
 static u64 g_shortcut_test_start, g_shortcut_test_length;
+static u64 g_slowdown_marker_test_retrace;
 BLUEWAKE_TRACE_STORAGE(g_pad_trace);
 BLUEWAKE_TRACE_STORAGE(g_pad_wire_trace);
 BLUEWAKE_TRACE_STORAGE(g_pad_si_trace);
@@ -5600,6 +5601,13 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         bluewake_autosave_retrace(cpu, g_host_retrace_count,
                                   g_autosave_host_safe && !host_reward_mutators_held(),
                                   autosave_input_blocked);
+        if (g_slowdown_marker_test_retrace != 0u &&
+            g_host_retrace_count >= g_slowdown_marker_test_retrace) {
+            g_slowdown_marker_test_retrace = 0u;
+            fprintf(stderr, "[slowdown-test] request accepted=%u\n",
+                    bluewake_fps_watch_mark_slowdown() ? 1u : 0u);
+        }
+        bluewake_fps_watch_service();
         if (!mutators_held) {
             if (!g_noninteractive) bluewake_mouse_camera_retrace();
             bluewake_enhancement_hooks_retrace(cpu);
@@ -8778,6 +8786,15 @@ int main(int argc, char** argv) {
     bluewake_jump_button_attach(&cpu);
     bluewake_sprint_attach(&cpu);
     bluewake_fps_watch_attach(&cpu);
+    if (g_noninteractive) {
+        const char* marker_test = getenv("BLUEWAKE_TEST_SLOWDOWN_MARK_RETRACE");
+        if (marker_test != NULL) {
+            char* end = NULL;
+            const u64 retrace = strtoull(marker_test, &end, 10);
+            if (end != marker_test && *end == '\0' && retrace != 0u)
+                g_slowdown_marker_test_retrace = retrace;
+        }
+    }
     bluewake_fast_load_attach(&cpu);
     bluewake_quick_doors_attach(&cpu);
     bluewake_draw_tags_attach(&cpu);
