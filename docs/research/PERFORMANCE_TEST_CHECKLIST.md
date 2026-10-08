@@ -721,3 +721,76 @@ it is a narrower unimplemented experiment, not an established speedup. Avoid a
 GD initializer or renderer-library rewrite without evidence of time spent there.
 Installed binaries and the gated tester remain unchanged. Tingle rescue wait-skip
 stays disabled, and every earlier negative experiment remains recorded.
+
+
+## October 7, 2026 night: isolate GX statistics from the gather-pipe flag
+
+The actual installed host's per-draw submitted/rejected atomics shared the
+64-byte cache line at RVA `0x823AC0` with `g_display_copy_pending`. The game
+thread reads that flag on normal gather-pipe writes; the GX worker increments
+the submitted counter for each draw. The native worker profile has 184 samples
+at the locked increment/next instruction. These samples identify a contention
+candidate; they are not exclusive stall-time measurements.
+
+Active runtime patch `0164-isolate-draw-statistics-from-display-copy-request.patch`
+groups both counters in one `alignas(64)` object of exactly 64 bytes. Their
+types, atomic operations, memory order, reset, increment and shutdown reads are
+preserved. The actual candidate PDB places counters at RVA `0x823B00`, and the
+flag at `0x823B40`, in distinct cache lines. Only the backend and graphics SDK
+objects change; the other archive members, 64 direct host objects, imports and
+embedded manifest are retained. The translated game module remains `976184c6`.
+Candidate host SHA-256:
+`79e595cb323481ac00e395c817acddaf13e9bdbcb026cd3299c5006a59e92a8d`.
+
+Four serialized warm title runs used the same immutable cache seed, native
+copied card, private SRAM, settings, module and affinity. No compiler or other
+owned game overlapped. No capture, sampling, shader compilation, scripted input,
+physical input, audio output or presentation occurred in these timing runs.
+
+| Order | Build | Wall seconds | Process CPU seconds |
+| --- | --- | ---: | ---: |
+| A1 | Installed control | 38.188 | 55.734375 |
+| B1 | Counter isolation | 36.063 | 52.796875 |
+| B2 | Counter isolation | 39.719 | 54.921875 |
+| A2 | Installed control | 43.078 | 57.312500 |
+
+Both pairs improve: CPU -5.271%/-4.171%, wall -5.565%/-7.797%.
+Mean CPU falls **4.713%**, wall time **6.748%**, process cycles **4.053%**.
+This meets the predeclared timing policy of both pairs improving CPU/wall and
+both means improving at least 1%. These are complete-process measurements on
+one unpaced hidden intro route, not displayed FPS, latency percentiles, or
+proof that the visible 20 FPS dip is resolved.
+
+Independent correctness passes match complete intro P6 pixels at VI 1103 and
+all six complete logical CPU/MEM1/MEM2/ordered REL alias hashes at VI
+300/600/900/1200/1500/1800. Checkpoint timing is excluded. Both Dragon Roost
+native cases pass all 22 save/inventory/scene/rendering checks; their complete
+853x480 P6 frames and loaded checkpoint contexts also match. Original saves
+and prior diagnostic inputs remain immutable.
+
+Preserve the strict whole-GX-summary comparison failures: eight extra textured
+draws and sixteen extra zero-quads occur in both control and candidate
+observations. The first difference appears before capture or shutdown, and
+its cause is unproven. Counters are not lost: submitted equals planned.
+Direct-query totals also vary. Do not claim complete command equality or
+guest-state equality between the six checkpoints. Additional complete state
+and gameplay-image comparisons qualify this small storage-only change despite
+the existing asynchronous-work variation; the strict failed analysis remains.
+
+Source promotion: the normal builder verifies all 13 active runtime patches,
+with candidate tree `c1f8d1e5f6c56826c90982eb0f827c19b0417fcd`. The three
+materialized SDK files match the compiled candidate bytes exactly. Local
+receipts under `build/performance-focus-20261007/`:
+
+- `counters-observation-v1.json`, SHA-256
+  `814509db1a0e46d7fb6dff001155e8dbce27b57de04c8dbe4944313ae3d01bee`.
+- `counters-checkpoint-comparison1.json`, SHA-256
+  `c598c2fb8c065a645fef476d9f2b384b478534889a914d9d36956267aa1a3cbe`.
+- `counters-dragon-comparison-v1.json`, SHA-256
+  `5cda98d4e61a979972864e309532718f534778186a8dd12080cda446a11f38ed`.
+- `draw-counter-host1/promotion1/verification.json`, SHA-256
+  `9c6d6df7125f91388d74c1edb3db4228aa43c4872b38559a46f4921ff03f0386`.
+
+Tester packaging/install qualification follows separately. Tingle rescue
+wait-skip remains disabled; all negative experiments and other optimizer work
+are preserved.

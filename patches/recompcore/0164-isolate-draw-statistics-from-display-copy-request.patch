@@ -1,0 +1,78 @@
+Subject: [PATCH] Isolate per-draw statistics from the display-copy request flag
+
+Keep the submitted and rejected counters together in one aligned 64-byte
+object. This prevents their per-draw atomic writes from invalidating
+the gather-pipe display-copy request flag on the game thread. Counter
+types, width, memory order, reset, increment and shutdown reads stay
+unchanged. The private linked host confirms the actual address isolation.
+
+---
+diff --git a/GXRuntime/backends/aurora/aurora_backend.cpp b/GXRuntime/backends/aurora/aurora_backend.cpp
+--- a/GXRuntime/backends/aurora/aurora_backend.cpp
++++ b/GXRuntime/backends/aurora/aurora_backend.cpp
+@@ -73,8 +73,7 @@
+ bool g_shadow_frontend_enabled = false;
+ std::atomic<bool> g_shadow_frontend_failed{false};
+ gxruntime::gxcore::GxCoreSink g_core_sink;
+-std::atomic<unsigned long long> g_core_submitted{0};
+-std::atomic<unsigned long long> g_core_rejected{0};
++CoreDrawCounters g_core_draw_counts;
+ std::atomic<bool> g_display_copy_pending{false};
+ 
+ unsigned long long g_shadow_last_draw_total = 0;
+@@ -490,8 +489,8 @@
+             gx_aurora::host_plan_filter:nullptr,nullptr);
+         gx_aurora::g_core_sink.set_plan_observer(gx_aurora::core_plan_observer, nullptr);
+         gx_aurora::g_core_sink.set_copy_observer(gx_aurora::core_copy_observer, nullptr);
+-        gx_aurora::g_core_submitted.store(0, std::memory_order_relaxed);
+-        gx_aurora::g_core_rejected.store(0, std::memory_order_relaxed);
++        gx_aurora::g_core_draw_counts.submitted.store(0, std::memory_order_relaxed);
++        gx_aurora::g_core_draw_counts.rejected.store(0, std::memory_order_relaxed);
+         aurora::gfx::gxcore::reset_texture_cache();
+         std::fprintf(stderr,
+                      "[gx-core] renderer = gxcore (default): draws route "
+@@ -640,7 +639,7 @@
+                      "logic_op_ignored=%llu dst_alpha_active=%llu "
+                      "early_depth_active=%llu ztexture_active=%llu "
+                      "ztexture_ignored=%llu\n",
+-                     gx_aurora::g_core_submitted.load(std::memory_order_relaxed), gx_aurora::g_core_rejected.load(std::memory_order_relaxed),
++                     gx_aurora::g_core_draw_counts.submitted.load(std::memory_order_relaxed), gx_aurora::g_core_draw_counts.rejected.load(std::memory_order_relaxed),
+                      gx_aurora::g_shadow_frontend_failed.load(std::memory_order_relaxed) ? 1 : 0,
+                      gaps.draws_planned, gaps.draws_skipped,
+                      gaps.draws_noop, gaps.cull_all_draws, gaps.missing_vcd,
+diff --git a/GXRuntime/backends/aurora/aurora_backend_private.h b/GXRuntime/backends/aurora/aurora_backend_private.h
+--- a/GXRuntime/backends/aurora/aurora_backend_private.h
++++ b/GXRuntime/backends/aurora/aurora_backend_private.h
+@@ -89,8 +89,15 @@
+ extern bool g_shadow_frontend_enabled;
+ extern std::atomic<bool> g_shadow_frontend_failed;
+ extern gxruntime::gxcore::GxCoreSink g_core_sink;
+-extern std::atomic<unsigned long long> g_core_submitted;
+-extern std::atomic<unsigned long long> g_core_rejected;
++// These per-draw writes must not share a cache line with the display-copy
++// request flag that the guest thread reads at each gather-pipe write.
++struct alignas(64) CoreDrawCounters {
++    std::atomic<unsigned long long> submitted{0};
++    std::atomic<unsigned long long> rejected{0};
++};
++static_assert(sizeof(CoreDrawCounters) == 64);
++static_assert(alignof(CoreDrawCounters) == 64);
++extern CoreDrawCounters g_core_draw_counts;
+ // Set by the copy observer (the FIFO worker's thread in worker mode) when a
+ // display copy ends a frame; the main thread presents and clears it.
+ extern std::atomic<bool> g_display_copy_pending;
+diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
+--- a/GXRuntime/backends/aurora/aurora_graphics.cpp
++++ b/GXRuntime/backends/aurora/aurora_graphics.cpp
+@@ -132,9 +132,9 @@
+                      c.kcolors[1][0], c.kcolors[1][1], c.kcolors[1][2], c.kcolors[1][3]);
+     }
+     if (aurora::gfx::gxcore::submit_draw_plan(plan))
+-        g_core_submitted.fetch_add(1, std::memory_order_relaxed);
++        g_core_draw_counts.submitted.fetch_add(1, std::memory_order_relaxed);
+     else
+-        g_core_rejected.fetch_add(1, std::memory_order_relaxed);
++        g_core_draw_counts.rejected.fetch_add(1, std::memory_order_relaxed);
+ }
+ 
+ // Written by the FIFO worker and consumed only after its drain. Wind Waker's

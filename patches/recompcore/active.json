@@ -48,6 +48,10 @@
     {
       "path": "patches/recompcore/0163-retain-two-texture-identities.patch",
       "sha256": "1573f10a8aa6189dd56233f7e80fc98deba53fb649656b9f1a1981785ccd18f5"
+    },
+    {
+      "path": "patches/recompcore/0164-isolate-draw-statistics-from-display-copy-request.patch",
+      "sha256": "4ff5936e14ef35b7eb374dbb6c9e66dd4d39a3521eadb20b0cc9649109ab0796"
     }
   ]
 }
