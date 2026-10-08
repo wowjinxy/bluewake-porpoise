@@ -6,6 +6,12 @@ builders. The verifier checks their SHA256 values and the complete resulting
 tracked tree; local dependency edits and partial patch sets stop the build.
 The dependency lock and build provenance record this recipe.
 
+The inactive `drafts/quantized-psq-scaling.patch` and opt-in composite generator
+helpers are qualified separately in the
+[October 8 PSQ experiment](../../docs/research/QUANTIZED_PSQ_2026-10-08.md).
+The draft is not part of `active.json`; it must not be silently applied to a
+normal SDK checkout or treated as a qualified performance gain.
+
 - 0152 adapts [Elliott Tate's transform snapshot reuse](https://github.com/elliotttate/RecompCore/commit/ef3e17f81f512a655ba40e64f1d4eda09ef50d54),
   retaining BlueWake's existing runtime fixes and optional full-copy verification.
 - 0153 adapts [s-ilent's controller enumeration patch](https://github.com/s-ilent/Wind-Waker-Recomp/commit/b643dda2bb402e369f4a565073da52a586e33423).

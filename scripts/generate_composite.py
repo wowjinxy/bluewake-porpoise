@@ -302,6 +302,148 @@ def apply_rel_data_relocations(rel_bins, section_maps):
                                      (raw & 0xFFFF0003) | delta_value)
 
 
+def quantized_psq_helpers():
+    """Experimental GQR4..7 helpers; preserve GQR0..3's old type0 paths.
+
+    Quantized inlining adapts InfraredGod's RecompCore 09ad2a1609028a3870790d540ba0e677a94d15c4
+    (GPL-3.0-or-later). The generator keeps this opt-in: historically forcing
+    existing PSQ helpers inline enlarged the module and slowed six local pairs.
+    """
+    return r'''/* Experimental quantized PSQ inlining, adapted from InfraredGod's
+   RecompCore 09ad2a1609028a3870790d540ba0e677a94d15c4 (GPL-3.0-or-later).
+   Preserve GQR snapshots and each lane's canonical callback/commit order.
+   GQR0..3 retain the exact prior type0 helper bodies below, under private names. */
+static inline bool bw_composite_psq_type0_load_inline(CPUState* cpu, u8 frD, u32 ea, bool w,
+                                       u8 gqr, bool indexed, u32 cia) {
+    const u32 g = cpu->gqr[gqr & 7u];
+    if (((g >> 16) & 7u) != 0u || (!indexed && (cpu->hid2 & PPC_HID2_LSQE) == 0u))
+        return ppc_psq_load(cpu, frD, ea, w, gqr, indexed, cia);
+    cpu->fpr[frD] = f64_value(convert_to_double(mem_read32(cpu, ea)));
+    cpu->ps1[frD] = w ? 1.0 : f64_value(convert_to_double(mem_read32(cpu, ea + 4u)));
+    return true;
+}
+
+static inline bool bw_composite_psq_type0_store_inline(CPUState* cpu, u8 frS, u32 ea, bool w,
+                                        u8 gqr, bool indexed, u32 cia) {
+    const u32 g = cpu->gqr[gqr & 7u];
+    if ((g & 7u) != 0u || (!indexed && (cpu->hid2 & PPC_HID2_LSQE) == 0u))
+        return ppc_psq_store(cpu, frS, ea, w, gqr, indexed, cia);
+    mem_write32(cpu, ea, convert_to_single_ftz(f64_bits(cpu->fpr[frS])));
+    if (!w)
+        mem_write32(cpu, ea + 4u, convert_to_single_ftz(f64_bits(cpu->ps1[frS])));
+    return true;
+}
+
+static inline f32 bw_composite_psq_power2(s32 exponent) {
+    /* GQR scale is -32..31; dequantization also needs +32. All are normal. */
+    const u32 bits = (u32)(exponent + 127) << 23;
+    f32 value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+static inline s32 bw_composite_psq_scale(u32 field) {
+    const s32 value = (s32)(field & 63u);
+    return (value & 32) ? value - 64 : value;
+}
+/* Integer quantization uses the canonical cpu.h memory boundary. Restore the
+   prepared gather macros before defining the public wrappers below. */
+#if defined(BLUEWAKE_COMPOSITE_GATHER_PIPE_H)
+#pragma push_macro("mem_read8")
+#pragma push_macro("mem_read16")
+#pragma push_macro("mem_write8")
+#pragma push_macro("mem_write16")
+#undef mem_read8
+#undef mem_read16
+#undef mem_write8
+#undef mem_write16
+#endif
+static inline f64 bw_composite_psq_load_value(CPUState* cpu, u32 ea, u8 type,
+                                              f32 factor) {
+    switch (type) {
+    case 4: return (f64)((f32)mem_read8(cpu, ea) * factor);
+    case 5: return (f64)((f32)mem_read16(cpu, ea) * factor);
+    case 6: return (f64)((f32)(s8)mem_read8(cpu, ea) * factor);
+    case 7: return (f64)((f32)(s16)mem_read16(cpu, ea) * factor);
+    default: return 0.0; /* callers admit only types 4..7 */
+    }
+}
+static inline s64 bw_composite_psq_quantize(f64 value, f32 factor,
+                                           s64 minimum, s64 maximum) {
+    const f32 converted = (f32)value * factor;
+    if (isnan(converted)) return 0;
+    if (converted <= (f32)minimum) return minimum;
+    if (converted >= (f32)maximum) return maximum;
+    return (s64)converted;
+}
+static inline void bw_composite_psq_store_value(CPUState* cpu, u32 ea, u8 type,
+                                                f32 factor, f64 value) {
+    switch (type) {
+    case 4: mem_write8(cpu, ea, (u8)bw_composite_psq_quantize(value, factor, 0, 255)); break;
+    case 5: mem_write16(cpu, ea, (u16)bw_composite_psq_quantize(value, factor, 0, 65535)); break;
+    case 6: mem_write8(cpu, ea, (u8)(s8)bw_composite_psq_quantize(value, factor, -128, 127)); break;
+    case 7: mem_write16(cpu, ea, (u16)(s16)bw_composite_psq_quantize(value, factor, -32768, 32767)); break;
+    }
+}
+#if defined(BLUEWAKE_COMPOSITE_GATHER_PIPE_H)
+#pragma pop_macro("mem_write16")
+#pragma pop_macro("mem_write8")
+#pragma pop_macro("mem_read16")
+#pragma pop_macro("mem_read8")
+#endif
+static inline bool ppc_psq_load_inline(CPUState* cpu, u8 frD, u32 ea, bool w,
+                                       u8 gqr, bool indexed, u32 cia) {
+    if ((gqr & 7u) < 4u)
+        return bw_composite_psq_type0_load_inline(cpu, frD, ea, w, gqr, indexed, cia);
+    const u32 g = cpu->gqr[gqr & 7u];
+    const u8 type = (u8)((g >> 16) & 7u);
+    if ((!indexed && (cpu->hid2 & PPC_HID2_LSQE) == 0u) || (type > 0u && type < 4u))
+        return ppc_psq_load(cpu, frD, ea, w, gqr, indexed, cia);
+    if (type == 0u) {
+        cpu->fpr[frD] = f64_value(convert_to_double(mem_read32(cpu, ea)));
+        cpu->ps1[frD] = w ? 1.0 : f64_value(convert_to_double(mem_read32(cpu, ea + 4u)));
+        return true;
+    }
+#if defined(BLUEWAKE_COMPOSITE_GATHER_PIPE_H)
+    /* Keep the original base-EA barrier and the runtime's post-drain snapshot. */
+    if (bw_hardware(ea))
+        return ppc_psq_load(cpu, frD, ea, w, gqr, indexed, cia);
+#endif
+    const f32 factor = bw_composite_psq_power2(-bw_composite_psq_scale(g >> 24));
+    const u32 size = (type & 1u) ? 2u : 1u;
+    /* Lane 1's memory callback observes the committed lane 0, as in cpu.c. */
+    cpu->fpr[frD] = bw_composite_psq_load_value(cpu, ea, type, factor);
+    cpu->ps1[frD] = w ? 1.0 : bw_composite_psq_load_value(cpu, ea + size, type, factor);
+    return true;
+}
+static inline bool ppc_psq_store_inline(CPUState* cpu, u8 frS, u32 ea, bool w,
+                                        u8 gqr, bool indexed, u32 cia) {
+    if ((gqr & 7u) < 4u)
+        return bw_composite_psq_type0_store_inline(cpu, frS, ea, w, gqr, indexed, cia);
+    const u32 g = cpu->gqr[gqr & 7u];
+    const u8 type = (u8)(g & 7u);
+    if ((!indexed && (cpu->hid2 & PPC_HID2_LSQE) == 0u) || (type > 0u && type < 4u))
+        return ppc_psq_store(cpu, frS, ea, w, gqr, indexed, cia);
+    if (type == 0u) {
+        mem_write32(cpu, ea, convert_to_single_ftz(f64_bits(cpu->fpr[frS])));
+        if (!w)
+            mem_write32(cpu, ea + 4u, convert_to_single_ftz(f64_bits(cpu->ps1[frS])));
+        return true;
+    }
+#if defined(BLUEWAKE_COMPOSITE_GATHER_PIPE_H)
+    /* Delegate the whole operation, not each lane, when hardware observes GX. */
+    if (bw_hardware(ea))
+        return ppc_psq_store(cpu, frS, ea, w, gqr, indexed, cia);
+#endif
+    const f32 factor = bw_composite_psq_power2(bw_composite_psq_scale(g >> 8));
+    const u32 size = (type & 1u) ? 2u : 1u;
+    bw_composite_psq_store_value(cpu, ea, type, factor, cpu->fpr[frS]);
+    /* Lane 0's write callback may mutate lane 1; read it only afterwards. */
+    if (!w)
+        bw_composite_psq_store_value(cpu, ea + size, type, factor, cpu->ps1[frS]);
+    return true;
+}'''.splitlines()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dol-dir", required=True, help="DolRecomp DOL output dir")
@@ -310,6 +452,8 @@ def main():
     ap.add_argument("--main-dol", required=True, help="Original main.dol path")
     ap.add_argument("--game-id", default="GZLE01")
     ap.add_argument("--output-dir", required=True)
+    ap.add_argument("--quantized-psq", action="store_true",
+                    help="experimental integer-quantized PSQ inline helpers (default off)")
     args = ap.parse_args()
 
     dol_dir = Path(args.dol_dir)
@@ -540,6 +684,10 @@ def main():
     lines.append('    return true;')
     lines.append('}')
     lines.append("")
+
+    if args.quantized_psq:
+        psq_start = lines.index('/* Unquantised (GQR type 0) paired-single load/store inline, using the same')
+        lines[psq_start:] = quantized_psq_helpers() + [""]
 
     # Copy helper functions verbatim from DOL header (rotl32 through ps_to_bits)
     helpers_start = dol_h.find("static inline u32 dolrecomp_rotl32")

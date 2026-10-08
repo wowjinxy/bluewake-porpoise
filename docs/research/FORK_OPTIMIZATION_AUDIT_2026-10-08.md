@@ -5,6 +5,10 @@ direct-call observation lookup, inline quantized paired-single operations, and
 skip PCM diagnostic scans when audio logging is off. None has a measured
 speedup in our current Wind Waker build. This pass imports or enables no code.
 
+Subsequent implementation and local qualification of the paired-single
+candidate are tracked in the [PSQ experiment](QUANTIZED_PSQ_2026-10-08.md).
+The census and source findings below remain the original audit snapshot.
+
 Compared with the [October 6 audit](FORK_OPTIMIZATION_AUDIT_2026-10-06.md), using
 actual published SHAs and source diffs rather than repository update dates.
 Local baseline: `main` at `0dae32f847b510fc35f3d13ba44390f6d108ea51`;

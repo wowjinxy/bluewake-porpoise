@@ -1,0 +1,24 @@
+--- a/GXRuntime/src/core/cpu.c
++++ b/GXRuntime/src/core/cpu.c
+@@ -493,7 +493,9 @@
+ static f64 psq_dequant(f64 value, s32 scale) {
+     if (scale == 0)
+         return (f64)(f32)value;
+-    return (f64)(f32)ldexp(value, -scale);
++    /* The signed six-bit GQR scale is in [-32,31]. This normal f64
++     * power of two is exact; preserve the single final f32 rounding. */
++    return (f64)(f32)(value * f64_value((u64)(1023 - scale) << 52));
+ }
+ 
+ static f64 psq_load_value(CPUState* cpu, u32 ea, u8 type, s32 scale) {
+@@ -514,7 +516,9 @@
+ }
+ 
+ static s64 psq_quantize_int(f64 value, s64 min_value, s64 max_value, s32 scale) {
+-    f32 conv = (f32)value * ldexpf(1.0f, scale);
++    /* Every six-bit GQR power is a normal, exact f32 value. Retain the
++     * source-to-f32 conversion, f32 multiply, NaN/clamp and truncation order. */
++    f32 conv = (f32)value * f32_value((u32)(127 + scale) << 23);
+     if (isnan(conv))
+         return 0;
+     if (conv <= (f32)min_value)

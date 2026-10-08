@@ -1,0 +1,1317 @@
+{
+  "version": 1,
+  "created_utc": "2026-10-08T23:30:20.521830+00:00",
+  "source_base": "0b23b266a1f6590d7de8863bc2fa4a9b85ae29fb",
+  "experimental": true,
+  "default_enabled": false,
+  "donors": [
+    {
+      "repository": "InfraredGodYT/RecompCore",
+      "commit": "3d969ed1202cc60f950c0ffb878456649431a996",
+      "human_author": "InfraredGod"
+    },
+    {
+      "repository": "InfraredGodYT/RecompCore",
+      "commit": "09ad2a1609028a3870790d540ba0e677a94d15c4",
+      "human_author": "InfraredGod"
+    }
+  ],
+  "sources": [
+    {
+      "path": "scripts/generate_composite.py",
+      "bytes": 48669,
+      "sha256": "9e0fdd07d72451f699cb5543001f6060d489dd89ff8b6fd9d38cd3db2d1b5dfb"
+    },
+    {
+      "path": "patches/recompcore/drafts/quantized-psq-scaling.patch",
+      "bytes": 972,
+      "sha256": "8c9ce9fcf57ebce4bc00925c844ccba10de64e53a274aa09c38ad6faf61bfcfc"
+    },
+    {
+      "path": "tests/test_quantized_psq_generator.py",
+      "bytes": 5206,
+      "sha256": "7df5c7e0d92ad31beb0233ecdb8f65aef9ad61902cd42db07539ebd137352961"
+    },
+    {
+      "path": "tests/test_quantized_psq_runtime.py",
+      "bytes": 16046,
+      "sha256": "3566b2867f86f9848b4a27747601a7ba4c4d61ce34d55dadf3f402c58669f017"
+    },
+    {
+      "path": "tests/quantized_psq_fixture.c",
+      "bytes": 11949,
+      "sha256": "8d115fada5dc54def47d8b01afecc450c56f1afe4b332af40edb4fd9d4937914"
+    },
+    {
+      "path": "tests/quantized_psq_oracle.c",
+      "bytes": 4252,
+      "sha256": "653440b35ee73d73f9814cb5d5a75581f9d8f2139f074da33600bf08af55763c"
+    }
+  ],
+  "arithmetic_comparisons_per_profile": 42343424,
+  "arithmetic_profiles": [
+    "O3",
+    "ASan"
+  ],
+  "full_runtime_profiles": [
+    {
+      "profile": "reference-o3",
+      "summary": {
+        "status": "PASS",
+        "cases": 165056,
+        "exact_result_comparisons": 330112,
+        "negative_mutants_rejected": 2,
+        "gqr_index_mask": 255,
+        "explicit_gqr_gate_cases": 65536,
+        "digest": "b7bba9f071ef411b",
+        "cpu_bytes": 3552,
+        "trace_event_bytes": 3576
+      }
+    },
+    {
+      "profile": "candidate-o3",
+      "summary": {
+        "status": "PASS",
+        "cases": 165056,
+        "exact_result_comparisons": 330112,
+        "negative_mutants_rejected": 2,
+        "gqr_index_mask": 255,
+        "explicit_gqr_gate_cases": 65536,
+        "digest": "b7bba9f071ef411b",
+        "cpu_bytes": 3552,
+        "trace_event_bytes": 3576
+      }
+    },
+    {
+      "profile": "candidate-asan",
+      "summary": {
+        "status": "PASS",
+        "cases": 165056,
+        "exact_result_comparisons": 330112,
+        "negative_mutants_rejected": 2,
+        "gqr_index_mask": 255,
+        "explicit_gqr_gate_cases": 65536,
+        "digest": "b7bba9f071ef411b",
+        "cpu_bytes": 3552,
+        "trace_event_bytes": 3576
+      }
+    },
+    {
+      "profile": "candidate-gather-o3",
+      "summary": {
+        "status": "PASS",
+        "cases": 165056,
+        "exact_result_comparisons": 330112,
+        "negative_mutants_rejected": 2,
+        "gqr_index_mask": 255,
+        "explicit_gqr_gate_cases": 65536,
+        "digest": "b7bba9f071ef411b",
+        "cpu_bytes": 3552,
+        "trace_event_bytes": 3576
+      }
+    },
+    {
+      "profile": "candidate-gather-asan",
+      "summary": {
+        "status": "PASS",
+        "cases": 165056,
+        "exact_result_comparisons": 330112,
+        "negative_mutants_rejected": 2,
+        "gqr_index_mask": 255,
+        "explicit_gqr_gate_cases": 65536,
+        "digest": "b7bba9f071ef411b",
+        "cpu_bytes": 3552,
+        "trace_event_bytes": 3576
+      }
+    }
+  ],
+  "runtime_qualification_evidence": {
+    "path": "build/quantized-psq-20261008/qualification/public-attempt4/result.json",
+    "bytes": 1657994,
+    "sha256": "b1d2c8c66fe8f54bc2b54db08928058e2b536415e037e08d9e7a98f0f10e4b3b"
+  },
+  "older_wrapped_probe": {
+    "status": "PASS",
+    "profiles": [
+      {
+        "profile": "candidate-o3",
+        "summary": {
+          "status": "PASS",
+          "cases": 165056,
+          "exact_result_comparisons": 330112,
+          "negative_mutants_rejected": 2,
+          "gqr_index_mask": 255,
+          "explicit_gqr_gate_cases": 65536,
+          "digest": "b7bba9f071ef411b",
+          "cpu_bytes": 3552,
+          "trace_event_bytes": 3576
+        }
+      },
+      {
+        "profile": "candidate-asan",
+        "summary": {
+          "status": "PASS",
+          "cases": 165056,
+          "exact_result_comparisons": 330112,
+          "negative_mutants_rejected": 2,
+          "gqr_index_mask": 255,
+          "explicit_gqr_gate_cases": 65536,
+          "digest": "b7bba9f071ef411b",
+          "cpu_bytes": 3552,
+          "trace_event_bytes": 3576
+        }
+      }
+    ],
+    "evidence": {
+      "path": "build/quantized-psq-20261008/qualification/legacy-wrapped-probe1/result.json",
+      "bytes": 22245,
+      "sha256": "7c7d9aa520f14b02d0722dd08ec208aa5b2f8370da7633d7163dab32daf29111"
+    },
+    "wrapper_causation_established": false
+  },
+  "native_census": {
+    "summary": {
+      "runtime_load": 1485168,
+      "runtime_store": 93,
+      "admitted_load": 1485168,
+      "admitted_store": 93,
+      "denied_load": 0,
+      "denied_store": 0,
+      "type0_inline_bypasses": 1
+    },
+    "cells": {
+      "load-type4": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "load-type5": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "load-type6": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "load-type7": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1485168,
+        0,
+        0
+      ],
+      "store-type4": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "store-type5": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "store-type6": [
+        0,
+        0,
+        0,
+        0,
+        93,
+        0,
+        0,
+        0
+      ],
+      "store-type7": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "evidence": {
+      "path": "build/quantized-psq-20261008/root/native/census-analysis1.json",
+      "bytes": 2466,
+      "sha256": "64290c8aa96f9cb63e237417917b2a8c10b03a3db4ae889b22ea7c75eaa5c553"
+    }
+  },
+  "candidate_module_evidence": [
+    {
+      "status": "PASS_SCALING_MODULE_CONTROL_CANDIDATE_NO_GAME",
+      "candidate_module": {
+        "bytes": 410173952,
+        "sha256": "c0fb6d68b8ff5fdd5ebc8eb4709effa67f51ed8c19c352e84a5a15c049c35ca5"
+      },
+      "evidence": {
+        "path": "build/quantized-psq-20261008/runtime/module5/result.json",
+        "bytes": 2231160,
+        "sha256": "a2fd430ed971b234273a5c88ef29c64e4cd1d5f9a35826a3f34a9101f5a2ff98"
+      }
+    },
+    {
+      "status": "PASS_PRIVATE_TARGETED_GQR4_7_MODULE_COMPILED_LINKED_NOT_GAME_QUALIFIED",
+      "candidate_module": {
+        "bytes": 410179584,
+        "sha256": "959ba365ced3d41545ddba0c55087e7e454fdd3965ef08ebdad13bb6e387acf4"
+      },
+      "evidence": {
+        "path": "build/quantized-psq-20261008/inline-module/targeted1/link1/result.json",
+        "bytes": 6707,
+        "sha256": "98bb376154bfe5fa783e9299439629a07f5dca4bd66b16643e3fdae0e86e4844"
+      }
+    },
+    {
+      "status": "PASS_PRIVATE_CANONICAL_MEMORY_ISOLATION_MODULE_COMPILED_LINKED_NOT_GAME_QUALIFIED",
+      "candidate_module": {
+        "bytes": 410185216,
+        "sha256": "541191776a1b8b7289606d98f34b294a62e71ec23a4ee9008547a1ba77ce89b2"
+      },
+      "evidence": {
+        "path": "build/quantized-psq-20261008/inline-module/isolation1/attempt1/result.json",
+        "bytes": 7713,
+        "sha256": "5977402867508c96c6b4584c80c5802c2e54c62ad72eec2b6d2de27b893294f4"
+      }
+    }
+  ],
+  "native_correctness": {
+    "b-correctness-comparison1": {
+      "status": "PASS_SIX_COMPLETE_GUEST_CHECKPOINTS_AND_PIXELS",
+      "full_p6_equal": true,
+      "matching_checkpoints": 6,
+      "differences": [],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/b-correctness-comparison1.json",
+        "bytes": 12029,
+        "sha256": "f65e519dd53c685937d0bb162f6a57a662f7cddd5797b6ec76ca4be44dec66af"
+      }
+    },
+    "c-correctness-comparison1": {
+      "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES",
+      "full_p6_equal": true,
+      "matching_checkpoints": 5,
+      "differences": [
+        {
+          "retrace": 600,
+          "fields": {
+            "cpu": [
+              "38EF5F7E036BE763E9EC350A5DAD22FE",
+              "FA1F06E5353D880347DFC9A1A06014DC"
+            ],
+            "mem1": [
+              "DA5D210F18F5171BDBF3E5232943855C",
+              "1A6CB8F0C134C8006BB5604683CD51E9"
+            ]
+          }
+        }
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/c-correctness-comparison1.json",
+        "bytes": 12339,
+        "sha256": "82349b59407336b4be6873826a207752b426365aa36b0db1a2b4fbb20e05ab40"
+      }
+    },
+    "baseline-control-repeat-comparison1": {
+      "status": "PASS_SIX_COMPLETE_GUEST_CHECKPOINTS_AND_PIXELS",
+      "full_p6_equal": true,
+      "matching_checkpoints": 6,
+      "differences": [],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/baseline-control-repeat-comparison1.json",
+        "bytes": 12036,
+        "sha256": "dea9451723275007669689558c1ceab2f7b6ae1cd2871dff1e0685713e233c1f"
+      }
+    },
+    "c-control-repeat-comparison1": {
+      "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES",
+      "full_p6_equal": true,
+      "matching_checkpoints": 5,
+      "differences": [
+        {
+          "retrace": 600,
+          "fields": {
+            "cpu": [
+              "38EF5F7E036BE763E9EC350A5DAD22FE",
+              "FA1F06E5353D880347DFC9A1A06014DC"
+            ],
+            "mem1": [
+              "DA5D210F18F5171BDBF3E5232943855C",
+              "1A6CB8F0C134C8006BB5604683CD51E9"
+            ]
+          }
+        }
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/c-control-repeat-comparison1.json",
+        "bytes": 12339,
+        "sha256": "8e11952e655e4bf40e0ad17c5a01987c1908819d49f10e2ed98568cb2b95bfa8"
+      }
+    },
+    "isolation-correctness-comparison1": {
+      "status": "PASS_SIX_COMPLETE_GUEST_CHECKPOINTS_AND_PIXELS",
+      "full_p6_equal": true,
+      "matching_checkpoints": 6,
+      "differences": [],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/isolation-correctness-comparison1.json",
+        "bytes": 12043,
+        "sha256": "cc6be5cab7c7a41f83597aff349a282fde407c043d8e49b28d89928633334972"
+      }
+    }
+  },
+  "loaded_title_timings": {
+    "scaling-abba1": {
+      "status": "FAIL_GATE_PRESERVED",
+      "error": "RuntimeError('Exact workload gate failed; raw timing retained only')",
+      "comparison": {
+        "control_means": {
+          "cpu_seconds": 54.4296875,
+          "wall_seconds": 36.8125,
+          "process_cycles": 194166135533.5
+        },
+        "candidate_means": {
+          "cpu_seconds": 54.46875,
+          "wall_seconds": 37.53899999987334,
+          "process_cycles": 196009994391.5
+        },
+        "percent_changes": {
+          "cpu_seconds": 0.0717669011052191,
+          "wall_seconds": 1.973514430895329,
+          "process_cycles": 0.9496294773204017
+        },
+        "pairs": [
+          {
+            "cpu_seconds": 0.45351473922903285,
+            "wall_seconds": 2.554069626523159,
+            "process_cycles": 1.4786614108070806
+          },
+          {
+            "cpu_seconds": -0.3198604245420178,
+            "wall_seconds": 1.3769552764957282,
+            "process_cycles": 0.40719958045873916
+          }
+        ],
+        "gx_differences": {},
+        "exact_terminal_clock": true,
+        "exact_terminal_dispatch": false,
+        "consistent_cpu_wall_reduction": false,
+        "at_least_one_percent_cpu_wall": false
+      },
+      "rows": [
+        {
+          "case": "scaling-a1",
+          "module_sha": "976184c642ac87fdf026f181e90c1a1c3875bbbb833aad2d62174ca71dfc0916",
+          "metrics": {
+            "cpu_seconds": 55.125,
+            "wall_seconds": 37.313000000081956,
+            "process_cycles": 196594062221
+          },
+          "background_cpu_percent": 62.5,
+          "gx": {
+            "submitted": 8431716,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431716,
+            "skipped": 0,
+            "noops": 3008,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3008,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209669,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325895",
+            "0x80307ef4"
+          ]
+        },
+        {
+          "case": "scaling-b1",
+          "module_sha": "c0fb6d68b8ff5fdd5ebc8eb4709effa67f51ed8c19c352e84a5a15c049c35ca5",
+          "metrics": {
+            "cpu_seconds": 55.375,
+            "wall_seconds": 38.26599999982864,
+            "process_cycles": 199501022755
+          },
+          "background_cpu_percent": 45.8984375,
+          "gx": {
+            "submitted": 8431716,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431716,
+            "skipped": 0,
+            "noops": 3008,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3008,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209669,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325895",
+            "0x80307ef4"
+          ]
+        },
+        {
+          "case": "scaling-b2",
+          "module_sha": "c0fb6d68b8ff5fdd5ebc8eb4709effa67f51ed8c19c352e84a5a15c049c35ca5",
+          "metrics": {
+            "cpu_seconds": 53.5625,
+            "wall_seconds": 36.811999999918044,
+            "process_cycles": 192518966028
+          },
+          "background_cpu_percent": 38.4765625,
+          "gx": {
+            "submitted": 8431716,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431716,
+            "skipped": 0,
+            "noops": 3008,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3008,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209669,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325896",
+            "0x80307ef4"
+          ]
+        },
+        {
+          "case": "scaling-a2",
+          "module_sha": "976184c642ac87fdf026f181e90c1a1c3875bbbb833aad2d62174ca71dfc0916",
+          "metrics": {
+            "cpu_seconds": 53.734375,
+            "wall_seconds": 36.311999999918044,
+            "process_cycles": 191738208846
+          },
+          "background_cpu_percent": 45.60546875,
+          "gx": {
+            "submitted": 8431716,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431716,
+            "skipped": 0,
+            "noops": 3008,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3008,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209669,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325895",
+            "0x80307ef4"
+          ]
+        }
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/scaling-abba1.json",
+        "bytes": 17320,
+        "sha256": "98a50938c2cd3d83b697d44b5fb5042e3fb8404cb6412b79612c50526384cc3d"
+      }
+    },
+    "isolation-abba1": {
+      "status": "FAIL_GATE_PRESERVED",
+      "error": "RuntimeError('Exact workload gate failed; raw timing retained only')",
+      "comparison": {
+        "control_means": {
+          "cpu_seconds": 55.0859375,
+          "wall_seconds": 38.09400000004098,
+          "process_cycles": 197439505573.5
+        },
+        "candidate_means": {
+          "cpu_seconds": 55.21875,
+          "wall_seconds": 38.64850000012666,
+          "process_cycles": 198609655031.5
+        },
+        "percent_changes": {
+          "cpu_seconds": 0.24110055311303835,
+          "wall_seconds": 1.455609807542091,
+          "process_cycles": 0.5926622712111751
+        },
+        "pairs": [
+          {
+            "cpu_seconds": 3.029460811561968,
+            "wall_seconds": 6.774193548387086,
+            "process_cycles": 4.534257430465893
+          },
+          {
+            "cpu_seconds": -2.6643498407182165,
+            "wall_seconds": -4.049361610730584,
+            "process_cycles": -3.434566585165455
+          }
+        ],
+        "gx_differences": {
+          "topology_zero_quads": [
+            3008,
+            3024,
+            3008,
+            3024
+          ],
+          "texcoord_scale_active": [
+            8209669,
+            8209677,
+            8209669,
+            8209677
+          ],
+          "noops": [
+            3008,
+            3024,
+            3008,
+            3024
+          ],
+          "submitted": [
+            8431716,
+            8431724,
+            8431716,
+            8431724
+          ],
+          "planned": [
+            8431716,
+            8431724,
+            8431716,
+            8431724
+          ]
+        },
+        "exact_terminal_clock": true,
+        "exact_terminal_dispatch": false,
+        "consistent_cpu_wall_reduction": false,
+        "at_least_one_percent_cpu_wall": false
+      },
+      "rows": [
+        {
+          "case": "isolation-a1",
+          "module_sha": "c0fb6d68b8ff5fdd5ebc8eb4709effa67f51ed8c19c352e84a5a15c049c35ca5",
+          "metrics": {
+            "cpu_seconds": 56.21875,
+            "wall_seconds": 38.75,
+            "process_cycles": 199561208197
+          },
+          "background_cpu_percent": 60.44921875,
+          "gx": {
+            "submitted": 8431716,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431716,
+            "skipped": 0,
+            "noops": 3008,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3008,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209669,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325895",
+            "0x80307ef4"
+          ]
+        },
+        {
+          "case": "isolation-b1",
+          "module_sha": "541191776a1b8b7289606d98f34b294a62e71ec23a4ee9008547a1ba77ce89b2",
+          "metrics": {
+            "cpu_seconds": 57.921875,
+            "wall_seconds": 41.375,
+            "process_cycles": 208609827108
+          },
+          "background_cpu_percent": 59.42307692307692,
+          "gx": {
+            "submitted": 8431724,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431724,
+            "skipped": 0,
+            "noops": 3024,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3024,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209677,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325892",
+            "0x80307ef4"
+          ]
+        },
+        {
+          "case": "isolation-b2",
+          "module_sha": "541191776a1b8b7289606d98f34b294a62e71ec23a4ee9008547a1ba77ce89b2",
+          "metrics": {
+            "cpu_seconds": 52.515625,
+            "wall_seconds": 35.92200000025332,
+            "process_cycles": 188609482955
+          },
+          "background_cpu_percent": 54.80769230769231,
+          "gx": {
+            "submitted": 8431716,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431716,
+            "skipped": 0,
+            "noops": 3008,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3008,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209669,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325895",
+            "0x80307ef4"
+          ]
+        },
+        {
+          "case": "isolation-a2",
+          "module_sha": "c0fb6d68b8ff5fdd5ebc8eb4709effa67f51ed8c19c352e84a5a15c049c35ca5",
+          "metrics": {
+            "cpu_seconds": 53.953125,
+            "wall_seconds": 37.438000000081956,
+            "process_cycles": 195317802950
+          },
+          "background_cpu_percent": 37.109375,
+          "gx": {
+            "submitted": 8431724,
+            "rejected": 0,
+            "failed": 0,
+            "planned": 8431724,
+            "skipped": 0,
+            "noops": 3024,
+            "cull_all": 0,
+            "missing_vcd": 0,
+            "vertex_decode_failures": 0,
+            "projection_missing": 0,
+            "payload_empty": 0,
+            "walk_underivable": 0,
+            "stride_mismatch": 0,
+            "topology_unsupported": 0,
+            "payload_overrun": 0,
+            "topology_zero_quads": 3024,
+            "topology_zero_triangles": 0,
+            "topology_zero_triangle_strip": 0,
+            "topology_zero_triangle_fan": 0,
+            "topology_zero_lines": 0,
+            "topology_zero_line_strip": 0,
+            "topology_zero_points": 0,
+            "topology_zero_unknown": 0,
+            "array_unresolved": 0,
+            "array_out_of_bounds": 0,
+            "unsupported_texgen": 0,
+            "texgen_count_overflow": 0,
+            "texgen_count_5": 8112,
+            "texgen_count_6": 0,
+            "texgen_count_7": 0,
+            "texgen_count_8plus": 0,
+            "texgen_emboss_cached_nbt": 0,
+            "texgen_source_normal": 0,
+            "texgen_source_normal_default": 0,
+            "texgen_source_colors": 0,
+            "texgen_source_binormal": 0,
+            "texgen_source_tex47": 0,
+            "texgen_source_unknown": 0,
+            "per_vertex_tex_mtx": 0,
+            "per_vertex_normal_matrix": 1030672,
+            "unresolved_tex_matrix": 0,
+            "normals_ignored": 51840,
+            "lighting_ignored": 0,
+            "tlut_texture": 420237,
+            "alpha_compare_ignored": 0,
+            "tev_stages_over": 0,
+            "tev_multi_texmap": 1119627,
+            "texcoord_scale_active": 8209677,
+            "texcoord_scale_mismatch": 4157033,
+            "efb_copy_ignored": 0,
+            "efb_copies": 1594,
+            "efb_copy_depth": 752,
+            "efb_display_copies": 1032,
+            "fog_ignored": 0,
+            "indirect_active": 70,
+            "indirect_ignored": 0,
+            "logic_op_ignored": 0,
+            "dst_alpha_active": 752,
+            "early_depth_active": 3703171,
+            "ztexture_active": 0,
+            "ztexture_ignored": 0
+          },
+          "clock": {
+            "cycles": 14580000002,
+            "timebase": 1215000000,
+            "retraces": 1800,
+            "vi_pending": 1,
+            "ai_remainder": 26969,
+            "title_ready": 1,
+            "title_retrace": 333
+          },
+          "stopped": [
+            "1325895",
+            "0x80307ef4"
+          ]
+        }
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/isolation-abba1.json",
+        "bytes": 17880,
+        "sha256": "cd0687f58f8bc1f127cfac8c6bb5f5d889ff312a3aa5e6a8d507660fbbbcfe36"
+      }
+    }
+  },
+  "retained_batches": [
+    {
+      "name": "batch-correctness1",
+      "status": "FAIL_PRESERVED",
+      "error": "Command failed; detailed private receipt retained.",
+      "failed_exit_codes": [
+        1
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/batch-correctness1.json",
+        "bytes": 6443,
+        "sha256": "183821e1ef5577c73b9567608a54c84a249a772769c84f58f55c1fd9196a1a9b"
+      }
+    },
+    {
+      "name": "scaling-batch2",
+      "status": "PASS_RUNS_WITH_PRESERVED_ANALYSIS_FAILURE",
+      "error": null,
+      "failed_exit_codes": [
+        1
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/scaling-batch2.json",
+        "bytes": 7594,
+        "sha256": "518207b9a04975573d928fd914c350d7b6db9ef7410c84ea8e15a43415d001e0"
+      }
+    },
+    {
+      "name": "isolation-batch2",
+      "status": "PASS_RUNS_WITH_PRESERVED_ANALYSIS_FAILURE",
+      "error": null,
+      "failed_exit_codes": [
+        1
+      ],
+      "evidence": {
+        "path": "build/quantized-psq-20261008/root/native/isolation-batch2.json",
+        "bytes": 7620,
+        "sha256": "cc803f5d0092d1f8317619ad75785a174d3708411e30d3f166d1e5458ced8850"
+      }
+    }
+  ],
+  "preservation": {
+    "originals": 14,
+    "assets": 417,
+    "all_equal": true,
+    "evidence": {
+      "path": "build/quantized-psq-20261008/root/preserved-final1.json",
+      "bytes": 85706,
+      "sha256": "b46d8c3cc9bece4317366b53ab1beaf6676f64650a70d7ba63f45d0b86a392a6"
+    }
+  },
+  "limits": [
+    "Synthetic fixtures do not establish whole-game behavior.",
+    "Native checkpoints/captured frame establish only the bounded no-input intro route.",
+    "Loaded unpaced hidden throughput is not displayed FPS or GPU hardware timing.",
+    "Failed gates and broader abandoned prototype are preserved; no sample is discarded.",
+    "Gather macro profiles cover batch zero and null writers only.",
+    "Native PSQ census does not count scales or actual ldexp invocations.",
+    "Installed game and player files are unchanged."
+  ],
+  "diagnostic_route_gate": {
+    "rows": [
+      {
+        "case": "baseline-correctness1",
+        "same_gx": true,
+        "same_clock": true,
+        "same_dispatch": true,
+        "dispatch": [
+          "1325893",
+          "0x80307ef4"
+        ],
+        "exact_workload": true
+      },
+      {
+        "case": "scaling-correctness1",
+        "same_gx": true,
+        "same_clock": true,
+        "same_dispatch": false,
+        "dispatch": [
+          "1325895",
+          "0x80307ef4"
+        ],
+        "exact_workload": false
+      },
+      {
+        "case": "inline-correctness1",
+        "same_gx": true,
+        "same_clock": true,
+        "same_dispatch": false,
+        "dispatch": [
+          "1325895",
+          "0x80307ef4"
+        ],
+        "exact_workload": false
+      },
+      {
+        "case": "isolation-correctness1",
+        "same_gx": true,
+        "same_clock": true,
+        "same_dispatch": false,
+        "dispatch": [
+          "1325895",
+          "0x80307ef4"
+        ],
+        "exact_workload": false
+      }
+    ],
+    "evidence": {
+      "path": "build/quantized-psq-20261008/root/native/diagnostic-route-gate1.json",
+      "bytes": 7683,
+      "sha256": "c6a733f7e03f53fbccefe4218fc77adf7b385fff7306ae6ebd1f406b93c4392b"
+    }
+  }
+}
