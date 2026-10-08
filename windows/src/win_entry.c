@@ -561,6 +561,10 @@ int main(int argc, char** argv) {
     bw_default("BLUEWAKE_WALL_PACE", "1");
     bw_default("DOL_AUDIO_NO_THROTTLE", "1");
     bw_default("BLUEWAKE_RENDERER", "aurora");
+    // The manually playtested selective layout; explicit 0 keeps full vertices.
+    if (!noninteractive && strcmp(getenv("BLUEWAKE_RENDERER"), "aurora") == 0 &&
+        getenv("DOL_GXCORE_SELECTIVE_VERTICES") == NULL)
+        bw_default("DOL_GXCORE_SELECTIVE_VERTICES", "1");
     bw_default("BLUEWAKE_CYCLE_CAP", "16384");
     bw_default("BLUEWAKE_MAX_BLOCKS", "100000000000");
     bw_default("BLUEWAKE_DSP_MODE", "hle");

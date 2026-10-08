@@ -1540,6 +1540,7 @@ extern "C" void bw_settings_load(const char* data_dir) {
             g_dirty = true;
             save_file();
         }
+        _putenv_s("DOL_GXCORE_SELECTIVE_VERTICES", "0");
         _putenv_s("BLUEWAKE_DSP_MODE", "hle");
         _putenv_s("BLUEWAKE_MODS", "none");
         _putenv_s("BLUEWAKE_OPTIONS", "none");

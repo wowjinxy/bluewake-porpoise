@@ -52,6 +52,10 @@
     {
       "path": "patches/recompcore/0164-isolate-draw-statistics-from-display-copy-request.patch",
       "sha256": "4ff5936e14ef35b7eb374dbb6c9e66dd4d39a3521eadb20b0cc9649109ab0796"
+    },
+    {
+      "path": "patches/recompcore/0165-selective-gx-vertex-inputs.patch",
+      "sha256": "5ff08cf1c80fde7e9b27dfb3162416c704662139fb9dd091e0ddefc7ccb5e6c6"
     }
   ]
 }
