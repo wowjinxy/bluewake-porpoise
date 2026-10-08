@@ -1,0 +1,80 @@
+{
+  "status": "PASS_FOCUSED_ASAN_DECODE_AND_CAPTURE",
+  "source_receipt_sha256": "996b05bee581cbbc9b8e031101b246433f1f89f00e121e5ef2a38202981038ed",
+  "results": [
+    {
+      "receipt": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\decode-asan-attempt1\\result.json",
+        "bytes": 166973,
+        "sha256": "3b827dac0976e04acdb4b5083909243b7bdeb7f6b01738da64062f7aa492d06a"
+      },
+      "status": "PASS_ACTUAL_DECODE_ASAN_PAIRED_TO_O3_REFERENCE",
+      "profiles": [
+        {
+          "profile": "candidate-asan",
+          "outputs": [
+            {
+              "mode": "unset",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "0",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "11",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "1",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\interp-asan-attempt1\\result.json",
+        "bytes": 217565,
+        "sha256": "556b543115f286cd232ae8a14fc0940c13e0d08099579d428159e99191d20e72"
+      },
+      "status": "PASS_ACTUAL_INTERPOLATION_CAPTURE_ASAN",
+      "profiles": [
+        {
+          "profile": "candidate-asan",
+          "outputs": [
+            {
+              "mode": "1",
+              "output": "selective_interp_layout: 204850 checks, 0 failures\n",
+              "cases": 4097,
+              "checks": 204850,
+              "digest": "861b4df17ca478a346cf49eb3d489fcdd44260a62fa6694f69cce3b9b62c770f"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "broad_interpolation_asan_qualified": false,
+  "note": "Focused capture does not resolve the retained earlier broad interpolation ASan baseline failure. Full private receipt payloads are referenced by exact hash and not bundled."
+}

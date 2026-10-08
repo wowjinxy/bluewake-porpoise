@@ -1,0 +1,104 @@
+{
+  "status": "PRIVATE_SOURCE_OVERLAY_NOT_COMPILED",
+  "files": [
+    {
+      "relative": "GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\gxcore\\include\\gxruntime\\gxcore\\shader.hpp",
+      "source_sha256": "5dca5594b7d2dc54f97a6bd2876a8e05b594cb1407468158977b0ce9ecbe7d35",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\gxcore\\include\\gxruntime\\gxcore\\shader.hpp",
+      "candidate_sha256": "9a2ff1e66c9c895dcf6077cb8ee192b5a6b5b9f05ac587b9900933440252bde7",
+      "bytes": 35542
+    },
+    {
+      "relative": "GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\gxcore\\include\\gxruntime\\gxcore\\gxcore.hpp",
+      "source_sha256": "9cdc4d2ecffbcad24995c9a4f21e803c643bf2e174cf35597c95cd719a5ec90d",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\gxcore\\include\\gxruntime\\gxcore\\gxcore.hpp",
+      "candidate_sha256": "d40081be9b3ff4744a0804996615775357c095c8f3bf549c2e058e25639610a0",
+      "bytes": 14443
+    },
+    {
+      "relative": "GXRuntime/graphics/gxcore/src/gxcore.cpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\gxcore\\src\\gxcore.cpp",
+      "source_sha256": "95ad32afd3985128303ebdf2b82089a1b277868716460344b11207fe9840642e",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\gxcore\\src\\gxcore.cpp",
+      "candidate_sha256": "3f7a4fcd3b31c5fd3a84bf68edabdb02c4229c9f31c9578ab2628bd69318a733",
+      "bytes": 98355
+    },
+    {
+      "relative": "GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\aurora\\lib\\gfx\\gxcore_draw.hpp",
+      "source_sha256": "32d63257bd3f7f0f15e81ec5e3ccc1660616671eb632274c1c5653eb6c2587a3",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\gxcore_draw.hpp",
+      "candidate_sha256": "d423baac57a92aca3f664f473776103e1cb9cfa72aa89bb412b40c297202e11f",
+      "bytes": 7599
+    },
+    {
+      "relative": "GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\aurora\\lib\\gfx\\gxcore_draw.cpp",
+      "source_sha256": "76c70d0083115676a61d6d0e4946d716321de1093bc6f121aa5a7ff5a6eb5362",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\gxcore_draw.cpp",
+      "candidate_sha256": "e16b1560d9f1543863377901b8f04e0101d5e8c502d678e6bcba3a81b7e4aab9",
+      "bytes": 103485
+    },
+    {
+      "relative": "GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\aurora\\lib\\gfx\\frame_interp.cpp",
+      "source_sha256": "ad9188ce37717e1f656964164db24567bda1d2db3d6f0d3c123481db1cb75c57",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\frame_interp.cpp",
+      "candidate_sha256": "cd106ca90e845118b7d9e8f2c2163d906ec4fa4d88804f21a3aaf4f9f879b33c",
+      "bytes": 97609
+    },
+    {
+      "relative": "GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\aurora\\lib\\gfx\\pipeline_cache.cpp",
+      "source_sha256": "0682f8b4b69c724b069605c275035353f5c6548430818b3f49b473eeb2322a74",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\pipeline_cache.cpp",
+      "candidate_sha256": "a3eea1c0124d04fbc5871307bb4df50a9f06845bc1353303497003d2cf3abf87",
+      "bytes": 54600
+    },
+    {
+      "relative": "GXRuntime/backends/aurora/aurora_graphics.cpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\backends\\aurora\\aurora_graphics.cpp",
+      "source_sha256": "0e169cc0f74e8374a484c293245377132bfa4d4a30256e32c67a075ad953b745",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\backends\\aurora\\aurora_graphics.cpp",
+      "candidate_sha256": "cb635946be7d71d5599e1a060cd2598326886828af4f118edec3a4e75b161515",
+      "bytes": 106251
+    },
+    {
+      "relative": "GXRuntime/backends/aurora/aurora_backend.cpp",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\backends\\aurora\\aurora_backend.cpp",
+      "source_sha256": "c41905746a39af7216e715cfb1ea330fc218116f714450e0e11c486ed6581677",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\backends\\aurora\\aurora_backend.cpp",
+      "candidate_sha256": "9d2147139e01917a143f03ac22a445313c171a655aad1c9ff64b0b147ee78161",
+      "bytes": 35551
+    },
+    {
+      "relative": "GXRuntime/include/gxruntime/aurora_backend.h",
+      "root": false,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\include\\gxruntime\\aurora_backend.h",
+      "source_sha256": "87fae46dfaac606aa8aa80741a97791db42a4595b6551a69a76d6e27d758a31d",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\include\\gxruntime\\aurora_backend.h",
+      "candidate_sha256": "e8dbe8dda3176268955e42d0cdbd38cadbd401b897e25c5bcad428f7465f18ed",
+      "bytes": 7088
+    },
+    {
+      "relative": "runtime/host/src/hud_renderer.cpp",
+      "root": true,
+      "source": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\runtime\\host\\src\\hud_renderer.cpp",
+      "source_sha256": "ed9d68fb1f9671d042333e5b04d7575c49a3fd9a1044cae36afa621450815ea9",
+      "candidate": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\root\\runtime\\host\\src\\hud_renderer.cpp",
+      "candidate_sha256": "0dd03eac551094aa86aec2f24e07b6a45a20db6df6dd7c6d5870990c9863826f",
+      "bytes": 2369
+    }
+  ]
+}

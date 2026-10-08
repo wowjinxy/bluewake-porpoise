@@ -1,0 +1,50 @@
+{
+  "created_utc": "2026-10-08T18:09:48.154216+00:00",
+  "status": "PRIVATE_INACTIVE_APPLYCHECK_PASS",
+  "sdk_head": "e280c788dadabd18b085af0085f1558fc9ff5ecc",
+  "root_head": "1e2d0abf76b99a892725d2f041441160f5307e8c",
+  "active_manifest": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\active.json",
+    "bytes": 2353,
+    "sha256": "4b20061c33dc9810543af6dba662a0b903d393e98e82839b37d096e51b81c62f"
+  },
+  "original_compact_draft": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\compact-vertices.patch",
+    "bytes": 54431,
+    "sha256": "8f646996a865d22f6d0eaeecc23666729987f4713225869497daae2b6798f658"
+  },
+  "source_receipt": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\source-receipt.json",
+    "bytes": 7007,
+    "sha256": "996b05bee581cbbc9b8e031101b246433f1f89f00e121e5ef2a38202981038ed"
+  },
+  "patches": [
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\sdk-selective-vertices.patch",
+      "bytes": 47529,
+      "sha256": "5ff08cf1c80fde7e9b27dfb3162416c704662139fb9dd091e0ddefc7ccb5e6c6"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\root-selective-vertices.patch",
+      "bytes": 886,
+      "sha256": "73a0b1b30fc11a5b3dffa2e1e0dd78ab12f85eb4a1226337c6341b38a33be1f9"
+    }
+  ],
+  "applychecks": [
+    {
+      "part": "sdk",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "part": "root",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "negative_experiments_unchanged": true,
+  "installed_game_changed": false,
+  "game_module_changed": false
+}

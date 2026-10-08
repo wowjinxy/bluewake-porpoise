@@ -1,0 +1,334 @@
+{
+  "status": "INACTIVE_UNQUALIFIED_V1_NATIVE_STATE_AND_TIMING_GATES_FAILED",
+  "source_receipt_sha256": "996b05bee581cbbc9b8e031101b246433f1f89f00e121e5ef2a38202981038ed",
+  "promotion_qualified": false,
+  "native_game_qualified": false,
+  "performance_qualified": false,
+  "receipts": {
+    "abba-net1.json": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\abba-net1.json",
+      "bytes": 23574,
+      "sha256": "e4fc181c20d8a0b38f7c8bb789ac6e455ec4cf909c96bd0c73f2204c66a7faef"
+    },
+    "strict-cache-abba1.json": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\strict-cache-abba1.json",
+      "bytes": 764662,
+      "sha256": "66bbe8bdf568fb9c9fad8946f3bb6167088e08a801c8727d54089d0359eee2c5"
+    },
+    "normal-comparison1.json": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\normal-comparison1.json",
+      "bytes": 12967,
+      "sha256": "59e716d390dd46b4575245be2443426a7b8f5f7d1b09ab993ad5c10805045517"
+    },
+    "efb-full-repeat1.json": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\efb-full-repeat1.json",
+      "bytes": 13292,
+      "sha256": "47ad3ac31c2a1b4bb77d5c049ea0ba732ac537b1b1d68f403c084bfd60fbbc29"
+    },
+    "efb-selective-comparison1.json": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\efb-selective-comparison1.json",
+      "bytes": 13332,
+      "sha256": "5218192e8910c504b04b13ba6fac6f3e504bd46f7b1416d799b394566000d01b"
+    },
+    "normal-selective/result.json": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\normal-selective\\result.json",
+      "bytes": 2130,
+      "sha256": "497c1638f96bf2ac385e7f1c7a2f95af59b0b27912b85070005716b4fcfe9ad2"
+    }
+  },
+  "scope": {
+    "route": "title intro",
+    "max_retraces": 1800,
+    "checkpoint_retraces": [
+      300,
+      600,
+      900,
+      1200,
+      1500,
+      1800
+    ],
+    "hidden_noninteractive": true,
+    "gameplay_scene_tested": false,
+    "mods": [
+      "widescreen",
+      "betterww"
+    ],
+    "unpaced": true
+  },
+  "ordinary_native": {
+    "status": "FAIL_PRESERVED_NATIVE_STATE_OR_PIXEL_DIFFERENCES",
+    "matching_checkpoints": 1,
+    "total_checkpoints": 6,
+    "full_p6_equal": true,
+    "differing_retraces": [
+      600,
+      900,
+      1200,
+      1500,
+      1800
+    ],
+    "different_fields": {
+      "600": [
+        "cpu",
+        "mem1"
+      ],
+      "900": [
+        "cpu",
+        "mem1"
+      ],
+      "1200": [
+        "mem1"
+      ],
+      "1500": [
+        "mem1"
+      ],
+      "1800": [
+        "mem1"
+      ]
+    },
+    "state_qualification": false,
+    "timing_eligible": false,
+    "limits": "Equality only at these checkpoints, not every instruction or GPU command. All diagnostic timing excluded."
+  },
+  "controlled_actual_efb_inputs": [
+    {
+      "receipt": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\efb-full-repeat1.json",
+        "bytes": 13292,
+        "sha256": "47ad3ac31c2a1b4bb77d5c049ea0ba732ac537b1b1d68f403c084bfd60fbbc29"
+      },
+      "status": "PASS_CONTROLLED_ACTUAL_EFB_INPUTS_SIX_STATES_AND_PIXELS",
+      "matching_checkpoints": 6,
+      "total_checkpoints": 6,
+      "full_p6_equal": true,
+      "timing_eligible": false,
+      "normal_gameplay_qualification": false,
+      "efb_reports": [
+        {
+          "case": "efb-record-full",
+          "mode": 1,
+          "entries": 1134,
+          "total": 1134,
+          "physical_differences": 0
+        },
+        {
+          "case": "efb-replay-full",
+          "mode": 2,
+          "entries": 1134,
+          "total": 1134,
+          "physical_differences": 12
+        }
+      ],
+      "limits": "Physical color/depth readbacks still execute. Replay supplies exactly recorded actual values only after matching index/retrace/PC/address/kind/width. Equality is limited to this controlled-input native route and six checkpoints; normal EFB state comparison is a separate gate."
+    },
+    {
+      "receipt": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\efb-selective-comparison1.json",
+        "bytes": 13332,
+        "sha256": "5218192e8910c504b04b13ba6fac6f3e504bd46f7b1416d799b394566000d01b"
+      },
+      "status": "PASS_CONTROLLED_ACTUAL_EFB_INPUTS_SIX_STATES_AND_PIXELS",
+      "matching_checkpoints": 6,
+      "total_checkpoints": 6,
+      "full_p6_equal": true,
+      "timing_eligible": false,
+      "normal_gameplay_qualification": false,
+      "efb_reports": [
+        {
+          "case": "efb-record-full",
+          "mode": 1,
+          "entries": 1134,
+          "total": 1134,
+          "physical_differences": 0
+        },
+        {
+          "case": "efb-replay-selective",
+          "mode": 2,
+          "entries": 1134,
+          "total": 1134,
+          "physical_differences": 72
+        }
+      ],
+      "limits": "Physical color/depth readbacks still execute. Replay supplies exactly recorded actual values only after matching index/retrace/PC/address/kind/width. Equality is limited to this controlled-input native route and six checkpoints; normal EFB state comparison is a separate gate."
+    }
+  ],
+  "loaded_abba": {
+    "status": "FAIL_ANALYSIS_GATE_PRESERVED",
+    "failure": "RuntimeError('Strict ABBA route workload equality failed; metrics retained for descriptive use only')",
+    "control_means": {
+      "cpu_seconds": 46.671875,
+      "wall_seconds": 31.906500000040978,
+      "process_cycles": 166076124541.0
+    },
+    "candidate_means": {
+      "cpu_seconds": 46.2109375,
+      "wall_seconds": 31.43749999976717,
+      "process_cycles": 166583702592.5
+    },
+    "percent_changes": {
+      "cpu_seconds": -0.987612989621689,
+      "wall_seconds": -1.4699199231291593,
+      "process_cycles": 0.30562975436887463
+    },
+    "pairs": [
+      {
+        "cpu_seconds": -0.23907103825137055,
+        "wall_seconds": -0.10224622207608558,
+        "process_cycles": 1.5824910382208568
+      },
+      {
+        "cpu_seconds": -1.7071569271175258,
+        "wall_seconds": -2.786320581918078,
+        "process_cycles": -0.9225425073994709
+      }
+    ],
+    "workload_differences": {
+      "submitted": [
+        8431716,
+        8431724,
+        8431724,
+        8431716
+      ],
+      "planned": [
+        8431716,
+        8431724,
+        8431724,
+        8431716
+      ],
+      "noops": [
+        3008,
+        3024,
+        3024,
+        3008
+      ]
+    },
+    "terminal_clocks_equal": true,
+    "meets_timing_threshold": false,
+    "promotion_qualified": false,
+    "limits": [
+      "Unpaced hidden throughput is not displayed FPS or whole-game performance.",
+      "No hardware GPU execution timing is measured.",
+      "Decode/submission byte counters are logical CPU/upload accounting, not GPU hardware draw counts.",
+      "Normal complete-state and pixel comparisons remain separate gates."
+    ],
+    "strict_warm_cache_status": "PASS_STRICT_WARM_CACHE_GATE",
+    "terminal_pipeline_creations": {
+      "abba-a1": 0,
+      "abba-b1": 0,
+      "abba-b2": 0,
+      "abba-a2": 0
+    },
+    "new_semantic_config_counts": {
+      "abba-a1": 0,
+      "abba-b1": 0,
+      "abba-b2": 0,
+      "abba-a2": 0
+    },
+    "cached_startup_compilations": {
+      "abba-a1": [
+        {
+          "count": 228,
+          "milliseconds": 304.0,
+          "threads": 4
+        }
+      ],
+      "abba-b1": [
+        {
+          "count": 242,
+          "milliseconds": 620.0,
+          "threads": 4
+        }
+      ],
+      "abba-b2": [
+        {
+          "count": 242,
+          "milliseconds": 612.0,
+          "threads": 4
+        }
+      ],
+      "abba-a2": [
+        {
+          "count": 228,
+          "milliseconds": 399.0,
+          "threads": 4
+        }
+      ]
+    },
+    "hardware_gpu_timing_measured": false,
+    "displayed_fps_measured": false,
+    "descriptive_only": true
+  },
+  "logical_vertex_accounting": {
+    "receipt": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\normal-selective\\result.json",
+      "bytes": 2130,
+      "sha256": "497c1638f96bf2ac385e7f1c7a2f95af59b0b27912b85070005716b4fcfe9ad2"
+    },
+    "log_reference": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\native1\\normal-selective\\logs\\0.log",
+      "bytes": 212219,
+      "sha256": "738adb79a91d2872b2ddfebd3b52bc2148285a1f25d2b25f88bbd9e4bc028501"
+    },
+    "counters": {
+      "decoded_draws": 8431724,
+      "decoded_vertices": 37714670,
+      "decoded_full_bytes": 4978336440,
+      "decoded_bytes": 1458918624,
+      "submitted_draws": 8431724,
+      "submitted_vertices": 37714670,
+      "submitted_full_bytes": 4978336440,
+      "submitted_bytes": 1458918624,
+      "filter_fallbacks": 0,
+      "pipeline_fallbacks": 0
+    },
+    "stride_draw_counts": {
+      "16": 108689,
+      "24": 236673,
+      "32": 16146,
+      "36": 1199158,
+      "40": 6683550,
+      "44": 45384,
+      "52": 142124
+    },
+    "reduction_percent": 70.69465590397101,
+    "timing_eligible": false,
+    "actual_gpu_bandwidth_measured": false,
+    "limits": "Logical decoder/submission accounting only; no hardware draw, bandwidth or GPU time measurement. Byte reduction is not a speedup result."
+  },
+  "interpretation": "Ordinary native state qualification failed despite exact captured pixels. Controlled replay of recorded actual EFB read values matched six checkpoints and pixels, but does not replace the ordinary-state gate. Loaded ABBA failed exact workload equality and the timing threshold. No promotion.",
+  "retained_limits": [
+    "Only title-route checkpoints and one captured frame were compared, not every instruction or whole-game gameplay.",
+    "Physical EFB readbacks still execute in controlled diagnostics; recorded values are substituted only after metadata validation. Those runs are excluded from timings.",
+    "Earlier broad interpolation ASan baseline failure remains unresolved; focused capture passes do not resolve it.",
+    "No hardware GPU execution timing or displayed FPS was measured."
+  ],
+  "preservation": {
+    "receipt": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\final-preservation1.json",
+      "bytes": 177928,
+      "sha256": "fde73b24ae6331c6ef5145697fc41a7bf836cbc47ff8ec984bbac708fa4691b6"
+    },
+    "status": "PASS_FINAL_READ_ONLY_PRESERVATION_AND_RESULTS_AUDIT_EXPERIMENT_UNQUALIFIED",
+    "originals_preserved": {
+      "installed": true,
+      "player": true,
+      "k7": true,
+      "foreign": true,
+      "capture": true,
+      "capture_analysis": true,
+      "active_recipe": true
+    },
+    "inventory_file_counts": {
+      "installed": 46,
+      "player": 450,
+      "k7": 13
+    },
+    "foreign_file_count": 3,
+    "independently_verified_evidence_files": 81,
+    "source_commit": "1e2d0abf76b99a892725d2f041441160f5307e8c",
+    "source_commit_unchanged": true,
+    "git_status_equal_to_baseline": true,
+    "promotion_qualified": false,
+    "limits": "Preservation audit only. Original private file inventories are referenced by receipt hash, not copied into this bundle."
+  }
+}

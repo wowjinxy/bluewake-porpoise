@@ -1,0 +1,342 @@
+{
+  "files": [
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\gxcore\\include\\gxruntime\\gxcore\\shader.hpp",
+        "bytes": 35542,
+        "sha256": "9a2ff1e66c9c895dcf6077cb8ee192b5a6b5b9f05ac587b9900933440252bde7"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/shader.hpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\gxcore\\include\\gxruntime\\gxcore\\gxcore.hpp",
+        "bytes": 14443,
+        "sha256": "d40081be9b3ff4744a0804996615775357c095c8f3bf549c2e058e25639610a0"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/gxcore/include/gxruntime/gxcore/gxcore.hpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\gxcore\\src\\gxcore.cpp",
+        "bytes": 98355,
+        "sha256": "3f7a4fcd3b31c5fd3a84bf68edabdb02c4229c9f31c9578ab2628bd69318a733"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/gxcore/src/gxcore.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\gxcore_draw.hpp",
+        "bytes": 7599,
+        "sha256": "d423baac57a92aca3f664f473776103e1cb9cfa72aa89bb412b40c297202e11f"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\gxcore_draw.cpp",
+        "bytes": 103485,
+        "sha256": "e16b1560d9f1543863377901b8f04e0101d5e8c502d678e6bcba3a81b7e4aab9"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\frame_interp.cpp",
+        "bytes": 97609,
+        "sha256": "cd106ca90e845118b7d9e8f2c2163d906ec4fa4d88804f21a3aaf4f9f879b33c"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\graphics\\aurora\\lib\\gfx\\pipeline_cache.cpp",
+        "bytes": 54600,
+        "sha256": "a3eea1c0124d04fbc5871307bb4df50a9f06845bc1353303497003d2cf3abf87"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\backends\\aurora\\aurora_graphics.cpp",
+        "bytes": 106251,
+        "sha256": "cb635946be7d71d5599e1a060cd2598326886828af4f118edec3a4e75b161515"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/backends/aurora/aurora_graphics.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\backends\\aurora\\aurora_backend.cpp",
+        "bytes": 35551,
+        "sha256": "9d2147139e01917a143f03ac22a445313c171a655aad1c9ff64b0b147ee78161"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/backends/aurora/aurora_backend.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\sdk\\GXRuntime\\include\\gxruntime\\aurora_backend.h",
+        "bytes": 7088,
+        "sha256": "e8dbe8dda3176268955e42d0cdbd38cadbd401b897e25c5bcad428f7465f18ed"
+      },
+      "handoff": "sources/ref/recompcore/GXRuntime/include/gxruntime/aurora_backend.h"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\overlay\\root\\runtime\\host\\src\\hud_renderer.cpp",
+        "bytes": 2369,
+        "sha256": "0dd03eac551094aa86aec2f24e07b6a45a20db6df6dd7c6d5870990c9863826f"
+      },
+      "handoff": "sources/runtime/host/src/hud_renderer.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\sdk-selective-vertices.patch",
+        "bytes": 47529,
+        "sha256": "5ff08cf1c80fde7e9b27dfb3162416c704662139fb9dd091e0ddefc7ccb5e6c6"
+      },
+      "handoff": "patches/01-sdk-selective-vertices.patch"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\root-selective-vertices.patch",
+        "bytes": 886,
+        "sha256": "73a0b1b30fc11a5b3dffa2e1e0dd78ab12f85eb4a1226337c6341b38a33be1f9"
+      },
+      "handoff": "patches/02-root-selective-vertices.patch"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\baseline-bindings.json",
+        "bytes": 1837,
+        "sha256": "90810067b28f3f1398722dc0c3ef1e912338f7e94507d68ae6f0109cd687b145"
+      },
+      "handoff": "bindings/baseline-bindings.json"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\source-receipt.json",
+        "bytes": 7007,
+        "sha256": "996b05bee581cbbc9b8e031101b246433f1f89f00e121e5ef2a38202981038ed"
+      },
+      "handoff": "bindings/source-receipt.json"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\test-source-receipt.json",
+        "bytes": 561,
+        "sha256": "30b9eec6c4d0e8f2110af1c38311f83ba3d081460d67ef98021b3b6cdef02c16"
+      },
+      "handoff": "bindings/test-source-receipt.json"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\interp-production-flags.json",
+        "bytes": 3398,
+        "sha256": "ef113f93ad36b7da8ad7cda8b6adc03399f56eb3b2d0fe368dea76f204538537"
+      },
+      "handoff": "bindings/interp-production-flags.json"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\selective_decode_test.cpp",
+        "bytes": 12600,
+        "sha256": "8b6501ccd9a14ec39aaacf1221e1e1a08ae7e6cabc6761e4e46db6274fcddf4f"
+      },
+      "handoff": "fixtures/compact1/selective_decode_test.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\selective_interp_test.cpp",
+        "bytes": 2271,
+        "sha256": "b3b59f9266b349968790fc32b1cb719a60ac9f37319c9dcb7b40035e7933c626"
+      },
+      "handoff": "fixtures/compact1/selective_interp_test.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\pixels1\\compact_pixels_test.cpp",
+        "bytes": 36749,
+        "sha256": "4c8509384aea0c812d247f73c20d033fa3dd052b956d12fbdce4344cd1d99bba"
+      },
+      "handoff": "fixtures/pixels1/compact_pixels_test.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\pixels1\\cases.cpp.inc",
+        "bytes": 10011,
+        "sha256": "db754beff8d7f2e6e6e3f1cacf6f25c4f66fe178c7559b86fdf8255883d6df5a"
+      },
+      "handoff": "fixtures/pixels1/cases.cpp.inc"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\pixels1\\prepare_fixture.py",
+        "bytes": 14721,
+        "sha256": "a1fe9c7d609858de097ad2e80ab11bd076de27235eaa2a8bcdda4b6c69625e99"
+      },
+      "handoff": "tools/pixels1/prepare_fixture.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\pixels1\\run_fixture.py",
+        "bytes": 7427,
+        "sha256": "11a77ede45b3970ebb3b7ee5175454c859ffe4fd82c8cc54375ff6b85251932f"
+      },
+      "handoff": "tools/pixels1/run_fixture.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\prepare.py",
+        "bytes": 29398,
+        "sha256": "d83d6f5cd815c6528c04e7b75873e8daebf7d95c2fa1a46ac6a1f7fcbe9015db"
+      },
+      "handoff": "tools/compact1/prepare.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\prepare_tests.py",
+        "bytes": 5978,
+        "sha256": "520132b97f013bee1f37b0a44a35d3a0a205a5217ca2a97f761fe1ddf05d8c11"
+      },
+      "handoff": "tools/compact1/prepare_tests.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\prepare_bundle.py",
+        "bytes": 2151,
+        "sha256": "01e45ec56f5194939f8551ed759e7069c875d3e50c8ed565d9a5bd525cf2c003"
+      },
+      "handoff": "tools/compact1/prepare_bundle.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\run_decode.py",
+        "bytes": 8601,
+        "sha256": "8514ce62a1f8c9c6eed81319ca4c53dea163ebbcef91719832b53f77dcbbdf47"
+      },
+      "handoff": "tools/compact1/run_decode.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\run_interp.py",
+        "bytes": 8258,
+        "sha256": "831f868ab230a95279decf70c76e4dc42deb0b39c0da9a0721b51654a7b9ff0c"
+      },
+      "handoff": "tools/compact1/run_interp.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\state-inputs1\\efb_input_diagnostic.h",
+        "bytes": 5566,
+        "sha256": "b803748b9fb7166c10ec7c6e7adc980ed1972c57537605513bedb83449be478c"
+      },
+      "handoff": "fixtures/state-inputs1/efb_input_diagnostic.h"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\state-inputs1\\fixture.c",
+        "bytes": 654,
+        "sha256": "42f24e11d5ad9fe58109e013daafb6a0cc5bee4643ea8c11bf469252a83b7aa4"
+      },
+      "handoff": "fixtures/state-inputs1/fixture.c"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\state-inputs1\\prepare.py",
+        "bytes": 2363,
+        "sha256": "56bbe03344633d0a2fb5bb5331ebd0b746bb0364f0199162e8c4d7d650d4ae08"
+      },
+      "handoff": "tools/state-inputs1/prepare.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\state-inputs1\\run_tests.py",
+        "bytes": 6141,
+        "sha256": "2f6ff1dd4fb97cc88e5fa68ee5c996cb5e892dfda49fe82e81c514cc82362f16"
+      },
+      "handoff": "tools/state-inputs1/run_tests.py"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\state-inputs1\\source-receipt.json",
+        "bytes": 1390,
+        "sha256": "9c4a27f323658e45b4651427751fb334350e2fab59daf35d196a62872bd3a24a"
+      },
+      "handoff": "bindings/efb-source-receipt.json"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\experiments\\gpu-raw-stripecross\\fixtures\\raw_pixels_test.cpp",
+        "bytes": 23323,
+        "sha256": "76f5f4915d841e5a4317a9ebb153479a0e8b5a7439a9fdec5b963c6ab471aa7f"
+      },
+      "handoff": "fixtures/retained/raw_pixels_test.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-02-compact-vertices-20261006\\candidate\\GXRuntime\\graphics\\gxcore\\tests\\gxcore_vertex_layout_test.cpp",
+        "bytes": 9460,
+        "sha256": "eef9be81f359ec47595837b79ea5e2a42e5da34c4c704698257dd13cd20eb307"
+      },
+      "handoff": "fixtures/retained/gxcore_vertex_layout_test.cpp"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\compact-vertices.md",
+        "bytes": 2987,
+        "sha256": "2df41de9ae26dc5398df8144206d461282c07e67b6afd5a6fd83974bbe56160b"
+      },
+      "handoff": "bindings/retained-compact-vertices.md"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\LICENSE",
+        "bytes": 35823,
+        "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+      },
+      "handoff": "licenses/root-LICENSE"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\COPYING",
+        "bytes": 504,
+        "sha256": "0a9aa900c1df0ce1f810905bdc3693e9ea703e6860453fc5c67f21e1b63d8621"
+      },
+      "handoff": "licenses/recompcore-COPYING"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\LICENSE",
+        "bytes": 35802,
+        "sha256": "c3069321e339a754d810a467c8bdd13a4cc3be8c8d46bf55b6ba0d0478cd41ea"
+      },
+      "handoff": "licenses/GXRuntime-LICENSE"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\aurora\\LICENSE",
+        "bytes": 1093,
+        "sha256": "037e7ddff10abcc8471581dade6906de6b28ae6fcb8126bb2e65e34c67c61c06"
+      },
+      "handoff": "licenses/aurora-LICENSE"
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\DESIGN.md",
+        "bytes": 7602,
+        "sha256": "4a458c4976b85e6b12fca8074ec477e222a674812114608962119ca21aa9536e"
+      },
+      "handoff": "DESIGN.md",
+      "handoff_amendment": "Native v1 outcomes added after initial exact copy; original private design is preserved."
+    },
+    {
+      "source": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\NEXT_PERFORMANCE.md",
+        "bytes": 4875,
+        "sha256": "dd8555d3899d13ac3b450247fb98d48abb25414f1b56e3aca540143440d9e35a"
+      },
+      "handoff": "NEXT_PERFORMANCE.md",
+      "handoff_amendment": "Relocation context added; original private note preserved."
+    }
+  ]
+}

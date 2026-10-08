@@ -1,0 +1,51 @@
+{
+  "status": "REFERENCES_ONLY_NOT_BUNDLED",
+  "limits": "Exact retained private prerequisites, not a portable runner installation. Toolchains, runtime DLLs, input traces and game assets are intentionally absent.",
+  "files": [
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-02-compact-vertices-20261006\\run_tests_v4.py",
+      "bytes": 22303,
+      "sha256": "1785dc4ca7c90a5b40bc79be31024d19fd545519ed7b29efce02d22d3f285bc4"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-02-compact-vertices-20261006\\test-inputs-v4.json",
+      "bytes": 1685811,
+      "sha256": "84b268084bf44b9ee02aa099b2c7fd1185e3a0bf26ef8fdb9e2a397078d36742"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\build1\\prepare.py",
+      "bytes": 15974,
+      "sha256": "907a507e8016ad652fc77cb80433acdfad13ccbf5119afa25f01c5ed00538881"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\build1\\baseline-audit1.json",
+      "bytes": 4186241,
+      "sha256": "8b6a9454563a7d0415eabcd0cac384c83612fe0a144e0131608354c07d1677d9"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\slowdown-marker-20261007\\host1\\work\\commands.json",
+      "bytes": 88747,
+      "sha256": "1788c4656c484b572fbf426bfeee2a00567fa8502e9aafeb4e31f33f85292aa0"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\core-efb-gpu-fixture-build-20261006-attempt2\\work\\commands.json",
+      "bytes": 914505,
+      "sha256": "d615745c68c06184d0f97c13b644fa7842d221d2cad1cebea272a138c326c914"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\ref\\recompcore\\GXRuntime\\graphics\\gxcore\\src\\gxcore_shader.cpp",
+      "bytes": 54683,
+      "sha256": "3808318184bf06ebb7cb68ad204968efb1d6959cc098867364f246de3847055f"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\active.json",
+      "bytes": 2353,
+      "sha256": "4b20061c33dc9810543af6dba662a0b903d393e98e82839b37d096e51b81c62f"
+    },
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\patches\\recompcore\\drafts\\compact-vertices.patch",
+      "bytes": 54431,
+      "sha256": "8f646996a865d22f6d0eaeecc23666729987f4713225869497daae2b6798f658"
+    }
+  ]
+}

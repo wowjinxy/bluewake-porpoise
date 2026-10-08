@@ -1,0 +1,15 @@
+diff --git a/runtime/host/src/hud_renderer.cpp b/runtime/host/src/hud_renderer.cpp
+--- a/runtime/host/src/hud_renderer.cpp
++++ b/runtime/host/src/hud_renderer.cpp
+@@ -9,7 +9,10 @@
+ std::atomic<uint64_t> tagged{0},applied{0},suppressed{0},unsupported{0},malformed{0};
+ }
+ extern "C" bool bw_hud_renderer_install(void) {
+-    return dol_aurora_set_gxcore_plan_filter(bw_hud_renderer_filter,nullptr);
++    if(!dol_aurora_set_gxcore_plan_filter(bw_hud_renderer_filter,nullptr))return false;
++    /* transform_plan changes uniforms/scissor/tint only; it never accesses
++       decoded vertices, their offsets or their storage lifetime. */
++    return dol_aurora_set_gxcore_plan_filter_selective_vertices(true);
+ }
+ extern "C" void bw_hud_renderer_stats(BwHudRendererStats* out) {
+     if(!out)return;*out={tagged.load(),applied.load(),suppressed.load(),unsupported.load(),malformed.load()};

@@ -1,0 +1,287 @@
+{
+  "status": "PASS_BOUNDED_STATIC_CPU_GPU_HOST_AND_HELPER_QUALIFICATION",
+  "source_receipt_sha256": "996b05bee581cbbc9b8e031101b246433f1f89f00e121e5ef2a38202981038ed",
+  "receipts": {
+    "decode_o3": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\decode-attempt3\\result.json",
+      "bytes": 223859,
+      "sha256": "f61ebda0e81f057012790b5993c85c1c90a7c14f2fbf4be6e3b85ab421a9ace6"
+    },
+    "interpolation_o3": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\interp-attempt2\\result.json",
+      "bytes": 213587,
+      "sha256": "18c0a63f594fa328d11d1db31223ef1bae5435079824cfb24ade6bf595d4f8ea"
+    },
+    "pixels_d3d12": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\pixels1\\attempt2\\result.json",
+      "bytes": 128404,
+      "sha256": "3c4a3eb6bab16d4ff3c6edd6cc8c7442d7cf2f91c7dc27fad18ca39fd544e0f9"
+    },
+    "host_18_tu": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\build1\\work4\\result.json",
+      "bytes": 2070705,
+      "sha256": "d501229bbdc95631554f901ba61210f114920ae41cea7527b8f36d5716d1e787"
+    },
+    "efb_helper_contract": {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\state-inputs1\\tests1\\result.json",
+      "bytes": 64409,
+      "sha256": "de1bb8ff3897a28f3f776ae8e0ca81b9f779470710d7b9b9afd3e6e9bbe02d0a"
+    }
+  },
+  "results": {
+    "decode_o3": {
+      "status": "PASS_ACTUAL_DECODE_O3_REFERENCE",
+      "profiles": [
+        {
+          "profile": "reference-o3",
+          "outputs": [
+            {
+              "mode": "0",
+              "output": "vertex_layout: 597 cases, 114643 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 114643,
+              "digest": "48bb8c3c89859c33"
+            }
+          ]
+        },
+        {
+          "profile": "candidate-o3",
+          "outputs": [
+            {
+              "mode": "unset",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "0",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "11",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            },
+            {
+              "mode": "1",
+              "output": "vertex_layout: 597 cases, 455292 checks, 0 failures, semantic=48bb8c3c89859c33\n",
+              "cases": 597,
+              "checks": 455292,
+              "digest": "48bb8c3c89859c33"
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation_o3": {
+      "status": "PASS_ACTUAL_INTERPOLATION_CAPTURE_O3",
+      "profiles": [
+        {
+          "profile": "candidate-o3",
+          "outputs": [
+            {
+              "mode": "1",
+              "output": "selective_interp_layout: 204850 checks, 0 failures\n",
+              "cases": 4097,
+              "checks": 204850,
+              "digest": "861b4df17ca478a346cf49eb3d489fcdd44260a62fa6694f69cce3b9b62c770f"
+            }
+          ]
+        }
+      ]
+    },
+    "pixels_d3d12": {
+      "status": "PASS_OFFSCREEN_D3D12_SELECTIVE_VS_FULL_COLOR_AND_DEPTH",
+      "cases_passed": 43,
+      "submitted_frames": 86,
+      "checks": 1413797,
+      "uncaptured_errors": 0,
+      "channel_tolerance": 0,
+      "synthetic_only": true,
+      "window_or_surface": false,
+      "byte_identical_shader_pairs": 50,
+      "actual_dependency_counts": {
+        "0": 276,
+        "1": 211
+      },
+      "actual_link_input_count": 9,
+      "limits": [
+        "Synthetic GPU vertex-fetch/shader equality only; does not replace actual decoder, renderer factory, native-game or timing qualification.",
+        "Multitexmap bindings use the same authored texture image in all slots; this checks required binding layout and coordinate fetch, not different movie planes.",
+        "No early-depth multipass factory or Smooth Motion integration is executed by this standalone fixture."
+      ],
+      "adapter": "NVIDIA GeForce RTX 3070; D3D12 driver 32.0.16.1088"
+    },
+    "host_18_tu": {
+      "status": "PASS_PRIVATE_COMPACT18_TU_HOST_SDK_BUILD_NOT_GAME_QUALIFIED",
+      "compiled_tus": 18,
+      "host_reference_only": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\build1\\work4\\host\\BlueWake.exe",
+        "bytes": 7695360,
+        "sha256": "7c32e473d137900b684e15afbf40f515e0e1c77a3fbd0fbb959e6cec3efc589a"
+      },
+      "baseline_reference_only": {
+        "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\slowdown-marker-20261007\\host1\\work\\host\\BlueWake.exe",
+        "bytes": 7674880,
+        "sha256": "469f83a72d80a31b3235cbce5e6f3149922db03add022e6f09ce22cce1f43195"
+      },
+      "game_executed": false,
+      "module_rebuilt": false,
+      "public_source_edits": false
+    },
+    "efb_helper_contract": {
+      "status": "PASS_PRIVATE_EFB_INPUT_CONTRACT",
+      "checks": [
+        {
+          "name": "off-returns-physical",
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "record",
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "exclusive-output-refusal",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "replay",
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "replay-physical-differences",
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "unconsumed",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "exhausted",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "disallowed-context",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "conflicting-options",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "empty-record",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "empty-replay",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "magic",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "entry-size",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "flags",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "seq",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "retrace",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "pc",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "address",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "kind",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "size",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "reserved",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "bad-depth",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "truncated-header",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "truncated-entry",
+          "expected": 90,
+          "actual": 90
+        },
+        {
+          "name": "trailing-byte",
+          "expected": 90,
+          "actual": 90
+        }
+      ],
+      "timing_eligible": false
+    }
+  },
+  "native_game_qualified": false,
+  "performance_qualified": false,
+  "retained_failure_references": [
+    {
+      "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\pixels1\\attempt1\\result.json",
+      "bytes": 92826,
+      "sha256": "53fa546c70d5b954b70eef92fbcda4932de1af600eb53ac7084bd71d60411e66"
+    }
+  ],
+  "qualification_boundary": "Static and synthetic passes remain valid; completed native/timing results are separately inactive and unqualified."
+}

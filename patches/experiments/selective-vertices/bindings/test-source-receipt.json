@@ -1,0 +1,11 @@
+{
+  "source": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\performance-02-compact-vertices-20261006\\candidate\\GXRuntime\\graphics\\gxcore\\tests\\gxcore_vertex_layout_test.cpp",
+    "sha256": "eef9be81f359ec47595837b79ea5e2a42e5da34c4c704698257dd13cd20eb307"
+  },
+  "candidate": {
+    "path": "E:\\GPT5\\WindWakerRecomp\\bluewake-porpoise\\build\\k7-adaptations-20261008\\compact1\\selective_decode_test.cpp",
+    "sha256": "8b6501ccd9a14ec39aaacf1221e1e1a08ae7e6cabc6761e4e46db6274fcddf4f"
+  },
+  "status": "NOT_COMPILED"
+}
