@@ -773,7 +773,15 @@ library inputs and generated manifest, and exact original PE imports, exports,
 ABI and resource payloads. Static text increases 752 bytes and 138 instructions;
 this is not evidence of a speedup. Fresh same-host clean title replay now
 matches all six complete states and full P6 pixels, consumes all 1,134 EFB
-inputs, and finishes with zero additional pipelines. Timing remains pending.
+inputs, and finishes with zero additional pipelines. The subsequent fixed eight
+timing runs also pass every runtime gate, with exact primary and five-segment
+work and endpoint cursors, terminal GX/clock/dispatch totals, and zero terminal
+pipeline creation. Independent raw-log recomputation gives descriptive mean
+changes of **+1.25% CPU, +0.67% wall and +1.13% thread cycles**. Three of four
+pairs regress; CPU pair changes are +0.28%, +3.55%, -3.26% and +4.50%.
+Both predeclared gain rules fail. This candidate remains inactive; the block is
+closed without extra rescue runs or a changed measurement window. Background
+load and unresolved timer-calibration limitations remain in the evidence.
 A separate native_math include experiment targets its existing ps_sum0 calls.
 Its complete original/candidate translation units passed 5,776 whole-CPU/64 KiB
 comparisons in each generic O2 and ASan profile, and 2,192 whole-CPU/32 MiB
@@ -985,6 +993,8 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `quaternion-clean-per-vi1/{preparation1,source-validation1}.json`
 - `native-math-clean-per-vi1/{preparation1,source-validation1}.json`
 - `quaternion-clean-per-vi1/correctness-batch1.json`
+- `quaternion-clean-per-vi1/{controlled-batch1,peer-controlled-audit1}.json`
+- `quaternion-clean-per-vi1/controlled-input1/quaternion-clean-per-vi-eight-run1.json`
 - `native-math-clean-per-vi1/correctness-batch1.json`
 - `qps-clean-per-vi1/{preparation1.json,source-validation1.json,pe-surface3.json,ldexp-closure1.json}`
 - `qps-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-attempt-audit1}.json`
