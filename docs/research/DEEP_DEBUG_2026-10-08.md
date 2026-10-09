@@ -1925,6 +1925,59 @@ and `runtime2/controlled-input1/maincode2-host-per-vi-eight-run1.json`
 (`2da614a3...`), with `runtime2/independent-timing-audit1.json`
 (`626774c8...`).
 
+## Ordinary intro with paired published PCs, October 9
+
+The actual ordinary certified host completed another visible 1,800-retrace
+intro with the same C2 module, copied player files, warmed cache, real clock,
+audio, FIFO display and SmoothMotion off. All 32 route, sampler and preservation
+checks passed; the owned game exited normally and was drained. Mouse and live
+controller input were disabled. Pipeline compilations and GX rejections/failures
+were zero. The slowdown remained: the log reported 30 below-target seconds out
+of 34 watched seconds, with a lowest speed of 57%. Sampling perturbs this run,
+so these figures do not qualify ordinary throughput or a new speedup.
+
+The external sampler captured 4,455 native RIPs over the observed retrace
+window 790-1487. Each accepted RIP has a four-byte read of the C2 CPU's published
+PC during the same owned suspension. The PC offset is 0x280 in the qualified
+CPU layout. The published PC can be deferred or left at a dispatch boundary;
+it is an association with current state, not proof of the exact interrupted
+PPC instruction. External log timestamps provide only coarse time brackets.
+Two inherited runner prose labels incorrectly say there is no published-PC
+read; the frozen layout and complete read series explicitly supersede them.
+
+Of all samples, 3,490 interrupt the game module and 772 interrupt the host.
+Restricting the joint counts to actual translated chunk/loop locations gives
+J3D/J3DGD 423, collision 313, and GX 176. These are distributed routine
+associations, not exclusive costs or removable time. The 281 all-location
+save/restore associations include host and readiness glue; only 70 associate
+those exact two routines with translated chunks/loops. Existing native matrix
+replacements also account for some high-count matrix routine associations.
+
+An independent calibration used the eight already byte-qualified CodeView
+tables. Of 601 samples with both native-source and published-PC routine names,
+584 agree at routine level (97.17%). Another 74 have shared/line-zero native
+regions and one lacks a published range. Caller/callee transitions and shared
+tails remain explicit limitations. Among all 676 calibrated samples, 201
+interrupt instructions accessing cycle/PC metadata. No single arithmetic leaf
+dominates, and this does not reopen the closed PC-defer, SSA or tail0145 trials.
+
+The next bounded candidate removes the in-function copies inserted by
+`fast_blocks.py` from exact C2 chunks 0145/0201, retaining their original slow
+bodies, charges, refunds, entry labels and dispatch ABI. This differs from the
+older whole-function precise twins and the closed musttail partition trial.
+Source size falls about 39%; actual native size, correctness and performance
+remain unproven at this checkpoint. No installed build changes follow yet.
+
+Evidence is local under
+`build/deep-debug-20261008/ordinary-public-guest-pc-profile1/ordinary-public-published-pc-intro1/`:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Complete run result | `3ef6799f456d078fe05b265d755e3ec5394b382dd1ea40761d2ae716e0ea0f86` |
+| Native RIP and published-PC capture | `2b1857c19325110d02432953af334d8e08b4e0d5cf648395d326e82f76b5fc2a` |
+| Full association matrix | `511131bc867758f1b69f88877d259af1d21a9eb7ff1c33b16cb3c7c64204195a` |
+| Independent CodeView calibration | `16afbc4859f227d6f513ef68b89af9c3ae1f8edb0616260d0356ebd31b4e17fb` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
