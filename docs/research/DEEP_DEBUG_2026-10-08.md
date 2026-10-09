@@ -596,6 +596,70 @@ counts remain fixed. Possible native block sharing does not prove fewer dynamic
 readiness calls. The exact 48 dependency inputs and drained compile job pass
 review, so this bounded experiment is closed without a larger build.
 
+## Event-filter and register-save experiments
+
+The event observer now has a private conservative negative-filter candidate.
+It combines immutable static-entry hash buckets with the existing live pending
+return buckets; a hit still executes the original exact predicates. It caches
+no observation verdict. Full original/candidate translation-unit fixtures pass
+37,758 comparisons in each optimized and sanitizer profile, with missing-entry
+and missing-armed-return mutants detected. The actual host link replaces only
+that observer object and retains the common timer main and other 169 physical
+link inputs. Emitted code changes only the observer and grows 32 padded bytes.
+
+Fresh A/event correctness passes six complete states and full P6. All eight
+clean timed runs pass zero-pipeline, replay, route and terminal gates. Raw-log
+independent decoding matches all primary/five-segment work and both endpoint
+cursors. Descriptive mean changes are -7.59% CPU, -8.25% wall and -7.67% cycles.
+CPU pairs are -2.89%, -17.65%, +0.44%, -9.26%; wall pairs are all negative.
+The preregistered all-pairs CPU rule fails, so this remains an inconclusive
+experiment, without rescue runs or promotion. Background load is uncontrolled;
+all zero CPU calibration spans remain unresolved.
+
+A separate register-save candidate splits a fresh sufficient RAM-span proof
+from the verbatim old per-word predicate. It additionally checks the adopted
+fixed RAM owner and compile-time size so accepted accesses retain the original
+resolver/census effects. Four actual-resolver profiles (generic/fixed, optimized
+and sanitizer) each pass 84,342 queries, with whole CPU/registry/census equality
+and three meaningful alias/owner/journal mutants detected.
+
+The one-chunk original A0145/cap-10 compile passes exact 48-dependency M/MD and
+unchanged-source/flags checks. Its actual common helper is 176 bytes and 40
+instructions, with no saved-register or stack frame, and tail-jumps to the
+retained 464-byte cold predicate on uncertain cases. The caller is unchanged;
+whole-object call/stack/metadata sites remain fixed because the cold path is
+retained. This confirms a distinct common-path mechanism, without a module,
+runtime or speed qualification. Full consumer selection uses the clean profile
+and remains separate from the earlier traced selection.
+
+## Inactive native-entry reuse
+
+A source census of the older item 17 and 18 drafts matches every selected
+original function/callee to A's pristine translated inputs. All 255 relevant
+comparisons across the five current mod variants match too. This establishes
+source compatibility, without claiming current runtime admission or speed.
+
+The 35 GX entries and their callees cover 131 uniquely attributed clean samples
+out of 4,401 (2.98%). That union includes 31 samples in shared save/restore code
+whose callers are unknown. Keeping every current watch leaves 29 eligible
+entries and 80 samples (1.82%); ambiguous overlaps are excluded. Six entries
+remain blocked, including display-list/Begin/texture-load boundaries and the
+three fog/TevOrder routines with genuine save/restore observations. The hotter
+TevColorS10/KColor routines are outside the previously qualified set.
+
+All 35 unchanged GX drafts would decline on the current route: their entry
+guard requires both gather writers, while the user's build and clean controls
+use direct word writes with byte batching disabled. Reuse therefore needs an
+explicit coupled experiment comparing A/direct, A/batch and eligible GX/batch.
+Batch-only speedup is not a prerequisite for testing its dependent native path.
+No watch, transaction threshold, deadline or callback boundary may be removed.
+
+The two independent item 17 entries, CalcDivideInfoOverArea and cM3dGCyl::SetC,
+are currently unwatched and cover 32 clean samples together (0.73%). Neither is
+already active. Historical fixtures remain useful prior evidence; rebasing
+their additive hooks and qualifying the actual current module remain undone.
+None of these sample frequencies is exclusive CPU time or a gain forecast.
+
 ## Fresh GX-worker findings
 
 Of 4,147 worker samples, 1,568 (37.81%) land in
@@ -709,6 +773,12 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `fp-inline-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-audit1}.json`
 - `fp-inline-clean-per-vi1/controlled-input1/fp-inline-clean-per-vi-eight-run1.json`
 - `coalescer-cap1/{source-preparation1,attempt1/result,attempt1/codegen1}.json`
+- `inactive-native-applicability1/{source-census1,feasibility-receipt1}.json`
+- `event-negative1/{native-preparation1,source-validation1,peer-source-review1}.json`
+- `event-negative1/{correctness-batch1,controlled-batch1,actual-independent-audit1}.json`
+- `event-negative1/host1/attempt3/{result,codegen1/result}.json`
+- `gpr-split1/{source1/source-receipt,fixture-attempt1/result}.json`
+- `gpr-split1/pilot-attempt1/{result,codegen1}.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
