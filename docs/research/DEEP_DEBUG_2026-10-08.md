@@ -1458,6 +1458,54 @@ points add alignment exceptions that the translated bodies do not. A future
 failure exit must therefore resume the exact original translated instruction;
 substituting the interpreter entry would change behavior on unaligned access.
 
+A reusable eleven-op integer emitter now consumes two original-derived plans:
+the ten-op seed and the 113-op display-list block. Both plans reconstruct
+their original C slices exactly and carry 125 independently checked publication
+frontiers. Twenty-two parser/source checks and six mutated-manifest rejections
+pass. The generator emits production and forced-exit test modules separately.
+The first compile stopped on a C++ type-name collision with LLVM; a minimal
+successor qualified two type references and preserved that failure. Eight
+actual owned steps then compiled, linked and emitted both plans, with a final
+494-file dependency union. The generated objects subsequently executed in the
+two differential stages below.
+
+Passive admission checks all four objects and 127 functions: two production
+functions and 125 forced-exit test functions. All 116 framed functions have
+matching complete unwind records; eleven true leaves need no frame record.
+No native calls or imports beyond the three admitted globals remain. The seed
+production text is 550 bytes with a 56-byte frame; the larger production text
+is 4,306 bytes with an 80-byte frame (64 saved-register bytes plus 16 locals).
+The separate test texts are 3,702 and 231,458 bytes. Stack-allocation parser
+failures and the reused exact passive-tool logs remain preserved. These are
+code-generation facts, not speed or semantic qualification of the successor.
+Its conservative seed admission now requires the original eleven-cycle leader
+bound rather than the earlier ten-op cutoff. The successor seed regression
+passes in all four original configurations: 1,396 original cases, 1,507 complete
+CPU/32 MiB comparisons and eight added deadline-boundary checks per profile.
+The original frontier, range, rejection and semantic-negative checks remain.
+Twenty-four qualified provider objects were reused exactly; eight changed C
+translation units were compiled across the four configurations. All twenty-eight
+fresh owned steps completed and drained. The generated code remains outside
+ASan's instrumentation; this is differential correctness evidence.
+
+The 113-op block also passes all four configurations, with 486 complete CPU/
+32 MiB comparisons per profile. These include 228 direct forced-frontier
+comparisons, 219 complete continuation/scenario comparisons, 27 reachable range
+exits and nine read-only admission rejections. All 114 forced frontiers reached
+their required direct and continuation counts; the 27 real range cases cover
+23 distinct frontiers, not all 83 memory operations independently. Each profile
+includes 26 callback cases and rejects three deliberately incorrect consumers.
+Thirty-six changed C translation units and twenty-four retained providers cover
+the four profiles; all eighty-four fresh owned steps completed and drained.
+Active gather output, arbitrary concurrent hosts and full game-dispatch behavior
+remain outside these fixtures. Neither stage is a performance measurement.
+
+A private production overlay now changes only the corresponding prefix in
+original C2 chunk0181, retaining its full-file inverse, original cycle charge,
+all precise labels and remaining game code. Its full-module compile/link and
+fresh game correctness/timing comparison remain separate next gates. No
+installed binary has changed.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
@@ -1739,6 +1787,17 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `llvm-bounded-prefix1/next-scale-feasibility1/{result1,original-frontiers1}.json`
 - `llvm-bounded-prefix1/FP-state-footprint1.json`
 - `llvm-bounded-prefix1/LFS-STFS-footprint1.json`
+- `llvm-bounded-prefix1/generic-integer-plan1/{preparation1,validation1}.json`
+- `llvm-bounded-prefix1/generic-integer-emitter1/{source-preparation1,peer-source-review1,peer-manifest3}.json`
+- `llvm-bounded-prefix1/generic-integer-emitter1/emission-attempt{1,2}/result.json`
+- `llvm-bounded-prefix1/generic-integer-emitter1/passive-admission5/admission.json`
+- `llvm-bounded-prefix1/generic-seed-fixture1/source-preparation1.json`
+- `llvm-bounded-prefix1/generic-seed-fixture1/{recipe2,canonical-qualification1}.json`
+- `llvm-bounded-prefix1/generic-seed-fixture1/attempt1/result.json`
+- `llvm-bounded-prefix1/generic-integer-fixture1/{fixture-plan1,source-validation1,peer-source-corpus1,recipe2,canonical-qualification1}.json`
+- `llvm-bounded-prefix1/generic-integer-fixture1/attempt1/result.json`
+- `llvm-bounded-prefix1/generic-integer-module1/source1/source-receipt1.json`
+- `ssa113-c2-runtime1/{plan2,source-copy1}.json`
 - `integer-lane-feasibility1/{eight-owner-handoff1,eight-owner-result1,eight-owner-frontiers1,next-region1}.json`
 - `integer-lane-feasibility1/EIGHT_OWNER_REPORT1.md`
 - `v3-entry-frames1/result1.json`
