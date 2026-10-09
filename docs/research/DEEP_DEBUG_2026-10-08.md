@@ -125,16 +125,40 @@ deadline edges and three deliberately broken variants are included.
 The first production-policy compile exposes a drawback: it adds 9,712 executable
 bytes while retaining the original fallback, and the new lane still calls 17
 pure conversion or rounding helpers. A narrow private inline-helper successor
-is under investigation. This block has **zero samples in the visible capture**;
-its tests qualify the mechanism only. No route speedup, whole-module change or
-default enablement follows from the fixture or code-size result.
+passes both fixture profiles and removes those calls, at the cost of 12,528
+additional executable bytes including the preserved fallback and cold exits.
+An offline concrete interpretation of the actual relocated COFF follows 645
+native instructions instead of 1,421 for one ordinary-data case, with matching
+complete CPU state and output bytes. Calls fall from 19 to zero; CPU FPR reads
+fall from 36 to four, and PC writes from 29 to three. This is a code-path result,
+not hardware execution or timing; the native differential fixtures remain the
+semantic authority. This block has **zero samples in the visible capture**.
+No route speedup, whole-module change or default enablement follows.
+
+A separate passive census identifies 84 original fast-copy source intervals
+containing 115 samples in those two chunks. Only four intervals contain any
+floating-point result-writing opcode, with one sample each. The next local-state
+pilot therefore targets the sampled integer/memory block `0201:164`, rather
+than expanding the unobserved floating-point block. A text-only scan across the
+35 historical hot chunks finds 7,298 possible integer prefixes; neither that
+count nor samples in a parent interval certify any prefix's safety or runtime
+admission.
 
 The adjacent native-call prototype also passes its differential tests, but its
 first fused helper retains a larger stack frame across the native body. A
-tail-call successor is being checked before considering wider application.
+tail-call successor passes all four profiles and releases its frame before
+jumping to the body. The enumerated admitted path adds ten wrapper instructions
+while removing one complete duplicated host predicate invocation. A source-only
+342-site recipe is preserved; it has not been compiled or timed.
+
 The borrowed live-observer view passes all four fixture configurations at one
-literal target; its actual production code is still being inspected. Neither
-prototype has a qualified game timing result.
+literal target. Its frame-free successor removes calls and six conditional
+branches on two enumerated successful paths, but adds 16 or 24 explicit reads
+through borrowed field pointers. A separate source-only draft relocates the
+actual private live objects into compact typed storage, preserving existing
+writers and initializers. Its serialization aliases and restored values still
+need compiled validation. Neither observer prototype has a qualified game
+timing result.
 
 ## Current baseline and reproduction
 
@@ -1215,8 +1239,14 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `cursor-fprf1/source3/source-receipt.json`
 - `cursor-fprf1/fixture-attempt2/result.json`
 - `cursor-fprf1/codegen-attempt2/{result,lane-cfg1}.json`
+- `cursor-fprf1/codegen-attempt3/{result,concrete-path2,success-path-summary2}.json`
+- `root-lane-coverage1/result2.json`
+- `integer-lane-feasibility1/result1.json`
 - `native-adjacent-stack1/{qualification-attempt1,negative-attempt1,codegen-attempt2}/result.json`
+- `native-adjacent-stack1/codegen-attempt3/{result,admitted-paths2}.json`
+- `native-adjacent-stack1/expanded2/handoff1.json`
 - `observation-live-view1/source3/source-receipt.json`
+- `observation-live-view1/source5/source-receipt.json`
 - `native-stacks1/game-admission1/{leaf-source-preparation3,leaf-pure-tests3,leaf-coverage-audit1}.json`
 - `native-stacks1/game-admission1/leaf-request1/{preparation,stack-ranking1}.json`
 - `native-stacks1/game-admission1/leaf-request1/offline-unwind1/{result,unwind}.json`
