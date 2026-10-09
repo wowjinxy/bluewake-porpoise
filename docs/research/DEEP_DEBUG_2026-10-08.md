@@ -2206,7 +2206,8 @@ matching reservation invalidation. Rejected accesses call the original
 canonical service once. FPRF and callback-mutated state survive the joins.
 The framed 57,536-byte private body has exact Win64 unwind coverage and restores
 all nonvolatile saves; its ordinary wrapper remains a frameless tail jump.
-Static IR includes 4,559 PHIs, 1,385 CPU loads and 3,904 CPU stores across all
+The initial IR token count reported 4,559 PHIs; counting actual `phi` opcodes
+corrects this to 4,401. There are 1,385 CPU loads and 3,904 CPU stores across all
 paths. These counts include slow paths and do not establish dynamic savings.
 
 Every actual guest `blr` that passes the original budget check now reports a
@@ -2242,6 +2243,86 @@ performance qualification is established by these compiler/link checks.
 | `canonical-fast-memory2/peer-shader-source-correction2.json` | `e3b3c7ddb3ebcc6582d70062eaca839541479b8b86af3fa39cec4d2e04bd012a` |
 | `module-plan1/attempt1/result.json` | `28c9597fdc13d237ac04e6d6e480f1f12befa31cad1792f201621392fa351cc6` |
 | `module-plan1/attempt1/output/gGZLE01_recomp.dll` | `3fa09e8306c5695c3d347a0531ff6f418961c9cb7d9c460794689e6d3355506f` |
+
+### Actual emitted-code memory differential
+
+The actual integrated backend now emits two synthetic memory consumers: the
+canonical service path and the guarded fixed-MEM1 path. Both execute against
+an oracle using the original C2 memory, gather and FP helpers, with eight
+retained real C2 providers. All 382 cases and 764 comparisons pass. Each
+comparison checks all 3,552 CPU bytes, all 32 MiB of MEM1, alias/MEM2/external
+pointer storage, callback/journal/FIFO order and CPU snapshots, registry
+mutation delta, host exceptions and MXCSR.
+
+The corpus includes unaligned and boundary accesses, raw/masked alias priority,
+write journals, matching and unrelated reservations, synchronous callbacks that
+change live CPU controls, lazy-FPU exits, LFS bit patterns and short scheduler
+budgets. Actual counters record 205 admitted fast accesses, 134 fallback
+accesses, 148 direct reads, 57 direct writes and ten mutating callbacks. These
+are route counts, not performance measurements. All eleven owned native rows
+exit successfully and drain.
+
+Before execution, independent inspection admits both actual COFF objects,
+ordinary CPU-pointer ABI, all 30 emitted resume entries, complete unwind and
+nonvolatile restoration, and exact imports. The standard `_fltused` data marker
+is supplied by the actual linked CRT library. The earlier parser rejection is
+retained. A pre-native entry-count error and a later mandatory-header gate
+failure are also preserved; the corrected gate checks the actual backend
+headers and an entire inverse to the production CPU header, while retaining
+the production-header checks for the C consumers.
+
+This is not whole-function gameplay or speed qualification. Only ten of the
+30 emitted entry points are exercised. The synthetic ADDI prefix creates no
+pending FPRF, and there is no second memory access following a callback that
+changes aliases. Those paths retain source review only. Full intro state/pixel
+comparison and proof that the game executes the new routine remain separate.
+
+Local evidence under
+`moderngekko-whole-function1/canonical-fast-memory2/differential1/`:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `recipe3.json` | `578d4e98cc6713cf8a2aeb33c47c813fcedf043675ffa07a1062ed1ca16b24a4` |
+| `attempt2/result.json` | `6467e86699a5767e4af20c4880dc89a011021659b48b4414ddee2cc8af8fd6c5` |
+| `attempt2/passive-admission1.json` | `c6e3e8cb986f7d014d95abd4860f4ae46369fb2b9f22e57ee77247c4c2aa065d` |
+| `peer-shader-header-repair3.json` | `6cfdb15094be341895699a7460df726d8d30fe1935254d0a3af997e83153d8f7` |
+| `attempt2/independent-actual-audit1.json` | `9438e3aa834f83e4a4c8011fbd14698e65d84af8640f68f0583d38b6645bce4e` |
+
+### Whole-function controlled intro correctness
+
+The original C2 module `54119177...` and private LLVM candidate `3fa09e83...`
+now complete fresh 1,800-retrace intro runs on the same qualified `2b9bc61e...`
+diagnostic host. Both pass all 32 route, runtime and preservation checks, exit
+normally and drain. All six complete logical CPU/MEM1/MEM2/ordered-alias
+checkpoint hashes match, and the complete 1,228,335-byte P6 image is equal.
+Both consume all 1,134 recorded EFB inputs while retaining physical reads;
+their physical differences, 31 and 73, remain recorded. Terminal pipeline
+creations are zero.
+
+This qualifies state/pixel parity on that controlled route only. An independent
+audit reparses the six raw checkpoint records, compares the complete P6 bytes,
+and confirms all 1,801 per-VI work cursors, primary/five-segment work and terminal
+GX/clock/dispatch records match. These are source-qualified complete logical
+state hashes, not retained full RAM dumps.
+
+A separate candidate run now uses the unchanged owned native sampler with the
+same guest options, copied data, EFB inputs, checkpoints and capture. All 33
+runtime checks pass, the game exits normally and drains, and comparison again
+matches all six checkpoint hashes and the complete image. Of 4,283 native RIP
+samples, 85 at 75 unique addresses lie inside the exact linked 57,536-byte LLVM
+private body. The actual image, MAP, unwind range and mapping are pinned. This
+proves execution of the new implementation, without proving every instruction,
+resume entry or path. Sampling perturbs timing; its frequencies are not costs.
+No fixed-order throughput comparison or ordinary visible FPS improvement has
+been established for this candidate, and the playable build stays unchanged.
+
+| Evidence under `moderngekko-c2-runtime1/` | SHA-256 |
+| --- | --- |
+| `correctness-batch1.json` | `870f49ad1869aabec0bc2ceb876e7f9738a9ded7966828cc396a3f5bb39b2834` |
+| `native-efb1/moderngekko-c2-per-vi-input-parity1.json` | `077f016bfc8b84ccf55d12c5a4c659e8ef6b5d8a3263cbfd27795f4bb005f0d8` |
+| `independent-correctness-raw-audit1.json` | `6b0a09b0836a1f9f65dca1287b2f910063f524fec68e9008a0e45ef52c04e070` |
+| `native-efb1/moderngekko-c2-per-vi-g-coverage1/native-coverage.json` | `61f82c6926f599b2fd95f999d16d0b19b3d465f72bcfc67789e996b6529b5756` |
+| `native-efb1/moderngekko-c2-per-vi-coverage-input-parity1.json` | `cdbb1fa9dee129dea89dae932fef033ed292855672727417392ba4367a034d91` |
 
 ## Validation boundary and retained evidence
 

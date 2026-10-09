@@ -28,8 +28,12 @@ All 49 backend/consumer translation units compile with these options enabled,
 and emit the complete private 93-instruction function. The routed original C2
 chunk also compiles. Actual guarded-path and unwind inspection passes, and a
 private module links with the original PE interface and resources preserved.
-Runtime differential testing remains pending. These checks establish neither
-gameplay parity nor a performance improvement. The generic patch excludes the original game
+Actual emitted-code memory differential testing passes 382 cases and 764
+complete CPU/MEM1 comparisons with real runtime providers. A fresh controlled
+intro also matches all six complete logical state checkpoints and the full P6
+image. A separately sampled intro confirms execution inside the exact new
+LLVM body and again matches state/pixels. These checks establish neither
+broader gameplay parity nor a performance improvement. The generic patch excludes the original game
 adapter, instruction words, scheduling ledger and compiled game code.
 
 Private development commit: `c989f634`. Retained source, compile and inspection
