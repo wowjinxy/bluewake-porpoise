@@ -653,8 +653,18 @@ identical-input pilot reuse, with 805 original direct objects and the original
 physical link inputs and the PE surface pass their checks. Fresh same-host
 title replay comparisons match all six complete states and full P6 pixels,
 consume all 1,134 EFB contexts, and finish with zero pipeline creations.
-Performance is still unqualified. This selection remains separate from the
-earlier traced selection and contains no other candidate changes.
+The complete fixed-order eight-run comparison now fails both speed gates.
+Descriptive means increase CPU 0.4918%, wall 0.5473% and thread cycles 0.4837%.
+The first three pairs reduce CPU/wall by 1.21/1.66%, 0.17/0.37% and
+1.93/1.45%; the fourth increases them by 5.15/5.53%. Every runtime gate passes,
+including zero terminal pipeline creations, unchanged terminal GX/clock/dispatch,
+and exact primary/five-segment work and endpoint cursors. Independent raw-log
+reparsing confirms the retained reports. All three agents acknowledged a drained
+hold before timing and resumed after the batch terminated. Background load and
+CPU timer resolution remain limitations; no overhead is subtracted.
+The failed block is retained without extra runs or a changed window. This
+candidate stays inactive, separate from the earlier traced selection and every
+other candidate change.
 
 ## Clean paired-single comparison and startup readiness
 
@@ -680,11 +690,35 @@ pipeline creation, and pending-set removal is earlier than the original
 notification/counter/prune/log epilogue. Either empty-container test alone can
 report completion too soon. A private opt-in completion-fence draft tracks
 workers through that epilogue and waits for closed loading, empty queues and
-pending set, and no workers in flight. Lifecycle/error tests and compilation
-are pending. The failed C2 log reports 242 cached completions after early VI
+pending set, and no workers in flight. The second source draft also rejects a
+previous unclosed nonthreaded/WebGPU lifetime through a shared nine-condition
+admission helper. Threaded positive, lifecycle/error, all 512 admission
+combinations and four behavioral negative fixtures are frozen against the actual
+production helper. Two fixture link attempts failed on the CRT setup before any
+test body ran; they remain preserved, and an explicit-library successor is being
+prepared. No host build or game run is qualified yet. The failed C2 log reports
+242 cached completions after early VI
 activity, but does not identify the seven creations' origins. This draft does
 not yet explain or fix the steady crowded-scene CPU slowdown, guarantee future
 cache hits, or certify successful cache persistence.
+
+## Adjacent native approval
+
+A source census of the exact clean 35-chunk selection finds 342 matrix native
+calls immediately inside a successful direct-readiness edge. Each uses the same
+CPU and raw literal target, with no intervening statement or callback. The seven
+matrix targets cover concat, copy, vector, identity, translation, vector-array
+and scale. Another 75 game-math/entry/vector/J3D/skin hooks are excluded because
+they do not have this adjacency proof.
+
+The first direct predicate currently wraps the host predicate invoked again by
+native math. Pointer equality cannot certify reuse: callbacks may mutate state,
+count, or alternate answers. A separate default-off owner capability is under
+source investigation. It must revoke before every related setter mutation,
+preserve standalone/general APIs and all native preflight/counters, and prove
+the exact targets' transitive predicate writer/thread closure. Asynchronous
+preference/input producers make that last proof necessary. Source adjacency
+alone is insufficient, and there is no implementation or speed claim yet.
 
 ## Clean observer-domain comparison
 
@@ -916,6 +950,8 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `gpr-split1/pilot-attempt1/{result,codegen1}.json`
 - `gpr-split1/clean-module5/attempt1/{result,actual-objects1,actual-link-inputs1,PE-surface1}.json`
 - `gpr-split-clean-per-vi1/{preparation1,source-validation1,correctness-batch1}.json`
+- `gpr-split-clean-per-vi1/{controlled-batch1,independent-attempt-audit1}.json`
+- `gpr-split-clean-per-vi1/controlled-input1/gpr-split-clean-per-vi-eight-run1.json`
 - `gpr-split1/hold-deviation2.json`
 - `h-clean-per-vi1/{preparation2,source-validation2,correctness-batch1,controlled-batch1}.json`
 - `h-clean-per-vi1/{independent-audit1,timing-incident1}.json`
@@ -930,6 +966,9 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `qps-clean-per-vi1/{preparation1.json,source-validation1.json,pe-surface3.json,ldexp-closure1.json}`
 - `qps-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-attempt-audit1}.json`
 - `pipeline-preload1/source1/source-receipt.json`
+- `pipeline-preload1/{source2/source-receipt,fixture-preparation2,fixture-preparation3}.json`
+- `pipeline-preload1/{fixture-attempt2,fixture-attempt3}/result.json`
+- `native-preapproval1/{DESIGN1.md,census2.json,source-audit1.json}`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
