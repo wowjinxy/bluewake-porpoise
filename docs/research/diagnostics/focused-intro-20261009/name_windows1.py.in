@@ -1,0 +1,94 @@
+"""Reviewed-source-only offline naming; explicit root invocation still required."""
+import argparse
+from collections import Counter
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+
+OUT=Path(__file__).resolve().parent
+CASE=OUT/'title-focused-c2-1'
+
+
+def pin(path):
+    path=Path(path).resolve();h=hashlib.sha256()
+    with path.open('rb') as f:
+        for chunk in iter(lambda:f.read(4*1024*1024),b''):h.update(chunk)
+    return dict(path=str(path),bytes=path.stat().st_size,sha256=h.hexdigest())
+
+
+def load_source(name,record):
+    assert pin(record['path'])==record
+    spec=importlib.util.spec_from_file_location(name,record['path'])
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module
+
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--recipe-sha',required=True)
+    args=parser.parse_args()
+    recipe_path=OUT/'naming-recipe1.json'
+    assert pin(recipe_path)['sha256']==args.recipe_sha
+    recipe=json.loads(recipe_path.read_bytes())
+    assert recipe['status']=='SOURCE_ONLY_PENDING_ROOT_OFFLINE_SYMBOLIZER_REVIEW'
+    assert all(pin(row['path'])==row for row in recipe['inputs'])
+    assert pin(__file__)==recipe['script']
+    actual=json.loads((CASE/'result.json').read_bytes())
+    assert actual['status']=='PASS' and actual['row']['drained'] and actual['row']['exit_code']==0
+    summary=json.loads((CASE/'window-summary1.json').read_bytes())
+    mapper=load_source('qualified_c2_mapping',recipe['mapper'])
+    sampler=load_source('qualified_local_symbolizer',recipe['sampler'])
+    proof=json.loads(Path(recipe['map_proof']['path']).read_bytes())
+    assert proof['whole_file_equal_except_coff_timestamp'] and proof['all_section_layouts_and_payloads_equal']
+    assert proof['accepted_module']==recipe['module'] and proof['map']==recipe['map']
+    lookup,map_metadata=mapper.load_map(recipe['map']['path'],recipe['module']['path'])
+    unique={int(row['rip'],0):row for window in summary['windows'] for row in window['raw_rip_frequency']}
+    host_rows=[dict(row,count=1,preceding_interval_cycles=0) for row in unique.values()
+               if row['module'] and row['module']['name'].casefold()=='bluewake.exe']
+    # One lookup per unique host RIP; these unit counts are naming requests, not samples.
+    host_report=dict(addresses=host_rows)
+    symbolized=sampler.symbolize_llvm(host_report,symbolizer=recipe['symbolizer']['path'],
+        image_overrides={row['module']['path']:recipe['host']['path'] for row in host_rows},
+        max_addresses=4096,timeout_s=60)
+    host_names={}
+    for group in symbolized['groups']:
+        for row in group['addresses']:
+            frames=(row.get('llvm') or {}).get('Symbol') or []
+            host_names[int(row['rip'],0)]=dict(
+                outer=frames[-1].get('FunctionName') if frames else '<unresolved>',
+                inner=frames[0].get('FunctionName') if frames else '<unresolved>')
+    results=[]
+    for window in summary['windows']:
+        functions=Counter();inlines=Counter();named=[]
+        for row in window['raw_rip_frequency']:
+            module=row['module'];name=module['name'] if module else '<unmapped>'
+            rip=int(row['rip'],0)
+            evidence=None
+            if module and name.casefold()=='bluewake.exe':
+                value=host_names.get(rip,dict(outer='<not_symbolized>',inner='<not_symbolized>'))
+                label=value['outer'];inlines[(name,value['inner'])]+=row['samples']
+                evidence='Exact selected2b9 image and adjacent accepted PDB via LLVM; raw PC unchanged.'
+            elif module and name.casefold()=='ggzle01_recomp.dll':
+                value=lookup(int(row['rva'],0))
+                label='|'.join(value['names']) if value else '<unresolved>'
+                evidence=value
+            else:
+                label='<raw_system_or_unknown_rva>'
+            functions[(name,label)]+=row['samples']
+            named.append(dict(row,function=label,naming_evidence=evidence))
+        rank=lambda counts:[dict(module=m,function=n,samples=c) for (m,n),c in counts.most_common()]
+        results.append(dict({k:v for k,v in window.items() if k!='raw_rip_frequency'},
+                            functions=rank(functions),host_inline_functions=rank(inlines),addresses=named))
+    assert all(pin(row['path'])==row for row in recipe['inputs'])
+    output=dict(status='PASS_POSTDRAIN_NAMING_WITH_EXPLICIT_PARTIAL_SYMBOL_STATUS',
+                recipe=pin(recipe_path),windows=results,host_symbol_requests=len(host_rows),
+                host_symbols=symbolized,module_map_metadata=map_metadata,
+                selected_host_pdb=recipe['pdb'],all_inputs_preserved=True,
+                limits='Counts are QPC-windowed main-thread RIP frequencies, not exclusive CPU time. System images remain raw. C2 uses nearest qualified MAP names; ambiguous/no-unwind extents remain tentative. Host unit-count lookup requests are never treated as sample counts.')
+    destination=CASE/'named-window-summary1.json'
+    with destination.open('x',encoding='utf8') as f:json.dump(output,f,indent=2);f.write('\n')
+    print(json.dumps(pin(destination)))
+
+
+if __name__=='__main__':main()

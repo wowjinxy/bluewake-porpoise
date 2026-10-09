@@ -1,0 +1,154 @@
+"""Passive frequency/accounting audit. Does not invoke a symbolizer or target."""
+from collections import Counter
+from pathlib import Path
+import hashlib
+import json
+
+OUT = Path(__file__).resolve().parent
+CASE = OUT / 'title-focused-c2-1'
+NAMED = CASE / 'named-window-summary1.json'
+OLD = OUT.parent / 'visible-c2-profile1/title-visible-c2-native1/rip-ranking-map2.json'
+
+
+def pin(path):
+    path = Path(path).resolve()
+    data = path.read_bytes()
+    return dict(path=str(path), bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+
+
+def family(module, name):
+    """Closed ordered naming taxonomy, not a claim about caller/exclusive cost."""
+    m = module.casefold()
+    if m not in ('bluewake.exe', 'ggzle01_recomp.dll'):
+        return 'system_or_unmapped'
+    if not name or name.startswith('<'):
+        return 'unresolved_admitted_image'
+    if '|' in name:
+        return 'ambiguous_map_aliases'
+    if name.startswith(('func_', 'loop_')):
+        return 'translated_chunk_or_loop'
+    if (name in ('host_chassis_requires_full', 'host_chassis_requires_full_facts',
+                 'host_can_skip_observation', 'host_can_skip_observation_facts',
+                 'bluewake_edge_maybe_intercept')
+            or name.endswith(('_observes', '_observes_context'))):
+        return 'named_observer_predicates_and_edge_lookup'
+    if name in ('bw_direct_call_ready', 'bw_inline_gpr_memory_ready',
+                'bw_edge_unwatched', 'host_direct_can_skip', 'host_alias_rel_pc'):
+        return 'named_call_or_memory_readiness'
+    if name in ('chassis_dispatch', 'dolrecomp_call_original',
+                'bw_call_translated', 'bw_find_chunk'):
+        return 'named_guest_call_dispatch'
+    if (name.startswith(('bw_fp_', 'ppc_psq_', 'bw_composite_psq_',
+                         'bw_generated_f32_', 'bw_generated_f64_',
+                         'dolrecomp_f32_', 'dolrecomp_f64_'))
+            or name in ('ppc_fctiw', 'ppc_frsp', 'ppc_frsqrte', 'lfs', 'stfs')):
+        return 'named_fp_psq_and_bit_conversion'
+    if name.startswith('bw_mem_') or name == 'ppc_guest_alias_resolve':
+        return 'named_memory_and_alias_helpers'
+    if name.startswith(('bluewake_native_', 'bluewake_porpoise_', 'gm_', 'ga_',
+                        'vec_', 'skin_')):
+        return 'named_native_replacement_and_math_helpers'
+    return 'other_host' if m == 'bluewake.exe' else 'other_module'
+
+
+def frequency_view(functions, host_inlines):
+    # LLVM innermost name replaces the host outer name. Never sum both views.
+    rows = [r for r in functions if r['module'].casefold() != 'bluewake.exe'] + host_inlines
+    c = Counter()
+    for row in rows:
+        assert row['samples'] > 0
+        c[family(row['module'], row['function'])] += row['samples']
+    total = sum(r['samples'] for r in functions)
+    host_total = sum(r['samples'] for r in functions if r['module'].casefold() == 'bluewake.exe')
+    assert sum(r['samples'] for r in host_inlines) == host_total
+    assert sum(c.values()) == total
+    return dict(total_samples=total, host_samples=host_total,
+                classes=[dict(name=k, samples=v, percent=100*v/total)
+                         for k, v in c.most_common()],
+                top_named_rips=sorted(rows, key=lambda r: -r['samples'])[:12])
+
+
+def main():
+    before = [pin(p) for p in (NAMED, OLD, CASE/'window-summary1.json',
+                               OUT/'naming-recipe1.json', __file__)]
+    assert before[0]['sha256'] == '4430d55adc583c91d8d20dee7972d967d98d99e5db8d7dd74146bdefd9ee0d8d'
+    data = json.loads(NAMED.read_bytes())
+    old = json.loads(OLD.read_bytes())
+    raw = json.loads((CASE/'window-summary1.json').read_bytes())
+    assert data['all_inputs_preserved']
+    assert data['status'] == 'PASS_POSTDRAIN_NAMING_WITH_EXPLICIT_PARTIAL_SYMBOL_STATUS'
+    groups = data['host_symbols']['groups']
+    requests = [r for g in groups for r in g['addresses']]
+    assert len(groups) == 1 and len(requests) == data['host_symbol_requests'] == 354
+    assert len({r['rip'] for r in requests}) == 354
+    missing_inner = missing_outer = unresolved = 0
+    names = {}
+    for group in groups:
+        assert not group.get('error') and not group.get('stderr')
+        for row in group['addresses']:
+            frames = (row.get('llvm') or {}).get('Symbol') or []
+            inner = frames[0].get('FunctionName') if frames else None
+            outer = frames[-1].get('FunctionName') if frames else None
+            missing_inner += inner in (None, '', '??')
+            missing_outer += outer in (None, '', '??')
+            unresolved += bool(row.get('unresolved'))
+            assert row['count'] == 1  # Lookup unit, deliberately not sample count.
+            names[row['rip']] = (inner, outer)
+    assert missing_inner == missing_outer == unresolved == 0
+    windows = []
+    for actual, original in zip(data['windows'], raw['windows']):
+        assert (actual['name'], actual['start'], actual['end']) == (original['name'], original['start'], original['end'])
+        observed = Counter({r['rip']: r['samples'] for r in actual['addresses']})
+        expected = Counter({r['rip']: r['samples'] for r in original['raw_rip_frequency']})
+        assert observed == expected
+        assert sum(observed.values()) == actual['certainly_inside_samples']
+        outer = Counter()
+        inner = Counter()
+        for r in actual['addresses']:
+            module = (r.get('module') or {}).get('name', '<unmapped>')
+            outer[(module, r['function'])] += r['samples']
+            if module.casefold() == 'bluewake.exe':
+                assert r['function'] == names[r['rip']][1]
+                inner[(module, names[r['rip']][0])] += r['samples']
+        assert outer == Counter({(r['module'], r['function']): r['samples'] for r in actual['functions']})
+        assert inner == Counter({(r['module'], r['function']): r['samples'] for r in actual['host_inline_functions']})
+        view = frequency_view(actual['functions'], actual['host_inline_functions'])
+        tentative = sum(r['samples'] for r in actual['addresses']
+                        if isinstance(r.get('naming_evidence'), dict)
+                        and r['naming_evidence'].get('unwind_span') is None)
+        windows.append(dict(name=actual['name'], start=actual['start'], end=actual['end'],
+                            certain_samples=actual['certainly_inside_samples'],
+                            endpoint_ambiguous_samples=actual['boundary_bracket_ambiguous_samples'],
+                            metrics=actual['metrics'], busy_fraction=actual['main_thread_busy_cpu_over_wall'],
+                            map_names_without_unwind_span_samples=tentative, **view))
+    old_view = frequency_view(old['functions'], old['host_inline_functions'])
+    assert old_view['total_samples'] == old['raw_samples'] == 4852
+    assert [pin(p['path']) for p in before] == before
+    result = dict(status='PASS_PASSIVE_NAMING_AND_FREQUENCY_ACCOUNTING_AUDIT',
+                  inputs=before, llvm=dict(groups=1, unique_lookup_requests=354,
+                      missing_inner=missing_inner, missing_outer=missing_outer,
+                      unresolved=unresolved, group_errors=0, stderr_bytes=0,
+                      native_symbolizer_reexecuted=False,
+                      root_reported_command_exit=0,
+                      outer_command_exit_evidence='Root message, approximately 16:48 UTC; group JSON contains no separate exit-code field.'),
+                  view='Each RIP assigned once: host LLVM innermost name, module nearest qualified MAP name, system raw. Categories are naming rules, not exclusive CPU time.',
+                  windows=windows, old_aggregate=old_view,
+                  limitations=[
+                      '354 is unique host lookup requests across selected windows, not samples and not all 5231 capture events.',
+                      'Old aggregate observed VI784..1495 on host7c32 without this perVI recorder; new run uses host2b9 and timestamps. This is a descriptive cross-run comparison only.',
+                      'No old per-RIP timestamps exist; old exact peak cannot be repartitioned.',
+                      'Nearest MAP names, absent unwind spans, return/inline boundaries and unresolved system code limit attribution.',
+                      'RIP frequencies do not measure exclusive CPU time or removable cost; caller costs are not charged to callees here.',
+                      'Short 215/216/219-sample windows have finite sampling variability; no significance or speed claim.',
+                      'Sampling suspension and timer recording contribute overhead; thread CPU calibration step remains unresolved.'
+                  ], all_inputs_preserved=True, no_native_or_tool_invocation=True)
+    destination = CASE/'named-window-audit1.json'
+    with destination.open('x', encoding='utf8') as f:
+        json.dump(result, f, indent=2); f.write('\n')
+    print(json.dumps(pin(destination)))
+    for view in windows + [dict(name='old_aggregate', **old_view)]:
+        print(view['name'], view['total_samples'], json.dumps(view['classes']))
+
+
+if __name__ == '__main__':
+    main()

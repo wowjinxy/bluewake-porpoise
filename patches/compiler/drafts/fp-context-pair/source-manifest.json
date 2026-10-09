@@ -1,0 +1,11 @@
+{
+  "status": "SOURCE_REVIEWED_NATIVE_UNEXECUTED",
+  "source_root": "build/deep-debug-20261008/fp-context-assessment1/source2",
+  "files": [
+    {
+      "file": "fp_context_pair_v1.h",
+      "sha256": "44863edb2b4128d8d61575f546f97e33e71e7e47aa02d310f6f6ceda1c549316",
+      "bytes": 1749
+    }
+  ]
+}

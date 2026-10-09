@@ -28,3 +28,12 @@ and binaries remain private and ignored. No speedup is established.
 The copied tester directory can contain its older PDB. Offline host naming must
 explicitly select the qualified `2b9bc61e...` executable and its adjacent
 `a8ef9413...` PDB from the source preparation, rather than that copied PDB.
+
+The follow-up archive also preserves `prepare_names1.py`, `name_windows1.py`
+and both passive naming audits. All 354 unique host lookup requests resolved
+in both naming views. The successful audit reconciles selected-window raw
+frequencies and counts each sample once using the host innermost function.
+The first audit's old-report total assertion failed because the old function
+table omitted 191 system-image samples; the successor restores only their
+exact module counts. Both sources are retained. These scripts require the
+private accepted inputs and do not contain those inputs.

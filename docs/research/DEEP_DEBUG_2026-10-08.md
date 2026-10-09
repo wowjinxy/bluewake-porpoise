@@ -109,7 +109,55 @@ VI817..847: 0.750000 CPU seconds over 0.8032735 elapsed seconds (93.37% busy),
 with 216 certain RIPs. Per-VI intervals include catch-up, waits and sampling
 pauses and are not presented frames. Coarse CPU timer readings and unresolved
 calibration steps remain retained; no overhead is subtracted and no individual
-RIP receives exclusive CPU cost. Exact function naming is still pending.
+RIP receives exclusive CPU cost.
+
+Offline naming is now complete for the selected windows. All 354 unique host
+lookup requests resolve to both innermost and outermost functions using the
+exact accepted executable/PDB; those requests are not sample counts. A passive
+audit reproduces every selected-window raw RIP frequency. Counting each sample
+once with the host innermost name and the module's qualified nearest MAP name
+gives the following descriptive distribution:
+
+| Named sample class | Sustained VI831..1351, 3,303 samples | Wall-worst VI817..847, 216 samples |
+|---|---:|---:|
+| Translated chunk/loop | 1,474 (44.63%) | 98 (45.37%) |
+| Observer predicates/edge lookup | 468 (14.17%) | 31 (14.35%) |
+| FP/PSQ/bit conversion | 292 (8.84%) | 20 (9.26%) |
+| Call/memory readiness | 156 (4.72%) | 7 (3.24%) |
+| Guest-call dispatch | 108 (3.27%) | 10 (4.63%) |
+| Memory/alias helpers | 95 (2.88%) | 11 (5.09%) |
+| Native replacement/math helpers | 216 (6.54%) | 11 (5.09%) |
+| Other host/module/system | 494 (14.96%) | 28 (12.96%) |
+
+No individual innermost named function exceeds seven of the worst window's
+216 samples. This supports investigating common translation/helper work;
+it does not identify a single dominant guest routine or establish removable
+cost. Nearest MAP labels without an unwind span remain tentative for 188
+sustained and nine worst-window samples. The old capture uses a different host
+and has no per-RIP timestamps, so its similar broad distribution is not a speed
+comparison. An initial audit omitted 191 old system-image samples; its retained
+successor adds their exact module counts and passes total equality. This was an
+audit-format repair, not a capture failure.
+
+The naming and audit source is archived beside the capture source. Private
+`named-window-summary1.json` has SHA256
+`4430d55adc583c91d8d20dee7972d967d98d99e5db8d7dd74146bdefd9ee0d8d`;
+`named-window-audit2.json` has SHA256
+`fa9ad9a6a9df56c7089681cf78aea894b76a7c6b9dafd590f8669ec6ba15362f`.
+
+A separate contextual arithmetic draft now combines adjacent finite
+`fsubs -> fmuls` helper work in a private paid fast copy. The source census has
+271 overlapping arithmetic adjacency edges across eight qualified chunks,
+including 60 subtraction/multiply pairs; 25 of those use the first result as
+the second multiplier. These are static opportunities, not execution counts or
+a performance budget. Six private 0144 sites use the draft, preserving all
+original precise labels and original fallback statements. The standalone
+handwritten helper is preserved in
+`patches/compiler/drafts/fp-context-pair/`; translated caller bodies remain
+private. Source review passed. Full-state fixtures and the exact-flags caller
+compile recipe are prepared but **unexecuted at this checkpoint**. No runtime
+correctness or speedup is claimed for this draft, and the installed build is
+unchanged.
 
 A later passive relink qualifies a C2 MAP: all 835 object inputs and their order,
 15 physical library providers and 852 reproduction members match the accepted

@@ -36,6 +36,30 @@
       "restore_name": "analyse_windows1.py",
       "sha256": "23f56c3fa4b09765b120820da8771b4b73cb81cb6085e0177c1b7c9f6584d353",
       "bytes": 7713
+    },
+    {
+      "template": "prepare_names1.py.in",
+      "restore_name": "prepare_names1.py",
+      "sha256": "000b040949fae51fed3352df059e5648fa3ec2ee0b42bb8d7024c80e193b607e",
+      "bytes": 1985
+    },
+    {
+      "template": "name_windows1.py.in",
+      "restore_name": "name_windows1.py",
+      "sha256": "877a5fb2c15205bce981923fbf0087909af628ffc2c9d7c570800ad714910740",
+      "bytes": 5206
+    },
+    {
+      "template": "audit_names1.py.in",
+      "restore_name": "audit_names1.py",
+      "sha256": "3fb7825b04f20a3a3737910e0f71ee893c2a630fa0d8c1a79b26e3b04e00ae87",
+      "bytes": 9132
+    },
+    {
+      "template": "audit_names2.py.in",
+      "restore_name": "audit_names2.py",
+      "sha256": "69a640f96b1d0232cdba11f2aa00b38cb76ec90fb2d74daea3489eb1373dfdcb",
+      "bytes": 10199
     }
   ]
 }

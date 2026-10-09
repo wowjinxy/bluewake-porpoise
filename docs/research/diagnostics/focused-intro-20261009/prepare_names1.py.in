@@ -1,0 +1,36 @@
+"""Freeze accepted source/tool/image identities without running the tool."""
+import ast
+import hashlib
+import json
+from pathlib import Path
+
+OUT=Path(__file__).resolve().parent
+ROOT=OUT.parents[2]
+CASE=OUT/'title-focused-c2-1'
+
+
+def pin(path):
+    path=Path(path).resolve();data=path.read_bytes()
+    return dict(path=str(path),bytes=len(data),sha256=hashlib.sha256(data).hexdigest())
+
+
+source=OUT/'name_windows1.py'
+ast.parse(source.read_text())
+prep=json.loads((OUT/'preparation1.json').read_bytes())
+oldrank=json.loads((OUT.parent/'visible-c2-profile1/title-visible-c2-native1/rip-ranking-map2.json').read_bytes())
+symbolizers=[row for row in oldrank['inputs'] if Path(row['path']).name=='llvm-symbolizer.exe']
+assert len(symbolizers)==1
+mapper=pin(OUT.parent/'visible-c2-profile1/symbolize_visible_map2.py')
+sampler=pin(ROOT/'build/cpu-hotspots-20261007/sampler.py')
+assert sampler['sha256']=='2e9ca98b0143952b9638c4d763284a09b85d48c372ba539631d3000c6b26d90d'
+record=dict(status='SOURCE_ONLY_PENDING_ROOT_OFFLINE_SYMBOLIZER_REVIEW',script=pin(source),
+  mapper=mapper,sampler=sampler,host=prep['selected_host'],pdb=prep['selected_host_pdb'],
+  module=prep['module'],map=prep['c2_map'],map_proof=prep['c2_map_proof'],symbolizer=symbolizers[0],
+  inputs=[pin(p) for p in (__file__,source,OUT/'preparation1.json',CASE/'result.json',CASE/'window-summary1.json')]+
+         [mapper,sampler,prep['selected_host'],prep['selected_host_pdb'],prep['module'],prep['c2_map'],prep['c2_map_proof'],symbolizers[0]],
+  tool_scope='One original bounded local LLVM symbolizer call, max4096 unique selected host addresses/60s. C2 MAP parse is passive Python. No target or DbgHelp access.',
+  selected_pdb_policy='Use original2b9 image with adjacent exacta8ef PDB; copied tester7c32 PDB is ignored.',
+  no_native_or_symbolizer_executed_by_preparation=True)
+path=OUT/'naming-recipe1.json'
+with path.open('x',encoding='utf8') as f:json.dump(record,f,indent=2);f.write('\n')
+print(json.dumps(pin(path)))
