@@ -1978,6 +1978,65 @@ Evidence is local under
 | Full association matrix | `511131bc867758f1b69f88877d259af1d21a9eb7ff1c33b16cb3c7c64204195a` |
 | Independent CodeView calibration | `16afbc4859f227d6f513ef68b89af9c3ae1f8edb0616260d0356ebd31b4e17fb` |
 
+### Removing in-function fast copies: correct, timing gate fails
+
+The bounded two-chunk candidate was compiled, linked and run. It removes 922
+in-function fast copies from chunk 0145 and 606 from chunk 0201, preserving the
+original unified bodies and their instruction-level checks. Reapplying the
+frozen historical transformation reproduces every executable source byte;
+the marker comment has a different position. The original ordered compiler
+flags, effective O2 policy, header bindings and 833 other module objects are
+retained. Both changed objects compile successfully, and the actual linked
+module passes input-order, provider, export, import, resource and preservation
+checks.
+
+Native text falls from 709,841 to 572,913 bytes in chunk 0145 and from 679,971
+to 541,315 in chunk 0201: 275,584 bytes, or about 19.83%, combined. The main
+frames fall from 152 to 104 bytes and 184 to 152 bytes respectively. Some small
+loop frames grow, so this is not a uniform frame improvement. Static call-site
+counts and smaller code do not establish lower execution cost.
+
+Fresh correctness runs use the same qualified `2b9bc61e...` diagnostic host
+with C2 `54119177...` versus the candidate `bd2e2351...`. Both pass all 32
+runtime checks, exit normally and drain. All six complete CPU, MEM1, MEM2 and
+ordered-alias checkpoints match, as does the complete 1,228,335-byte P6 image.
+Both consume all 1,134 recorded EFB contexts while retaining physical reads;
+their observed physical differences, 21 and 30, remain recorded. Terminal
+pipeline creations are zero. An independent raw correctness audit passes.
+
+The fixed eight-run order is A-G-G-A,G-A-A-G. Every game run passes, with
+identical primary and five-segment work, absolute start/end cursors, GX totals,
+terminal guest clock and dispatch. The primary 750-1500-retrace window executes
+547,802 blocks, 6,075,000,001 guest cycles and 99 EFB entries in every run.
+
+| Primary metric | Control mean | Candidate mean | Change |
+| --- | ---: | ---: | ---: |
+| Dispatch-thread CPU seconds | 17.80078125 | 18.3671875 | +3.182% |
+| Elapsed seconds | 18.2779101 | 18.8790412 | +3.289% |
+
+The four paired CPU changes are +2.249%, +0.606%, +11.603% and -1.701%; paired
+elapsed changes are +2.187%, -2.235%, +15.662% and -2.219%. This fails the
+preregistered consistent CPU/elapsed reduction gate. The candidate stays
+inactive, and every raw run is retained. The mean regression under the
+authorized background load is not a proof of its intrinsic cost on an idle
+machine. Pre-case one-second load samples range from 25.67% to 41.83%; they do
+not measure load throughout each run. Timer CPU-step precision remains
+unresolved, and no estimated overhead is subtracted. These are controlled
+diagnostic workload measurements, not ordinary visible FPS or a full-speed
+gameplay result. The existing C2 module remains selected.
+
+Local evidence under `build/deep-debug-20261008/`:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `unpaired-hot-chunks1/attempt1/result.json` | `05c11c02989bd759076ae6af569440a9ec990621eff38f0bcce13f42ca15dcf1` |
+| `unpaired-hot-chunks1/attempt1/codegen1.json` | `d8979b05919aae14bc2af81ce4850b53be144a7941197d3c497b6f9bcb8a5e03` |
+| `unpaired-hot-chunks1/module1/attempt1/result.json` | `7b648e78bbf0378f6771754bda8776c5c563c9c340cc0065162d4ca3ecd04df2` |
+| `unpaired-c2-runtime1/native-efb1/unpaired-c2-per-vi-input-parity1.json` | `a999a372771e1f21a25a37a2a7848f8fad83a152cfb538d0f339e6ad314cc9b2` |
+| `unpaired-c2-runtime1/controlled-input1/unpaired-c2-per-vi-eight-run1.json` | `7caa69ee74cdbca923893f227f3380eef773f329105a7c7a6bde5d7e4dd1d55d` |
+| `unpaired-c2-runtime1/independent-correctness-audit1.json` | `5a4b080175d63b0c5481451353158da8078d1cf67b1e2dbfd7d9a927c959d4dd` |
+| `unpaired-c2-runtime1/independent-timing-audit1.json` | `a093cc8b03cd0882c0713c57d411b2d05f1548aedc4c5c1889130b5c4d06e7bd` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
