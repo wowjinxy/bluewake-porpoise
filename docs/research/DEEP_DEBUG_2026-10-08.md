@@ -693,10 +693,15 @@ workers through that epilogue and waits for closed loading, empty queues and
 pending set, and no workers in flight. The second source draft also rejects a
 previous unclosed nonthreaded/WebGPU lifetime through a shared nine-condition
 admission helper. Threaded positive, lifecycle/error, all 512 admission
-combinations and four behavioral negative fixtures are frozen against the actual
-production helper. Two fixture link attempts failed on the CRT setup before any
-test body ran; they remain preserved, and an explicit-library successor is being
-prepared. No host build or game run is qualified yet. The failed C2 log reports
+combinations and four behavioral negative fixtures use the actual production
+helper. Optimized and ASan profiles each pass 534 assertions, and all four
+mutants fail behaviorally. All 24 children drain and inputs remain unchanged.
+Earlier CRT/STL link setup failures remain preserved; the final fixture pins
+the matching annotation support library and retains sanitizer annotations.
+The generic implementation is saved as the unapplied
+`patches/recompcore/drafts/pipeline-preload-fence.patch`; its current-tree
+application check passes. No production host build or game run is qualified yet.
+The failed C2 log reports
 242 cached completions after early VI
 activity, but does not identify the seven creations' origins. This draft does
 not yet explain or fix the steady crowded-scene CPU slowdown, guarantee future
@@ -761,7 +766,14 @@ pass 10,267 whole-CPU/64 KiB comparisons in each generic O2/ASan profile and
 2,587 whole-CPU/32 MiB comparisons in each fixed O2/ASan profile. All four
 deliberate arithmetic/status mutations fail with CPU-byte mismatches. The
 reread-FPR mutant reproduces the DAZ/subnormal classification failure. Module,
-gameplay and performance qualification remain separate and unfinished.
+gameplay and performance qualification remain separate and unfinished. Its
+independent original-A module now builds with exactly one native-TU replacement,
+834 retained objects, 42 actual M/MD dependencies, the original 15 physical
+library inputs and generated manifest, and exact original PE imports, exports,
+ABI and resource payloads. Static text increases 752 bytes and 138 instructions;
+this is not evidence of a speedup. Fresh same-host clean title replay now
+matches all six complete states and full P6 pixels, consumes all 1,134 EFB
+inputs, and finishes with zero additional pipelines. Timing remains pending.
 A separate native_math include experiment targets its existing ps_sum0 calls.
 Its complete original/candidate translation units passed 5,776 whole-CPU/64 KiB
 comparisons in each generic O2 and ASan profile, and 2,192 whole-CPU/32 MiB
@@ -769,7 +781,12 @@ comparisons in each fixed O2 and ASan profile. These cover host rounding,
 FTZ/DAZ, NI, arbitrary carried-lane NaN/Inf values and rejection paths. Three
 deliberately incorrect carried-lane implementations fail with CPU-byte
 mismatches. Actual dependency closures and frozen inputs remain unchanged.
-This qualifies those fixtures; module, gameplay and speed are still untested.
+The independent one-TU module also builds, retaining 834 objects and the original
+physical link/PE surface. Its actual dependency closure increases from 42 to 44
+only through the two unchanged inline headers. Static text increases 816 bytes
+and 176 instructions. Its fresh same-host six-checkpoint/full-P6 comparison
+also passes with all 1,134 inputs and zero additional pipelines. Controlled
+correctness does not establish ordinary gameplay or a speed gain.
 
 The fixed fixtures now explicitly own and compare the canonical runtime's
 complete 32 MiB global MEM1. The earlier quaternion-specific explanation for
@@ -961,13 +978,20 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `quaternion-local1/{SOURCE_CORRECTION1.md,fixture-attempt1/result.json,diagnostic-asan1/result.json}`
 - `quaternion-local1/{fixture-address-fault1,fixture-address-repair1,final-cpu-handoff1}.json`
 - `quaternion-local1/fixture-attempt2/result.json`
+- `quaternion-local1/module1/attempt1/{result,codegen1,actual-link-inputs1,PE-surface1}.json`
 - `native-math-inline1/{fixture-preparation3.json,fixture-attempt1/result.json,cpu-qualification1.json}`
 - `native-math-inline1/fixture-attempt2/result.json`
+- `native-math-inline1/module1/attempt1/{result,codegen1,actual-link-inputs1,PE-surface1}.json`
+- `quaternion-clean-per-vi1/{preparation1,source-validation1}.json`
+- `native-math-clean-per-vi1/{preparation1,source-validation1}.json`
+- `quaternion-clean-per-vi1/correctness-batch1.json`
+- `native-math-clean-per-vi1/correctness-batch1.json`
 - `qps-clean-per-vi1/{preparation1.json,source-validation1.json,pe-surface3.json,ldexp-closure1.json}`
 - `qps-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-attempt-audit1}.json`
 - `pipeline-preload1/source1/source-receipt.json`
 - `pipeline-preload1/{source2/source-receipt,fixture-preparation2,fixture-preparation3}.json`
 - `pipeline-preload1/{fixture-attempt2,fixture-attempt3}/result.json`
+- `pipeline-preload1/{fixture-attempt4,fixture-attempt5}/result.json`
 - `native-preapproval1/{DESIGN1.md,census2.json,source-audit1.json}`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`

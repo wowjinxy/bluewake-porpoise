@@ -1,0 +1,276 @@
+--- a/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/pipeline_cache.cpp
+@@ -1,4 +1,5 @@
+ #include "pipeline_cache.hpp"
++#include "pipeline_preload_fence.hpp"
+ 
+ #include "clear.hpp"
+ #include "../fs_helper.hpp"
+@@ -69,6 +70,7 @@
+ };
+ 
+ static std::mutex g_pipelineMutex;
++static preload::Fence g_preloadFence;
+ static bool g_hasPipelineThread = false;
+ static size_t g_pipelinesPerFrame = 0;
+ // For synchronous pipeline fallback (OpenGL)
+@@ -1152,6 +1154,7 @@
+ 
+   while (g_hasPipelineThread || g_pipelinesPerFrame < BuildPipelinesPerFrame) {
+     PendingPipeline pending;
++    preload::Ticket preloadTicket;
+     {
+       std::unique_lock lock{g_pipelineMutex};
+       if (g_hasPipelineThread) {
+@@ -1165,12 +1168,14 @@
+         break;
+       }
+       pending = take_next_pipeline();
++      preloadTicket = g_preloadFence.take();
+     }
+     auto result = pending.create();
+     bool cacheLoaded = false;
+     bool uberShaderMade = false;
+     {
+       std::lock_guard lock{g_pipelineMutex};
++      g_preloadFence.note_result(preloadTicket, static_cast<bool>(result));
+       g_pipelines.try_emplace(pending.hash, CachedPipeline{
+                                                 .pipeline = std::move(result),
+                                                 .firstFrameUsed = pending.firstFrameUsed,
+@@ -1199,6 +1204,14 @@
+       std::fprintf(stderr, "[pipelines] the %zu cached pipelines were compiled %.0f ms after start (%zu threads)\n",
+                    g_cacheLoadCount, ms, g_pipelineThreads.size());
+     }
++    // The final epilogue follows original counter/prune/log side effects.
++    if (preloadTicket.tracked) {
++      {
++        std::lock_guard lock{g_pipelineMutex};
++        g_preloadFence.finish(preloadTicket);
++      }
++      g_preloadFence.notify();
++    }
+   }
+ }
+ 
+@@ -1350,6 +1363,32 @@
+ uint32_t pipeline_cache_generation() { return g_pipelineCacheGeneration.load(std::memory_order_acquire); }
+ 
+ void initialize_pipeline_cache() {
++  const char* preloadEnv = std::getenv("AURORA_WAIT_CACHED_PIPELINES");
++  const bool waitCached = preloadEnv != nullptr && preloadEnv[0] == '1' && preloadEnv[1] == '\0';
++  if (waitCached) {
++    if (webgpu::g_backendType != wgpu::BackendType::D3D12)
++      Log.fatal("Cached-pipeline fence requires native threaded D3D12");
++    bool busy = false;
++    {
++      std::lock_guard lock{g_pipelineMutex};
++      busy = preload::lifetime_busy({
++          .workers = !g_pipelineThreads.empty(),
++          .priorityQueue = !g_pipelineQueue.empty(),
++          .backgroundQueue = !g_backgroundPipelineQueue.empty(),
++          .pending = !g_pendingPipelines.empty(),
++          .fenceEnabled = g_preloadFence.enabled(),
++          .inFlight = g_preloadFence.in_flight() != 0,
++          .cacheQueued = g_cacheQueued,
++          .pipelines = !g_pipelines.empty(),
++          .writer = g_pipelineCacheWriterThread.joinable(),
++      });
++      if (!busy)
++        g_preloadFence.begin();
++    }
++    if (busy)
++      Log.fatal("Cached-pipeline fence rejected unclosed initialization");
++    g_preloadFence.notify();
++  }
+   g_pipelineCacheGeneration.fetch_add(1, std::memory_order_acq_rel);
+   g_pipelineCacheBroken = false;
+   g_pipelineCacheWriterStop = false;
+@@ -1393,6 +1432,32 @@
+     g_gpuCachePrunePending = true;
+   }
+ 
++  if (waitCached) {
++    preload::Result status;
++    uint64_t completed = 0;
++    {
++      std::unique_lock lock{g_pipelineMutex};
++      status = g_preloadFence.wait(lock, std::chrono::steady_clock::now() + std::chrono::seconds(120), [] {
++        return preload::State{
++            .loadingClosed = g_cacheQueued,
++            .queuesEmpty = g_pipelineQueue.empty() && g_backgroundPipelineQueue.empty(),
++            .pendingEmpty = g_pendingPipelines.empty(),
++            .stopped = g_pipelineThreadEnd.load(std::memory_order_acquire),
++            .cacheFailed = g_pipelineCacheBroken,
++        };
++      });
++      completed = g_preloadFence.completed();
++    }
++    if (status != preload::Result::Complete)
++      Log.fatal("Cached-pipeline fence failed before guest startup: status={}", static_cast<int>(status));
++    // Original late prune publication is deliberately unchanged. This summary
++    // certifies worker epilogues, not successful database pruning/persistence.
++    std::fprintf(stderr, "[pipeline-preload] complete loaded=%zu epilogues=%llu created=%u queued=%u prune_pending=%u\n",
++                 loadedCount, static_cast<unsigned long long>(completed),
++                 __atomic_load_n(&g_stats.createdPipelines, __ATOMIC_RELAXED),
++                 __atomic_load_n(&g_stats.queuedPipelines, __ATOMIC_RELAXED),
++                 static_cast<unsigned>(g_gpuCachePrunePending.load(std::memory_order_acquire)));
++  }
+   if (!g_pipelineCacheBroken) {
+     start_pipeline_cache_writer();
+   }
+@@ -1409,12 +1474,18 @@
+     }
+     g_pipelineQueueCv.notify_all();
+     g_pipelineReadyCv.notify_all();
++    g_preloadFence.notify();
+     for (auto& thread : g_pipelineThreads) {
+       thread.join();
+     }
+     g_pipelineThreads.clear();
+   }
+   g_hasPipelineThread = false;
++  {
++    std::lock_guard lock{g_pipelineMutex};
++    g_preloadFence.invalidate();
++  }
++  g_preloadFence.notify();
+ 
+   stop_pipeline_cache_writer();
+   pipeline_cache_abort();
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/lib/gfx/pipeline_preload_fence.hpp
+@@ -0,0 +1,134 @@
++#pragma once
++
++#include <chrono>
++#include <condition_variable>
++#include <cstdint>
++#include <mutex>
++
++namespace aurora::gfx::preload {
++
++enum class Result {
++  Pending,
++  Complete,
++  Timeout,
++  Stopped,
++  Reinitialized,
++  CacheFailure,
++  NullPipeline,
++  AccountingFailure,
++};
++
++struct State {
++  bool loadingClosed;
++  bool queuesEmpty;
++  bool pendingEmpty;
++  bool stopped;
++  bool cacheFailed;
++};
++
++struct Lifetime {
++  bool workers;
++  bool priorityQueue;
++  bool backgroundQueue;
++  bool pending;
++  bool fenceEnabled;
++  bool inFlight;
++  bool cacheQueued;
++  bool pipelines;
++  bool writer;
++};
++
++inline bool lifetime_busy(Lifetime state) {
++  return state.workers || state.priorityQueue || state.backgroundQueue || state.pending ||
++         state.fenceEnabled || state.inFlight || state.cacheQueued || state.pipelines || state.writer;
++}
++
++struct Ticket {
++  uint64_t generation = 0;
++  bool tracked = false;
++};
++
++// Every operation except notify() uses the caller's existing pipeline mutex.
++// The class never owns that mutex or invokes a GPU operation while holding it.
++class Fence {
++  std::condition_variable m_ready;
++  uint64_t m_generation = 0;
++  uint64_t m_inFlight = 0;
++  uint64_t m_completed = 0;
++  bool m_enabled = false;
++  Result m_failure = Result::Pending;
++
++public:
++  void begin() {
++    ++m_generation;
++    m_inFlight = 0;
++    m_completed = 0;
++    m_enabled = true;
++    m_failure = Result::Pending;
++  }
++
++  bool enabled() const { return m_enabled; }
++  uint64_t in_flight() const { return m_inFlight; }
++  uint64_t completed() const { return m_completed; }
++
++  Ticket take() {
++    if (!m_enabled)
++      return {};
++    ++m_inFlight;
++    return {m_generation, true};
++  }
++
++  void note_result(Ticket ticket, bool valid) {
++    if (ticket.tracked && ticket.generation == m_generation && !valid)
++      m_failure = Result::NullPipeline;
++  }
++
++  void finish(Ticket ticket) {
++    if (!ticket.tracked || ticket.generation != m_generation)
++      return;
++    if (m_inFlight == 0) {
++      m_failure = Result::AccountingFailure;
++      return;
++    }
++    --m_inFlight;
++    ++m_completed;
++  }
++
++  // Shutdown calls this only after its workers are joined. Wakes an older
++  // waiter without allowing its generation to certify a later initialization.
++  void invalidate() {
++    ++m_generation;
++    m_enabled = false;
++    m_inFlight = 0;
++  }
++
++  void notify() { m_ready.notify_all(); }
++
++  template <typename Query>
++  Result wait(std::unique_lock<std::mutex>& lock,
++              std::chrono::steady_clock::time_point deadline, Query query) {
++    const uint64_t generation = m_generation;
++    Result result = Result::Pending;
++    const auto evaluate = [&] {
++      const State state = query();
++      if (generation != m_generation)
++        result = Result::Reinitialized;
++      else if (state.stopped)
++        result = Result::Stopped;
++      else if (state.cacheFailed)
++        result = Result::CacheFailure;
++      else if (m_failure != Result::Pending)
++        result = m_failure;
++      else if (state.loadingClosed && state.queuesEmpty && state.pendingEmpty && m_inFlight == 0)
++        result = Result::Complete;
++      return result != Result::Pending;
++    };
++    if (!m_ready.wait_until(lock, deadline, evaluate))
++      return Result::Timeout;
++    if (result == Result::Complete)
++      m_enabled = false;
++    return result;
++  }
++};
++
++} // namespace aurora::gfx::preload
