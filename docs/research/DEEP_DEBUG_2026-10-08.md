@@ -1811,8 +1811,41 @@ without claiming safety for concurrent external setters. The candidate adds
 only the unchanged proof header and a `PROVED` return before the original
 callback body. Its original fallback and tracing remain byte-identical.
 The counter-free host builds successfully with one replaced main object and
-169 unchanged physical link inputs. State/pixel and speed qualification remain
-outstanding; it is not installed or promoted by this build result.
+169 unchanged physical link inputs. Its eligible native path calls only the
+small event-storage getter; the original full predicate is reached on fallback.
+The callback still saves four nonvolatile registers and allocates 40 stack
+bytes, without RSP-relative spills. The retained full-predicate and chassis
+callee bodies are unchanged.
+
+Fresh controlled-EFB runs of both hosts then pass all six complete logical CPU,
+MEM1, MEM2 and ordered-alias checkpoints and full 1,228,335-byte P6 equality.
+Both consume all 1,134 recorded inputs while retaining the physical GPU reads.
+The recorded physical-value differences (104 and 58) remain evidence of the
+replay's diagnostic scope. Independent raw-log/pixel inspection confirms this
+parity; it does not establish every-instruction or full-game equivalence.
+
+The fixed eight-run `A-C-C-A,C-A-A-C` timing comparison completes all eight
+routes without errors. Every primary/segment guest-work cursor, terminal GX,
+clock and dispatch record matches, with no new pipeline creations. In VI
+750--1500, mean main-thread CPU falls from 16.2852 to 15.5625 seconds (-4.44%),
+wall from 16.3645 to 15.6862 seconds (-4.14%), and thread cycles by 4.09%.
+Individual paired changes are:
+
+| Pair | Main-thread CPU | Wall | Thread cycles |
+|---|---:|---:|---:|
+| 1 | -3.31% | -2.98% | -3.15% |
+| 2 | -10.92% | -10.67% | -10.08% |
+| 3 | -6.89% | -6.34% | -6.22% |
+| 4 | +3.82% | +3.88% | +3.48% |
+
+The predeclared all-four-pair CPU/wall consistency gate fails. Version 1 stays
+inactive with all failures retained; there is no same-version rescue run,
+ordinary-play speed claim or promotion. These results justify investigating a
+materially leaner query, rather than claiming that the slowdown is fixed.
+The timer's unresolved CPU calibration step remains recorded, and no overhead
+is subtracted. The prospective changes are an outlined original fallback, a
+leaf eligible path, and removal of the conservative finite filter only after
+complete observer-domain proof and expanded qualification.
 
 Exact private evidence is retained under
 `build/deep-debug-20261008/host-maincode-negative1/`:
@@ -1820,7 +1853,10 @@ Exact private evidence is retained under
 `host-attempt1/result.json` (`26109ebd...`), and
 `title-maincode-negative-c2-1/{result,reason-counts}.json`
 (`47b6589b...` and `331512e2...`). Original player data and installed binaries
-remain untouched.
+remain untouched. The counter-free build is `host-fast-attempt1/result.json`
+(`5820b50b...`); fresh runtime evidence is under `runtime1/`, including
+`native-efb1/maincode-host-per-vi-input-parity1.json` (`b5e5d2c4...`) and
+`controlled-input1/maincode-host-per-vi-eight-run1.json` (`69df2b4f...`).
 
 ## Validation boundary and retained evidence
 
