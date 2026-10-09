@@ -1229,6 +1229,65 @@ path still shrinks from 181 to 109. This explains a concrete source of added
 overhead, not the fraction of its measured regression caused by that overhead.
 The integer rollout remains closed.
 
+## Runtime locality and native function layout, October 9
+
+A fresh binary-identical C2 experiment restricted only the owned primary
+thread to logical CPUs 0-7, the first actual 16 MiB L3-sharing domain on this
+Ryzen 7 3700X. The control allowed CPUs 0-15. Both processes retained the full
+0xFFFF mask; the helper set and read the primary mask before resuming it.
+Read-only correctness snapshots at 5 and 15 seconds confirmed both intended
+primary masks and all 26 observed live workers at 0xFFFF in both arms. Timed
+runs did not enumerate or query workers. This tests the selected affinity
+policy, not observed migrations or cache misses.
+
+Both correctness runs exited normally with zero pipeline compilations, the
+complete 1,134-entry EFB trace, six identical complete guest checkpoints and
+identical full P6 pixels. The fresh fixed eight-run order was
+`A-C-C-A,C-A-A-C`. All eight runs completed with identical primary and segment
+work, absolute block/cycle/EFB cursors, and terminal GX/clock/dispatch results.
+The named primary window remained VI 750-1500 under current background load.
+
+| Primary timing | Control mean | Restricted mean | Change |
+| --- | ---: | ---: | ---: |
+| Main-thread CPU | 15.21484375 s | 15.55078125 s | +2.207959% |
+| Elapsed time | 15.2535059 s | 15.5901755 s | +2.207162% |
+| Thread cycles | 54,560,456,388.5 | 55,738,350,432 | +2.158879% |
+
+The four paired CPU changes were +4.504505%, +3.719008%, +2.812500% and
+-2.272727%; elapsed changes were +4.703002%, +3.544303%, +2.472589% and
+-1.978054%. The predefined gain gate failed. No additional domain selection,
+retry, production affinity change or ordinary FPS claim follows. All eight
+raw runs remain retained. The original batch's self-pin admission checked the
+input list instead of the generated-output list and stopped before launching
+any game; the minimal separately versioned repair and failed source remain.
+
+A separate one-TU layout pilot divided the original 4,096-entry guest chunk
+into four private native functions. Candidate-derived inversion reconstructed
+every original guest instruction body and retained all 921 precise/fast pairs,
+entry guards, true returns and central dispatch cases. The actual Clang 19.1.5
+compile preserved the original optimization, ABI, FP and RAM flags, with an
+exact 48-input M/MD dependency closure, normal exit and drained owned children.
+
+The resulting machine layout was unattractive: executable text grew from
+709,841 to 874,513 bytes (+23.20%), static instructions from 134,822 to 173,934,
+and static calls from 9,136 to 9,772. Although the private function frames were
+smaller, the active wrapper plus private frame and added return address needed
+168-248 bytes versus the original 152-byte frame. These are actual COFF/unwind
+properties, not measured game costs. This pilot was not linked or run in the
+game. A different guaranteed-tail-transfer design remains source-only; it
+must demonstrate actual entry jumps and avoid the same code inflation before
+any runtime qualification.
+
+The earlier bounded SDK search missed the existing development kit at
+`C:/devkitpro/msys2/ucrt64`: LLVMConfig identifies version 19.1.7, and the C++
+headers, shared LLVM library, GNU import library and matching GNU compiler are
+present. No SDK installation was required. A ROM-free emitter source capsule
+can now test the existing SSA mechanism with an explicit MSVC object target.
+SDK availability does not resolve the previously listed current-runtime
+alias, deadline, observation, journaling or state-publication gaps. At this
+checkpoint that capsule has not been compiled or executed, and no backend or
+installed game binary has changed.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
@@ -1470,6 +1529,13 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `line-map-next6-1/attempt1/{result,analysis-result1}.json`
 - `guest-routine-attribution1/{result2,audit2}.json`
 - `exclusive-native-budget1/result1.json`
+- `affinity-c2-runtime1/{preparation1,preparation2,source-validation2,peer-source-review2}.json`
+- `affinity-c2-runtime1/{correctness-batch2,controlled-batch2,independent-correctness-audit1}.json`
+- `affinity-c2-runtime1/controlled-input1/affinity-c2-per-vi-eight-run1.json`
+- `chunk-partition1/{source6/source-receipt1,compile-preparation2,peer-source-review1}.json`
+- `chunk-partition1/compile-attempt1/{result,codegen1}.json`
+- `chunk-partition1/{TERMINAL1,MUSTTAIL_DESIGN1}.md`
+- `llvm-sdk-ssa1/DESIGN1.md`
 - `v3-entry-frames1/result1.json`
 - `cursor-integer-general1/regression-audit1/{receipt1.json,FINDINGS1.md}`
 - `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
