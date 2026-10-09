@@ -718,12 +718,22 @@ they do not have this adjacency proof.
 
 The first direct predicate currently wraps the host predicate invoked again by
 native math. Pointer equality cannot certify reuse: callbacks may mutate state,
-count, or alternate answers. A separate default-off owner capability is under
-source investigation. It must revoke before every related setter mutation,
+count, or alternate answers. A separate default-off owner capability requires
+revocation before every related setter mutation,
 preserve standalone/general APIs and all native preflight/counters, and prove
 the exact targets' transitive predicate writer/thread closure. Asynchronous
 preference/input producers make that last proof necessary. Source adjacency
-alone is insufficient, and there is no implementation or speed claim yet.
+alone is insufficient, and the initial census establishes no speed gain.
+
+The seven-target current-host writer closure is now source-qualified for its
+legitimate game-thread APIs, excluding custom/raw/concurrent writers. A private
+default-off implementation binds a compact generation/target token to the CPU,
+published PC and owner thread, and revokes before every parent setter mutation.
+The generation saturates instead of wrapping. All 342 sites publish the exact
+target PC first; only one caller has been emitted for an initial codegen pilot.
+Legacy/general entry points retain their original callback behavior. Compiled
+CPU qualification and actual caller codegen remain pending; added token checks
+are not assumed cheaper than the removed second predicate.
 
 ## Clean observer-domain comparison
 
@@ -884,6 +894,18 @@ shaders.
 
 ## Validation boundary and retained evidence
 
+A separate snapshot-only native call-stack diagnostic now passes owned
+synthetic qualification. It resumes the captured thread before any DbgHelp
+work, then unwinds immutable context/stack bytes against pinned local image
+metadata in an owned helper with a five-second deadline. All 39 snapshots
+recover the actual optimized leaf, four recursive frames, dynamic-frame
+middle, outer and entry chain; system frames outside the admitted image stop
+explicitly. Truncated stacks remain partial, invalid image/unwind identities
+are rejected, and callback/frame/read caps and owned timeout/drain tests pass.
+The original RIP sampler remains unchanged. Real-game image lifetime admission,
+profiling and stack attribution are still pending. Synthetic capture latency
+does not establish game profiling overhead or a performance improvement.
+
 Instruction-pointer frequencies are neither call stacks nor exclusive CPU
 time. Guest CFG ownership is incomplete at shared labels. Main and worker
 profiles are separate passes; their percentages cannot be added. Offscreen
@@ -1017,6 +1039,10 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `pipeline-preload1/{fixture-attempt2,fixture-attempt3}/result.json`
 - `pipeline-preload1/{fixture-attempt4,fixture-attempt5}/result.json`
 - `native-preapproval1/{DESIGN1.md,census2.json,source-audit1.json}`
+- `native-preapproval1/writer-closure6/result.json`
+- `native-preapproval1/source1/source-receipt.json`
+- `native-stacks1/{test-preparation1,codegen1,offline-preparation1}.json`
+- `native-stacks1/{source-tests1,compile1,abi1,synthetic1,offline-tests1}/result.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
