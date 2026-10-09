@@ -154,9 +154,42 @@ a performance budget. Six private 0144 sites use the draft, preserving all
 original precise labels and original fallback statements. The standalone
 handwritten helper is preserved in
 `patches/compiler/drafts/fp-context-pair/`; translated caller bodies remain
-private. Source review passed. Full-state fixtures and the exact-flags caller
-compile recipe are prepared but **unexecuted at this checkpoint**. No runtime
-correctness or speedup is claimed for this draft, and the installed build is
+private. Both the original draft and a delayed-publication successor now pass
+four native semantic profiles (generic/fixed CPU, optimized/ASan). Each profile
+passes 62,183 complete CPU/fenv comparisons, including 240 actual paid lazy-off,
+MSR-clear cases; 807 individual and 61,376 grouped RAM queries cover the real
+32 MiB RAM. All four behavioral mutants are rejected. The successor resolves
+aliased operands locally and delays first-result FPR/PS1 writes when the second
+result replaces them, restoring the complete first result before fallback.
+
+The original-flags version 1 caller compiles with the original 184-byte main
+frame and undefined-symbol set. Its natural helper remains outlined; one
+representative finite machine path falls from 122 to 71 static instructions.
+Forced inlining retains intermediate writes and outlines the final writer.
+A local 192-million-pair test passes 384 full-state endpoints and favors the
+combined helpers in mean cycle/wall costs, with mixed individual comparisons.
+Its original subtraction helper was compiler-specialized and fails exact
+production-code equality, so these are **local-only measurements**, not a game
+speedup. Version 2 also compiles with the original frame/imports and 49 actual
+dependencies. Its representative path is 69 instructions; the two intermediate
+FPR/PS1 stores are fallback-only.
+
+A fresh root-owned intro capture now retains all 3,552 CPU-state bytes beside
+each of 5,562 native RIP samples. All 36 capture checks pass. Raw-byte validation
+independently rechecks the published PC and eight GQRs. The sustained window has
+3,582 certain samples; 3,580 have GQR load/store type vectors
+`[0,0,4,5,6,7,0,0]`. These vectors do not select an active GQR index. The published
+PC can be stale, and this instrumented run is not a speed comparison.
+
+Only three sustained-window samples publish one of the six candidate second
+PCs: two named multiply-helper samples and one unresolved host sample. All 60
+static subtraction/multiply pairs together match four samples, and none match
+either fresh worst-30-VI window. Original machine code verifies that the six
+sites publish their second PC before the multiply helper on the successful
+path. This is insufficient observed budget for a six-site game experiment;
+it is not a precise removable-time bound. The private module recipe is retained
+unexecuted, and this performance branch is closed pending different evidence.
+The helper machinery remains qualified and preserved. The installed build is
 unchanged.
 
 A later passive relink qualifies a C2 MAP: all 835 object inputs and their order,
@@ -1946,6 +1979,13 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `focused-peak-profile1/title-focused-c2-1/{result,native-rip,per-vi}.json`
 - `focused-peak-profile1/analysis-source-preparation1.json`
 - `focused-peak-profile1/title-focused-c2-1/{compact-window-summary1,event-vi-assignment1}.json`
+- `focused-cpu-profile1/{preparation1,source-validation1}.json`
+- `focused-cpu-profile1/title-focused-cpu-c2-1/{result,native-rip,per-vi,joint-window-summary1,target-joints1,helper-joints1}.json`
+- `fp-context-assessment1/{fixture-recipe5,fixture-recipe6,independent-actual-audit5,independent-actual-audit6}.json`
+- `fp-context-assessment1/attempt{5,6}/result.json`
+- `fp-context-assessment1/caller-cost{1,2,3}/attempt1/{result,codegen1}.json`
+- `fp-context-assessment1/local-cost1/attempt4/{result,analysis,codegen}.json`
+- `fp-context-assessment1/{original-six-pc-publication1,six-site-performance-closure1}.json`
 - `line-map1/attempt1/{native-identity1,sampled-lines2,sampled-instructions1}.json`
 - `line-map2011/attempt2/{native-identity1,sampled-lines2,sampled-instructions1}.json`
 - `cursor-fprf1/source3/source-receipt.json`

@@ -1,11 +1,29 @@
 {
-  "status": "SOURCE_REVIEWED_NATIVE_UNEXECUTED",
+  "status": "NATIVE_SEMANTIC_QUALIFIED_NOT_GAME_OR_PERFORMANCE",
   "source_root": "build/deep-debug-20261008/fp-context-assessment1/source2",
   "files": [
     {
       "file": "fp_context_pair_v1.h",
       "sha256": "44863edb2b4128d8d61575f546f97e33e71e7e47aa02d310f6f6ceda1c549316",
       "bytes": 1749
+    },
+    {
+      "file": "fp_context_pair_v2.h",
+      "sha256": "64e0de14797425ebddd33f93cbc0314fd9fe602477d2a311658c0a6b5befb689",
+      "bytes": 1904
     }
-  ]
+  ],
+  "private_evidence": {
+    "v1_native_result": "7ea02bc92e35124569e0131b23ab1f0b74d230ba9dc751226f6de66de17f6f2c",
+    "v2_native_result": "74e0144c54544d0e86714cc7890b9ec7b29c1283ea94c768f840e6a508b3034c",
+    "v1_natural_caller_result": "05b24f223491ac87f5188946376ed93893f06169ac94493cdf65211cae8f484e",
+    "v1_local_cost_result": "049479baff4e1c49ad72f6dca68bfbd950846bd18a51d459454a0508c81ffe62",
+    "v2_natural_caller_result": "1b943517dda92ece91aab1fc59a11d2f5bc18812c553812c34b80ba3dee30cb5",
+    "six_site_performance_closure": "3861578e62587bdbce9b2e69dbefcba4200df73760f59a424c459f0a0e08bc7a",
+    "profiles_per_version": 4,
+    "full_state_comparisons_per_profile": 62183,
+    "paid_lazy_off_comparisons_per_profile": 240,
+    "game_executed": false,
+    "performance_qualified": false
+  }
 }
