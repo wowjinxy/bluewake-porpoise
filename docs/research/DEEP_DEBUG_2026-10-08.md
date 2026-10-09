@@ -159,6 +159,30 @@ and AddressSanitizer fixtures each pass 2,896,773 equivalent readiness queries;
 mutations that remove the alias or fixed-owner guard are detected. This checks
 predicate equivalence and nonmutation, not game behavior or performance.
 
+An independent 30-chunk register-frame module retains 805 original objects and
+the matrix archive. Its ordinary native intro exits cleanly and has identical
+pixels, but differs at three of six complete-state checkpoints. All six states
+and pixels match with the same recorded EFB inputs; the ordinary failure is
+preserved. This establishes bounded diagnostic parity, not general gameplay
+equivalence.
+
+The separate controlled-input ABBA matches all terminal GX counters, guest
+clock fields, dispatch counts and full replay consumption. Its results do not
+establish a performance improvement:
+
+| Register-frame metric | Control mean | Candidate mean | Change |
+| --- | ---: | ---: | ---: |
+| Process CPU seconds | 45.555 | 45.633 | +0.17% |
+| Process wall seconds | 30.945 | 30.492 | -1.46% |
+| Process cycles | 163.864 billion | 163.060 billion | -0.49% |
+
+The first CPU/wall pair changes +1.00%/+0.10%; the second changes -0.65%/-3.01%.
+External load remains uncontrolled. **Do not enable this candidate based on
+these mixed results.** The source is retained behind
+`BLUEWAKE_EXPERIMENTAL_GPR_FRAME_PREFLIGHT=1`; the default keeps the previous
+per-word predicate. Public fixtures exercise both the default and opt-in path
+with generic and fixed RAM owners.
+
 A separate ordinary native alias-cost diagnostic reports 1,900 aliases and
 `overlap_mem1=0` in both host and module at shutdown. This permits the C/D RAM
 guards in the final title state and corrects a concern based on older host
@@ -239,6 +263,10 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `native/lean-complete-parity1.json`
 - `controlled-input1/{source-preparation,lean-controlled-abba1,batch1}.json`
 - `gpr1/fixture-attempt1/result.json`
+- `gpr1/module1/verification1/result.json`
+- `gpr1/native-efb2/gpr-input-parity1.json`
+- `native/gpr-complete-parity1.json`
+- `gpr1/controlled-input2/{gpr-controlled-abba1,batch1}.json`
 - `native/alias-cost1/`
 - `alias-envelope1/{FEASIBILITY1.md,receipt2.json}`
 - `literal-facts1/{DESIGN.md,site-census1.json}`
