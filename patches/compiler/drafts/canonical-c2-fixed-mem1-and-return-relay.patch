@@ -1,0 +1,269 @@
+diff --git a/src/backend/llvm/control_flow.cpp b/src/backend/llvm/control_flow.cpp
+index e09444e395968d62d392cf3c49eaa34d12810790..f15f56da11235ce4f62cee17a1f1624692e05ebf 100644
+--- a/src/backend/llvm/control_flow.cpp
++++ b/src/backend/llvm/control_flow.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include <llvm/IR/BasicBlock.h>
+ #include <llvm/IR/Function.h>
++#include <llvm/IR/GlobalVariable.h>
+ #include <llvm/IR/MDBuilder.h>
+ #include <llvm/IR/Module.h>
+ #include <llvm/Support/Format.h>
+@@ -247,6 +248,25 @@ bool FunctionEmitter::emitTerminator(const DolIRTerminator &term,
+         builder_.SetInsertPoint(budgetExit);
+         returnFromBody();
+         builder_.SetInsertPoint(budgetOK);
++        if (canonical_return_dispatch_relay_) {
++          /* The old central dispatcher owns its scoped return gate and cases.
++           * Report only after the exact original budget check passed. */
++          Type *pointer = PointerType::getUnqual(context_);
++          auto *sinkGlobal = module_.getNamedGlobal("bw_c2_whole93_exit_reason_sink");
++          if (!sinkGlobal)
++            sinkGlobal = new GlobalVariable(module_, pointer, false,
++                GlobalValue::ExternalLinkage, nullptr, "bw_c2_whole93_exit_reason_sink");
++          Value *sink = builder_.CreateLoad(pointer, sinkGlobal);
++          BasicBlock *report = BasicBlock::Create(context_, "canonical_central_report", function_);
++          BasicBlock *done = BasicBlock::Create(context_, "canonical_central_relay", function_);
++          builder_.CreateCondBr(builder_.CreateIsNull(sink), done, report);
++          builder_.SetInsertPoint(report);
++          builder_.CreateStore(builder_.getInt32(2), sink);
++          builder_.CreateBr(done);
++          builder_.SetInsertPoint(done);
++          returnFromBody();
++          return true;
++        }
+         BasicBlock *outside = BasicBlock::Create(context_, "canonical_return_outside", function_);
+         auto *dispatch = builder_.CreateSwitch(target, outside);
+         for (u32 i = 0; i < canonical_schedule_count_; ++i)
+diff --git a/src/backend/llvm/emitter.cpp b/src/backend/llvm/emitter.cpp
+index 3a0d159c1caf97a7265bdbbb41cf27e5c7f84872..4c99d91a58cfaeb9e1d5e6d3a85b58eda9e068e1 100644
+--- a/src/backend/llvm/emitter.cpp
++++ b/src/backend/llvm/emitter.cpp
+@@ -41,6 +41,10 @@ FunctionEmitter::FunctionEmitter(LLVMContext &context, Module &module,
+       state_in_memory_(options.state_in_memory != 0),
+       modern_runtime_(options.runtime == DOLLLVM_RUNTIME_MODERNGEKKO),
+       canonical_c2_(options.canonical_c2),
++      canonical_return_dispatch_relay_(options.canonical_c2_return_dispatch_relay),
++      canonical_fixed_mem1_(options.canonical_c2_fixed_mem1),
++      canonical_mem1_symbol_(options.canonical_c2_mem1_symbol ? options.canonical_c2_mem1_symbol : ""),
++      canonical_mem1_size_(options.canonical_c2_mem1_size),
+       canonical_options_supported_(
+           options.runtime == DOLLLVM_RUNTIME_RECOMPCORE &&
+           options.native_abi_policy == DOLLLVM_NATIVE_ABI_DISABLED &&
+@@ -76,6 +80,12 @@ const DolLLVMPatch *FunctionEmitter::patchFor(u32 address) const {
+ }
+ 
+ bool FunctionEmitter::emit(raw_ostream &diagnostics) {
++  if (canonical_fixed_mem1_ &&
++      (!canonical_c2_ || canonical_mem1_symbol_ != "bw_guest_mem1" ||
++       canonical_mem1_size_ != 0x02000000u || state_in_memory_ || modern_runtime_ || native_abi_)) {
++    diagnostics << "dolllvm: unsupported canonical fixed-MEM1 contract\n";
++    return false;
++  }
+   if (canonical_c2_) {
+ #if !defined(DOLRECOMP_CANONICAL_CPU)
+     diagnostics << "dolllvm: canonical C2 mode requires the canonical CPU build\n";
+diff --git a/src/backend/llvm/emitter.h b/src/backend/llvm/emitter.h
+index 6c6d46c878f1f7665ce0b618d426aa6d472998ba..166e3b68743dff2c24118651fd7e9e5f699181f9 100644
+--- a/src/backend/llvm/emitter.h
++++ b/src/backend/llvm/emitter.h
+@@ -130,6 +130,11 @@ private:
+   bool canonicalBeforeInstruction(u32 pc, llvm::raw_ostream &diagnostics);
+   void canonicalAfterInstruction(u32 pc);
+   void canonicalPublishState();
++  llvm::Value *canonicalFixedMem1Guard(llvm::Value *, u32, bool, llvm::Value **);
++  llvm::Value *canonicalFixedMem1Pointer(llvm::Value *);
++  void canonicalClearFixedReservation(llvm::Value *);
++  llvm::Value *canonicalFixedMem1Load(llvm::Value *, llvm::Type *, u32, bool);
++  void canonicalFixedMem1Store(llvm::Value *, llvm::Value *, u32);
+   void canonicalReloadStateAfterObserver();
+   void resetFPRepresentations();
+   void invalidateFPRepresentations();
+@@ -302,6 +307,10 @@ private:
+   bool state_in_memory_ = false;
+   bool modern_runtime_ = false;
+   bool canonical_c2_ = false;
++  bool canonical_return_dispatch_relay_ = false;
++  bool canonical_fixed_mem1_ = false;
++  std::string canonical_mem1_symbol_;
++  u32 canonical_mem1_size_ = 0;
+   bool canonical_options_supported_ = false;
+   const DolLLVMCanonicalScheduleRow *canonical_schedule_ = nullptr;
+   u32 canonical_schedule_count_ = 0;
+diff --git a/src/backend/llvm/llvm_backend.h b/src/backend/llvm/llvm_backend.h
+index 787cc9d5b920e8455430806bed98081cccc0b722..f699ed0f8fbf74afff75b292abccbec1c0ee58ce 100644
+--- a/src/backend/llvm/llvm_backend.h
++++ b/src/backend/llvm/llvm_backend.h
+@@ -146,6 +146,11 @@ typedef struct {
+   bool canonical_c2;
+   const DolLLVMCanonicalScheduleRow *canonical_schedule;
+   u32 canonical_schedule_count;
++  bool canonical_c2_return_dispatch_relay; /* paired scoped outer C only */
++  // Explicit ABI-5 C2 production contract; zero-init keeps this disabled.
++  bool canonical_c2_fixed_mem1;
++  const char *canonical_c2_mem1_symbol;
++  u32 canonical_c2_mem1_size;
+ } DolLLVMOptions;
+ 
+ bool dolllvm_emit_object(const DolIRModule *module, const char *object_path,
+diff --git a/src/backend/llvm/memory.cpp b/src/backend/llvm/memory.cpp
+index 2c6a5c2a41bf5ab8f0eb5dc923b0be3225349722..b5f4268a8466c54d20abdb4616be4e57cd552a24 100644
+--- a/src/backend/llvm/memory.cpp
++++ b/src/backend/llvm/memory.cpp
+@@ -2,6 +2,8 @@
+ #include "cpu/cpu.h"
+ 
+ #include <llvm/IR/BasicBlock.h>
++#include <llvm/IR/Constants.h>
++#include <llvm/Support/ErrorHandling.h>
+ #include <llvm/IR/Function.h>
+ #include <llvm/IR/GlobalVariable.h>
+ #include <llvm/IR/MDBuilder.h>
+@@ -12,6 +14,126 @@ namespace dolllvm {
+ 
+ using namespace llvm;
+ 
++// SOURCE DRAFT ONLY. Included in memory.cpp inside namespace dolllvm.
++// This mode is explicitly limited to the C2 ABI-5 fixed CPU + fixed MEM1 bank.
++// No guessed CPU.ram ownership or normalized alias address is used here.
++Value *FunctionEmitter::canonicalFixedMem1Guard(Value *address, u32 width,
++                                                bool writing, Value **offset) {
++  if (width != 1u && width != 2u && width != 4u && width != 8u)
++    report_fatal_error("canonical fixed MEM1 access has unsupported width");
++  Type *i8 = Type::getInt8Ty(context_);
++  Type *pointer = PointerType::getUnqual(context_);
++  auto *overlap = cast<GlobalVariable>(module_.getOrInsertGlobal(
++      "g_ppc_guest_aliases_overlap_mem1", i8));
++  LoadInst *currentOverlap = builder_.CreateLoad(i8, overlap, "c2.alias_overlap");
++  currentOverlap->setVolatile(true); // an actual fresh guard at every operation
++  *offset = builder_.CreateSub(address, builder_.getInt32(0x80000000u));
++  Value *eligible = builder_.CreateAnd(
++      builder_.CreateICmpEQ(currentOverlap, builder_.getInt8(0)),
++      builder_.CreateAnd(
++          builder_.CreateICmpEQ(builder_.CreateAnd(address, builder_.getInt32(0x40000000u)),
++                               builder_.getInt32(0)),
++          builder_.CreateICmpULE(*offset, builder_.getInt32(canonical_mem1_size_ - width))));
++  if (writing) {
++    auto *journal = cast<GlobalVariable>(module_.getOrInsertGlobal(
++        "g_mem_write_journal", pointer));
++    LoadInst *currentJournal = builder_.CreateLoad(pointer, journal, "c2.write_journal");
++    currentJournal->setVolatile(true);
++    eligible = builder_.CreateAnd(eligible, builder_.CreateIsNull(currentJournal));
++  }
++  return eligible;
++}
++
++Value *FunctionEmitter::canonicalFixedMem1Pointer(Value *offset) {
++  ArrayType *bankType = ArrayType::get(Type::getInt8Ty(context_), canonical_mem1_size_);
++  GlobalVariable *bank = module_.getNamedGlobal(canonical_mem1_symbol_);
++  if (bank && bank->getValueType() != bankType)
++    report_fatal_error("canonical fixed MEM1 global has conflicting extent/type");
++  if (!bank)
++    bank = new GlobalVariable(module_, bankType, false, GlobalValue::ExternalLinkage,
++                              nullptr, canonical_mem1_symbol_);
++  // This inbounds GEP is constructed only in the guarded fast block.
++  return builder_.CreateInBoundsGEP(Type::getInt8Ty(context_), bank, offset);
++}
++
++void FunctionEmitter::canonicalClearFixedReservation(Value *address) {
++  // Only reservation fields need publication. All unrelated guest registers
++  // remain local; a callback cannot run on this already-admitted RAM arm.
++  if (dirty_[DOLIR_STATE_RESERVE_ADDR])
++    syncState(DOLIR_STATE_RESERVE_ADDR);
++  if (dirty_[DOLIR_STATE_RESERVE_VALID])
++    syncState(DOLIR_STATE_RESERVE_VALID);
++  Type *i8 = Type::getInt8Ty(context_);
++  Value *valid = loadOffset(i8, offsetof(CPUState, reserve_valid));
++  Value *reserved = loadOffset(Type::getInt32Ty(context_), offsetof(CPUState, reserve_addr));
++  // Exactly clear_matching_reservation: clear mirror bit, compare 32-byte line.
++  Value *difference = builder_.CreateAnd(builder_.CreateXor(reserved, address),
++                                         builder_.getInt32(~(0x40000000u | 31u)));
++  Value *matches = builder_.CreateAnd(builder_.CreateICmpNE(valid, builder_.getInt8(0)),
++                                      builder_.CreateICmpEQ(difference, builder_.getInt32(0)));
++  BasicBlock *clear = BasicBlock::Create(context_, "c2.reservation_clear", function_);
++  BasicBlock *done = BasicBlock::Create(context_, "c2.reservation_done", function_);
++  builder_.CreateCondBr(matches, clear, done);
++  builder_.SetInsertPoint(clear);
++  builder_.CreateStore(builder_.getInt8(0), bytePtr(offsetof(CPUState, reserve_valid)));
++  if (used_[DOLIR_STATE_RESERVE_VALID])
++    reloadState(DOLIR_STATE_RESERVE_VALID);
++  builder_.CreateBr(done);
++  builder_.SetInsertPoint(done);
++}
++
++Value *FunctionEmitter::canonicalFixedMem1Load(Value *address, Type *resultType,
++                                               u32 width, bool sign) {
++  // A compile-time deferred FPRF cannot be discarded only while generating
++  // the slow arm. Materialize it to the local FPSCR state before branching.
++  materializeFPRF();
++  Value *offset = nullptr;
++  Value *eligible = canonicalFixedMem1Guard(address, width, false, &offset);
++  BasicBlock *fast = BasicBlock::Create(context_, "c2.load_mem1", function_);
++  BasicBlock *slow = BasicBlock::Create(context_, "c2.load_service", function_);
++  BasicBlock *join = BasicBlock::Create(context_, "c2.load_join", function_);
++  builder_.CreateCondBr(eligible, fast, slow);
++  builder_.SetInsertPoint(fast);
++  Type *i64 = Type::getInt64Ty(context_);
++  Value *direct = endianLoad(canonicalFixedMem1Pointer(offset), i64, width);
++  BasicBlock *fastEnd = builder_.GetInsertBlock();
++  builder_.CreateBr(join);
++  builder_.SetInsertPoint(slow);
++  Value *unusedYield = nullptr;
++  Value *fallback = externalRead(address, width, &unusedYield);
++  BasicBlock *slowEnd = builder_.GetInsertBlock();
++  builder_.CreateBr(join);
++  builder_.SetInsertPoint(join);
++  PHINode *value = builder_.CreatePHI(i64, 2, "c2.memory_value");
++  value->addIncoming(direct, fastEnd);
++  value->addIncoming(fallback, slowEnd);
++  // Slow-arm reloads conservatively invalidate compile-time facts for both
++  // arms; their state allocas/SSA PHIs still preserve the actual fast values.
++  if (sign && width * 8u < resultType->getIntegerBitWidth())
++    return builder_.CreateSExt(builder_.CreateTrunc(value, IntegerType::get(context_, width * 8u)),
++                                resultType);
++  return builder_.CreateZExtOrTrunc(value, resultType);
++}
++
++void FunctionEmitter::canonicalFixedMem1Store(Value *address, Value *value, u32 width) {
++  materializeFPRF();
++  Value *offset = nullptr;
++  Value *eligible = canonicalFixedMem1Guard(address, width, true, &offset);
++  BasicBlock *fast = BasicBlock::Create(context_, "c2.store_mem1", function_);
++  BasicBlock *slow = BasicBlock::Create(context_, "c2.store_service", function_);
++  BasicBlock *join = BasicBlock::Create(context_, "c2.store_join", function_);
++  builder_.CreateCondBr(eligible, fast, slow);
++  builder_.SetInsertPoint(fast);
++  canonicalClearFixedReservation(address);
++  endianStore(canonicalFixedMem1Pointer(offset), value, width);
++  builder_.CreateBr(join);
++  builder_.SetInsertPoint(slow);
++  externalWrite(address, value, width);
++  builder_.CreateBr(join);
++  builder_.SetInsertPoint(join);
++}
++
++
+ Value *FunctionEmitter::normalizeAddress(Value *address) {
+   return builder_.CreateAnd(address, builder_.getInt32(~0x40000000u));
+ }
+@@ -70,6 +192,8 @@ Value *FunctionEmitter::emitGuestLoad(const DolIRInstruction &instruction,
+                                       Value *address, Type *resultType,
+                                       u32 width, bool sign) {
+   if (canonical_c2_) {
++    if (canonical_fixed_mem1_)
++      return canonicalFixedMem1Load(address, resultType, width, sign);
+     Value *unusedYield = nullptr;
+     Value *value = externalRead(address, width, &unusedYield);
+     if (sign && width * 8u < resultType->getIntegerBitWidth()) {
+@@ -201,6 +325,10 @@ Value *FunctionEmitter::emitGuestLoad(const DolIRInstruction &instruction,
+ void FunctionEmitter::emitGuestStore(const DolIRInstruction &instruction,
+                                      Value *address, Value *value, u32 width) {
+   if (canonical_c2_) {
++    if (canonical_fixed_mem1_) {
++      canonicalFixedMem1Store(address, value, width);
++      return;
++    }
+     // The service performs the complete original access once, including
+     // reservation/journal/FIFO work. Do not duplicate donor-side effects.
+     externalWrite(address, value, width);

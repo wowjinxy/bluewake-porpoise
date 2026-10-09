@@ -2190,6 +2190,59 @@ Local evidence under `build/deep-debug-20261008/`:
 | `moderngekko-whole-function1/build-attempt4/passive-codegen3.json` | `803ea7c1ad7501e23d366036454673e5a03302dedc59eafbb92fa30968460048` |
 | `moderngekko-whole-function1/b-passive-audit2.json` | `a713273e19f03eaaddc0743564630fbef013843e55cc5d93f3af915c9c811062` |
 
+### Guarded normal RAM and explicit return ownership
+
+A separate opt-in successor now compiles all 49 translation units afresh and
+emits the actual function with guarded fixed-MEM1 access and a paired central
+return relay. The routed original C2 chunk and repaired canonical memory
+service also compile. The fixed-storage module interface is ABI 5; the CPU
+layout is ABI 6. These are distinct version numbers.
+
+Independent actual-IR/COFF inspection admits all 93 resume entries and both
+local backedges. Each of the 24 load and two store fast regions avoids full
+guest-state publication/reload and runtime calls. Fresh raw-address/span and
+alias guards remain; stores additionally require a null journal and preserve
+matching reservation invalidation. Rejected accesses call the original
+canonical service once. FPRF and callback-mutated state survive the joins.
+The framed 57,536-byte private body has exact Win64 unwind coverage and restores
+all nonvolatile saves; its ordinary wrapper remains a frameless tail jump.
+Static IR includes 4,559 PHIs, 1,385 CPU loads and 3,904 CPU stores across all
+paths. These counts include slow paths and do not establish dynamic savings.
+
+Every actual guest `blr` that passes the original budget check now reports a
+central transfer through a nested scoped reason channel. The unchanged original
+C dispatcher then owns its range check, depth/SP return gate and continuation
+switch. Other exits return from the chunk without PC-based inference or retry.
+This deliberately adds an exit/reentry at guest returns; it is not a claim of
+unchanged machine cost. Both new options default off.
+
+Two passive parser failures were naming/opcode-spelling assumptions, preserved
+before their narrow corrections. The earlier claim that two source snapshots
+were substantively stale was also corrected: their normalized contents match;
+only CRLF/LF differed. The actual integrated source retains asynchronous unwind
+emission. An unused unsupported-width `abort` dependency was replaced by a
+trap in a new service source, preserving the old source/build. Every admitted
+width's body remains unchanged; the emitter rejects other widths.
+
+The generic delta is preserved in
+`patches/compiler/drafts/canonical-c2-fixed-mem1-and-return-relay.patch` and
+private source commit `c989f634`. The private C2 module now links successfully
+with one object replacement and three appends: 838 direct objects, 834 retained
+original objects, 15 physical providers and 855 LINKREPRO members. Actual input
+bytes and order match the frozen recipe. Original PE imports, exports, ordinals,
+resources and ABI fields remain exact; the five original C2 CPU/REL/PSQ objects
+and dispatch/export/mod selection remain retained. No game execution or
+performance qualification is established by these compiler/link checks.
+
+| Successor evidence under `moderngekko-whole-function1/` | SHA-256 |
+| --- | --- |
+| `build-attempt5/output/groundcross93.obj` | `53f32101b77787a8f8b63bd6b8776b2d72fa6ab96eb1a9d9c41730d3fafa76af` |
+| `build-attempt5/output/groundcross93.ll` | `afa8357d82b5cd40aecfc1259f6b1dc3edb3c85ab1aa1e62902cbd3db8d8fa8c` |
+| `build-attempt5/passive-fixed-memory1.json` | `0369ae1724f362c061c9f47392fd4b9f646d3630c958d84692413bf07a3589c4` |
+| `canonical-fast-memory2/peer-shader-source-correction2.json` | `e3b3c7ddb3ebcc6582d70062eaca839541479b8b86af3fa39cec4d2e04bd012a` |
+| `module-plan1/attempt1/result.json` | `28c9597fdc13d237ac04e6d6e480f1f12befa31cad1792f201621392fa351cc6` |
+| `module-plan1/attempt1/output/gGZLE01_recomp.dll` | `3fa09e8306c5695c3d347a0531ff6f418961c9cb7d9c460794689e6d3355506f` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
