@@ -747,6 +747,17 @@ That self-generated activity is an independent measurement limitation.
 The block is retained unchanged, with no extra runs or changed window and
 no accepted controlled-gain claim even if its numeric rule had passed.
 
+The separately preregistered composition of the event-filter host and total H
+module also passed fresh six-checkpoint/full-P6 correctness. Its fixed eight
+runs pass all runtime checks, exact primary/five-segment work and endpoint
+cursors, terminal GX/clock/dispatch equality and zero terminal pipeline
+creation. Independent raw-log recomputation gives descriptive mean changes of
+**+1.44% CPU, +1.38% wall and +1.51% thread cycles**. CPU/wall pair changes are
++3.53%/+3.86%, +1.86%/+1.72%, +5.69%/+6.20% and -5.03%/-5.88%.
+Both gain rules fail. This composition remains inactive and closed without
+rescue runs; the individual candidates' earlier failures remain unchanged.
+Neither component has an accepted speedup from this experiment.
+
 ## Narrow arithmetic and backend feasibility
 
 The quaternion source experiment keeps its existing bounded finite-input,
@@ -981,6 +992,9 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `h-clean-per-vi1/{preparation2,source-validation2,correctness-batch1,controlled-batch1}.json`
 - `h-clean-per-vi1/{independent-audit1,timing-incident1}.json`
 - `h-clean-per-vi1/native-efb1/h-clean-per-vi-input-parity1.json`
+- `event-h-combined-clean-per-vi1/{preparation3,source-validation4,correctness-batch1}.json`
+- `event-h-combined-clean-per-vi1/{controlled-batch1,peer-controlled-audit1}.json`
+- `event-h-combined-clean-per-vi1/controlled-input1/event-h-combined-clean-per-vi-eight-run1.json`
 - `llvm-backend-feasibility1.md`
 - `quaternion-local1/{DESIGN2.md,existing-caller1.json}`
 - `quaternion-local1/{SOURCE_CORRECTION1.md,fixture-attempt1/result.json,diagnostic-asan1/result.json}`
