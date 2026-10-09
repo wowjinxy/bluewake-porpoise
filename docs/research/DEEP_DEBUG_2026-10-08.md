@@ -63,6 +63,18 @@ observation and diagnostic work. The old shared query counters prove approvals
 occurred, but cannot isolate H-specific admissions; the fresh clean capture has
 no such query census. Loader registration alone proves neither hits nor savings.
 
+A later diagnostic uses a copy of the player's actual C2 tester, including its
+settings, audio, FIFO presentation and 2560x1440 renderer at scale two. Physical
+pad and mouse-camera input are disabled for the owned no-input intro run. It
+reproduces roughly **17–20 FPS** in the crowded interval. The sampler records
+4,852 RIP samples without errors: 3,555 (73.27%) in the exact C2 translated module
+and 1,106 (22.79%) in the host. All 30 route/input checks pass; original tester
+data and caches remain unchanged. These are diagnostic sample frequencies,
+not exclusive CPU times or a speed comparison. The offline worker processes
+all 485 immutable stack snapshots. C2 has no qualified module MAP/PDB, so its
+frame labels retain raw RVAs; only the exact host PDB supplies function names.
+No original-A module symbols or leaf rules are borrowed for C2.
+
 The last visible paired-single playtest independently records the crowded intro
 at roughly 39–43 VI/s with the game thread about 92–99% busy. That launcher was
 already clean. This supports CPU pressure in the player's actual play mode;
@@ -856,6 +868,42 @@ compile was performed. Any future standalone leaf pilot must establish those
 contracts before replacing original game code; it is not a prerequisite for
 the current port work or a predicted large gain.
 
+A separate eight-TU mixed ThinLTO pilot uses the installed Clang 19.1.5 without
+an LLVM development SDK. It retains 827 original COFF objects and selects only
+one measured chunk plus shared CPU/direct/native helpers. Driver queries reveal
+that the final original frontend already enables both loop and SLP
+vectorization despite its earlier `-fno-slp-vectorize` spelling. This pilot
+preserves that effective command. Earlier references to a no-SLP flag describe
+the command spelling, not proof of the final frontend policy.
+
+The historical link-driver `-mllvm` register-allocation option is unused.
+New LTO code generation therefore receives the threshold explicitly through
+LLD's `/mllvm:` route, with IR/codegen O2 and a single backend worker. These
+are verified against the actual commands. The first actual-M pass stopped
+before compilation when the previously missing export-TU closure exposed nine
+headers outside the frozen bank. A successor admits their exact source-qualified
+identities. All eight dependency closures and compilations pass; the final link
+retains the exact 835-object order, 827 original COFF objects, 15 physical library
+providers, manifest and original PE imports/exports/ABI/resources. A postlink
+Python namespace error is preserved; verification succeeds without rebuilding.
+
+Fresh game correctness matches all six complete CPU/MEM1/MEM2/ordered-alias
+states and full P6 pixels, consumes all 1,134 EFB inputs and ends with zero new
+pipelines. All eight fixed timing runs pass the runtime checks and retain exact
+primary/five-segment work, endpoint cursors and terminal GX/clock/dispatch.
+Independent raw-log recomputation gives mean changes of **-2.50% CPU, -2.44%
+wall and -2.28% thread cycles**. CPU/wall pair changes are -4.94%/-4.79%,
++1.79%/+2.14%, -5.33%/-5.62% and -1.25%/-1.24%. The all-pairs gain rule fails.
+The candidate remains inactive; no rescue runs or ordinary-play speed claim
+follow. Background load and unresolved calibration limits remain recorded.
+
+Static code inspection finds 389 fewer call instructions in the selected hot
+owner, but this needs a scope correction: its 1,398 removed FP-availability
+helper calls were already guarded by an inline MSR[FP] success test. They are
+on the unavailable-FP path, not evidence of 1,398 hot calls removed. Indirect
+chunk-table calls and outlined direct-call readiness remain. Broader LTO needs
+a separate hot-path hypothesis rather than extrapolating those cold calls.
+
 ## Inactive native-entry reuse
 
 A source census of the older item 17 and 18 drafts matches every selected
@@ -933,6 +981,17 @@ not evidence that their full descendant cost is removable. Raw return-PC
 boundary attribution remains tentative. The original naming pass's duplicate
 dictionary-key error is preserved; its narrow successor changes serialization
 only. No instruction/stack sample is a throughput or displayed-FPS result.
+
+The actual hidden renderer log reports framebuffer 640x480 at scale 2. During
+the crowded sampled interval, existing perf rows report about 42–45 VI/s and
+97–101 percent dispatch busy. The 58–67 VI/s rows belong before or after that
+interval, not evidence that the crowded slowdown disappeared. The earlier
+visible C2 run reports roughly 39–43 VI/s and about 20 shown FPS, with a
+2560x1440 framebuffer at scale 2. Its ordinary audio/presentation, real clock,
+saved options, card and module differ from this unpaced original-A diagnostic.
+This preserves a qualitative reproduction while limiting direct comparison;
+neither framebuffer differences nor current background load establish the
+cause of the remaining drop.
 
 Instruction-pointer frequencies are neither call stacks nor exclusive CPU
 time. Guest CFG ownership is incomplete at shared labels. Main and worker
@@ -1079,6 +1138,12 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `root-game-profile1/title-stack-native1/{result,native-rip,stack-ranking2}.json`
 - `root-game-profile1/title-stack-native1/offline-request1/preparation.json`
 - `root-game-profile1/title-stack-native1/offline-unwind1/{result,unwind}.json`
+- `visible-c2-profile1/{preparation1,offline-source-preparation1,ranking-preparation1}.json`
+- `visible-c2-profile1/title-visible-c2-native1/{result,native-rip,stack-ranking-visible1,rip-ranking-visible1}.json`
+- `visible-c2-profile1/title-visible-c2-native1/offline-unwind1/{result,unwind}.json`
+- `mixed-thinlto1/{build-preparation2,hot-owner-codegen1}.json`
+- `mixed-thinlto1/verification1/result.json`
+- `mixed-thinlto-clean-per-vi2/{preparation1,correctness-batch1,controlled-batch1,peer-controlled-audit1}.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
