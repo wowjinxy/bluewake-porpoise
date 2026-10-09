@@ -1368,7 +1368,7 @@ checks compiled layout only; callback conventions and the current runtime's
 memory, observer, cycle and publication semantics remain separate obligations.
 No backend or installed game binary has changed.
 
-A separate source-only SSA adapter now covers the ten-instruction integer
+A separate SSA adapter now covers the ten-instruction integer
 prefix of `GXCallDisplayList` at 0x80326B80-0x80326BA4, before the original
 branch at 0x80326BA8. This is a semantic seed with only five associated sampled
 instances, not a large measured hotspot or the earlier GXProject FP pilot.
@@ -1381,9 +1381,39 @@ access uses an unsigned strict MEM1 range check and explicit big-endian bytes.
 
 The new adapter uses SSA promotion separately from the backend's incompatible
 cycle and memory-exit protocol, and explicitly requests Windows unwind tables.
-These are source properties only. The emitted adapter, complete-state/RAM/
-callback differential fixture and live metadata-writer closure remain
-unqualified; no adapter code has been compiled, linked, executed or installed.
+Five bounded generators have now emitted actual Windows MSVC COFF: the normal
+region with eleven construction-time forced exits, and four deliberately
+incorrect publication/order variants. The first emission attempt stopped at
+an unused-constant warning in the deliberately broken suffix variant; its
+failure remains preserved. A minimal successor marked only that mutant's
+constant unused, retained the two successful emissions and completed the
+remaining three. No emitted adapter code has executed at this checkpoint.
+
+Independent passive inspection qualified all sixteen emitted functions: ten
+have complete matching unwind records and six are frameless leaves. Every
+return restores the saved nonvolatile registers. There are no native calls
+or runtime imports beyond the three intended memory/alias/journal globals.
+The normal object is 6,179 bytes; its main region saves seven host registers
+(56 bytes). This setup cost is material for a ten-instruction seed. No speed
+claim follows from scalar promotion or a smaller count of state accesses.
+
+A source inventory found guard writers at startup or synchronous dispatch
+boundaries in the examined common-host/C2 routes, with no off-dispatch writer
+identified. Exported alias/journal setters do not enforce thread ownership;
+arbitrary concurrent hosts and asynchronous PC-observer semantics remain
+outside this proof. The actual complete-state/RAM/callback differential
+fixture remains to be executed. Its ASan profiles instrument the C harness
+and canonical providers; the emitted adapter itself is uninstrumented.
+No backend or installed game binary has changed.
+
+The first generic-O2 fixture configuration has compiled all eight canonical
+C translation units and completed linking, but no fixture has executed.
+Preserved setup failures cover the reader's incorrect file-bound check for
+uninitialized COFF sections, a missing shared-memory extern declaration,
+and two unsuitable Windows linker-selection options. The fixes retain the
+successful objects and the original test bodies; no comparison has been
+removed or relaxed. These are harness/tooling failures, not semantic test
+results.
 
 ## Validation boundary and retained evidence
 
@@ -1653,6 +1683,14 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `llvm-production-abi1/attempt1/{result,canonical-witness,standalone-witness}.json`
 - `llvm-bounded-prefix1/{fixture-plan1,peer-source-review1}.json`
 - `llvm-bounded-prefix1/source1/source-receipt1.json`
+- `llvm-bounded-prefix1/{peer-fixture-source1,guard-writer-audit1}.json`
+- `llvm-bounded-prefix1/emission-attempt1/result.json`
+- `llvm-bounded-prefix1/emission-attempt2/result.json`
+- `llvm-bounded-prefix1/passive-admission1/negative.json`
+- `llvm-bounded-prefix1/passive-admission2/admission.json`
+- `llvm-bounded-prefix1/{fixture-binding-failure5,recipe7}.json`
+- `llvm-bounded-prefix1/fixture-attempt1/result.json`
+- `llvm-bounded-prefix1/next-scale-feasibility1/{result1,original-frontiers1}.json`
 - `v3-entry-frames1/result1.json`
 - `cursor-integer-general1/regression-audit1/{receipt1.json,FINDINGS1.md}`
 - `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
