@@ -409,6 +409,34 @@ actual function/hash/counter coverage and subsequent emitted-code comparison
 are required before any speed test. This is a narrow feasibility trial; no
 profile-driven gain or broad module rebuild is qualified yet.
 
+The pilot's fresh instrumented module has now completed the same six-state
+and exact-P6 comparison against A, with all 1,134 replay entries consumed and
+zero pipeline creations. One raw profile came from the owned game process;
+the uninstrumented control emitted none. The merged profile matches all 161
+instrumented function/hash records and 80,863 counter widths. The two selected
+entry counts are 5,389,784 and 19,028,266. Fifty-nine known zero-count functions
+remain in the profile. Profile-runtime, merge and inspection diagnostics were
+checked even when their tools exited successfully. Training is excluded from
+timing, and these counts do not establish a speedup.
+
+The subsequent two-chunk profile-use build also passed its compile and link
+gates: exact source/flag and dependency checks, 833 retained objects plus the
+matrix archive, the original PE surface, and no profiling runtime. Emitted
+code changed substantially. The first chunk's text grew from 709,841 to
+1,006,344 bytes while static call sites fell from 9,136 to 8,368; the second
+grew from 679,971 to 737,287 bytes with calls falling from 7,888 to 7,859.
+These are static code-generation results. Native correctness and repeatable
+speed remain unqualified, and the pilot has not expanded to more chunks.
+
+A separate, preregistered timing experiment records cumulative wall time,
+dispatch-thread CPU time and thread cycles at fixed VI boundaries. It uses one
+common host, a preallocated buffer and shutdown-only output. Its primary window
+is VI 750 through 1500, with five fixed 150-VI segments and eight counterbalanced
+runs (A-H-H-A, then H-A-A-H). State, pixel and workload gates remain mandatory.
+This will distinguish steady dispatch cost from startup and renderer-worker
+process cost; it cannot remove scheduling noise or turn VI intervals into
+displayed FPS. No results from this new experiment are available yet.
+
 ## Fresh GX-worker findings
 
 Of 4,147 worker samples, 1,568 (37.81%) land in
@@ -499,6 +527,12 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `qps-controlled1/reverse-baab1/preparation.json`
 - `qps-controlled1/reverse-baab1/{batch-result,reverse-baab-analysis}.json`
 - `pgo-hot2-1/recipe1/source-preparation.json`
+- `pgo-hot2-1/recipe1/instrument/verification3/result.json`
+- `pgo-hot2-1/training1/{training-batch1,training-parity1,profile-census1}.json`
+- `pgo-hot2-1/recipe1/use/verification2/{result,codegen-comparison}.json`
+- `per-vi-protocol1/PROTOCOL1.md`
+- `per-vi-protocol1/source1/source-receipt.json`
+- `per-vi-protocol1/fixture-attempt4/result.json`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not
