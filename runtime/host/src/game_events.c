@@ -1,4 +1,5 @@
 #include "game_events.h"
+#include "game_event_observation_view.h"
 #include "song_rel_owner.h"
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
 #include "inventory_completion_internal.h"
@@ -153,7 +154,10 @@ static const uint32_t kSaveReturns[] = {
 
 static BwSongOwnerQuery g_song_owner_query;
 static void* g_song_owner_user;
-static CPUState* g_cpu;
+static BwGameEventObservationView g_observation_view;
+#define g_cpu (g_observation_view.owner_cpu)
+#define g_mask (g_observation_view.mask)
+#define g_pending_return_buckets (g_observation_view.pending_return_buckets)
 static const uint8_t* g_ram;
 static uint32_t g_ram_size;
 static bool g_busy, g_transition, g_facts_valid, g_loading;
@@ -164,8 +168,7 @@ static PendingCall g_pending[kPendingCalls];
 /* A conservative return-address filter, not a cache of observation answers.
  * Cancellation may leave bits set; every hit still checks the live slots.
  * Only a new arm adds a bit, and clearing all slots clears the filter. */
-static uint64_t g_pending_return_buckets[4];
-static uint64_t g_mask, g_subscription_token, g_sequence, g_native_token;
+static uint64_t g_subscription_token, g_sequence, g_native_token;
 static BwGameEventStats g_stats;
 static BwGameEventSubscription g_trace_subscription;
 #ifdef BW_NATIVE_INVENTORY_COLLECTOR
@@ -775,4 +778,8 @@ bool bluewake_game_events_scene(BwGameScene* scene, uint64_t* epoch, uint64_t* g
 }
 void bluewake_game_events_stats(BwGameEventStats* stats) {
     if (stats != NULL) *stats = g_stats;
+}
+
+const BwGameEventObservationView* bluewake_game_events_observation_view(void) {
+    return &g_observation_view;
 }

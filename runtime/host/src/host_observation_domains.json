@@ -1,0 +1,457 @@
+{
+  "schema": "bluewake-host-observation-domains-v1",
+  "supported_profile": {
+    "compiler_id": "Clang",
+    "compiler_version": "19.1.5",
+    "system": "Windows",
+    "pointer_bytes": "8",
+    "configuration": "Release",
+    "developer": "0",
+    "census": "0",
+    "collector": "0",
+    "reward": "0",
+    "system_processor": "x86_64",
+    "compiler_target": "native"
+  },
+  "source_inputs": [
+    {
+      "path": "runtime/host/src/main.c",
+      "bytes": 867472,
+      "sha256": "66aea20b4aa7a9abd3de312571a9e35d9c68d1b141a8c3aaafeb7d1085e7778e"
+    },
+    {
+      "path": "runtime/host/src/game_events.c",
+      "bytes": 36754,
+      "sha256": "bc57b60fd70277acbd6a537194980eb59d088a9eacfdeeaa67e1d776bfe8ad61"
+    },
+    {
+      "path": "runtime/host/src/game_events.h",
+      "bytes": 6398,
+      "sha256": "c005a0e28ee2bd15c5c82a92b659fa2f1512d5e563143a7004680c74e4eacf06"
+    },
+    {
+      "path": "runtime/host/src/game_event_observation_view.h",
+      "bytes": 1060,
+      "sha256": "93540fce591818f41900ed7552548c35d2eb7a1adb053f861ad0b6d4ca4edeed"
+    },
+    {
+      "path": "runtime/host/src/host_observation_fast.h",
+      "bytes": 3075,
+      "sha256": "a2425dae6c78b0ee0a7736e7f775efe8fd2526c0e2b7c65054cc3612af788937"
+    },
+    {
+      "path": "runtime/host/src/host_observation_domains.h",
+      "bytes": 42357,
+      "sha256": "8dc6633bcdb6b7cf6526b8b07d6ba16b9785f3de227fd26ff42a96dc37d91acb"
+    },
+    {
+      "path": "runtime/host/src/hud_customization.c",
+      "bytes": 25781,
+      "sha256": "86afdbc60c54e158aff27402cd6d6fab89e4a200e0619ad894ad8b48a07d16bb"
+    },
+    {
+      "path": "runtime/host/src/hud_customization.h",
+      "bytes": 7031,
+      "sha256": "bf4080ff53d4c21fa1a11ee9c9d73661c8835d229493080db81e1ac9e7f158cb"
+    },
+    {
+      "path": "runtime/host/src/hud_host.c",
+      "bytes": 12057,
+      "sha256": "fe34f8eba7302b836a1b15e9eeb3bcf369dc0e7bb24a2c43781c35116afcea6e"
+    },
+    {
+      "path": "runtime/host/src/hud_host.h",
+      "bytes": 2413,
+      "sha256": "9e7f0b38f43970a53808755d47d064585fbf06d16cf450f5199713b0a2ca4ba8"
+    },
+    {
+      "path": "runtime/host/src/health_rules.c",
+      "bytes": 18975,
+      "sha256": "edcd29a3157b911ba1d16ebde09364457fe0f07f3b4f11b9ec76cf372efe9308"
+    },
+    {
+      "path": "runtime/host/src/health_rules.h",
+      "bytes": 5172,
+      "sha256": "64f9edc96bb5a1e3a8ca201e2f3c8b304f21bf8d3b4eb2bcb438141c63239cb7"
+    },
+    {
+      "path": "runtime/host/src/health_host.c",
+      "bytes": 9619,
+      "sha256": "d7a5e6c9741147a309b559130d19cd0be5b7dd13f0e085d061a2e23e53e54588"
+    },
+    {
+      "path": "runtime/host/src/health_host.h",
+      "bytes": 2371,
+      "sha256": "53abdc8685dd40eb1796a504255b9fade5415a21ebf36eef16a5d6b01cc909fb"
+    },
+    {
+      "path": "runtime/host/src/quick_items.c",
+      "bytes": 17367,
+      "sha256": "da7fbd10e569f7a0963311e36d258eac2a9aefee5940f6436227eb6d46c1e42f"
+    },
+    {
+      "path": "runtime/host/src/quick_items.h",
+      "bytes": 1652,
+      "sha256": "21b724be22dfcb5481e227e59bf24cbe44f02b1965eb59a7daa020af5e4e480f"
+    },
+    {
+      "path": "runtime/host/src/dialogue_speed.c",
+      "bytes": 24675,
+      "sha256": "ff13a367b89405074fc231a911c0bfc520157b8ce24da1352f221b281f2ce365"
+    },
+    {
+      "path": "runtime/host/src/dialogue_speed.h",
+      "bytes": 2441,
+      "sha256": "11f2b71928ef9458905386c73cbb4dfb41fd27f37464f1a2877b60fdac0ea365"
+    },
+    {
+      "path": "runtime/host/src/enhancement_hooks.c",
+      "bytes": 17262,
+      "sha256": "4e43c497e2ab999c675ca0d32c126c2b51df438eb2e252723e39dac748c16cb7"
+    },
+    {
+      "path": "runtime/host/src/enhancement_hooks.h",
+      "bytes": 2366,
+      "sha256": "496f48dd3ed031cd107ff83e7d34e495df73f0b5ee9e1a2394dbe094890da45b"
+    },
+    {
+      "path": "runtime/host/src/autosave.c",
+      "bytes": 22312,
+      "sha256": "7872c02de0e9f6aca15f0943ae29f1de58d13d2268333d8f767c0d17ad9c5c01"
+    },
+    {
+      "path": "runtime/host/src/autosave.h",
+      "bytes": 4445,
+      "sha256": "6283d6f103cc89666968ebac10096e09477bc09aad18d59bddeabb8752a44b0f"
+    },
+    {
+      "path": "runtime/host/src/feature_dispatch.h",
+      "bytes": 1207,
+      "sha256": "1c51ef6f490467fe1d723ba7c990ce0b448c6af9a47e9f31358dab6475c8e8d1"
+    },
+    {
+      "path": "runtime/host/src/finite_observer_filter.h",
+      "bytes": 897,
+      "sha256": "e3a947ff768d5330b1550fa764a3d401219bac897856caba82b2458110657e96"
+    },
+    {
+      "path": "runtime/host/src/edge_intercept_table.h",
+      "bytes": 4140,
+      "sha256": "f6f13c913cc1d4085725dbdd7ca4e590877e4b00c48cf5c97d8a77fbbc1a9b2a"
+    },
+    {
+      "path": "runtime/host/src/climb.h",
+      "bytes": 3217,
+      "sha256": "94a6ca5337cb24a105298a755243f60c25c32cc2b2920b5c8538fa9518c715df"
+    },
+    {
+      "path": "runtime/host/src/draw_tags.h",
+      "bytes": 3903,
+      "sha256": "2be19cd542e411faeb404a982bf2433180e53ff59ee2f92f0784e0d2f0722129"
+    },
+    {
+      "path": "runtime/host/src/mouse_camera.h",
+      "bytes": 5197,
+      "sha256": "a8afe60ef7f20bce469e4607b1e603185c911233a7dc1d5d6a83528703551d4c"
+    },
+    {
+      "path": "runtime/host/src/quick_doors.h",
+      "bytes": 2114,
+      "sha256": "3eb87b67c861e5de0fec083ee84e82a45252c2b70e1a8700ecc31d0f56d568ae"
+    },
+    {
+      "path": "scripts/check_host_observation_domains.py",
+      "bytes": 5587,
+      "sha256": "27f8607abaccd5601feb60085c98755c18be6eaa65aebf0bb17a3a7f04a0e1be"
+    },
+    {
+      "path": "cmake/HostObservationFast.cmake",
+      "bytes": 2500,
+      "sha256": "94c5ed448bb573307ed8fa0d4ee4c9252036d2b570c2eaced6256019e2fab95a"
+    },
+    {
+      "path": "cmake/CheckHostObservationDomains.cmake",
+      "bytes": 1696,
+      "sha256": "80a46da461d066b8fc6333c193920226764b27176241b5cea0fcc4e20e97ef50"
+    },
+    {
+      "path": "runtime/host/CMakeLists.txt",
+      "bytes": 47803,
+      "sha256": "3b2e6f47b6325524d56aa053760d52072f57a57a9c3d36b8f684b9528eb51ff6"
+    },
+    {
+      "path": "windows/CMakeLists.txt",
+      "bytes": 50566,
+      "sha256": "ac2d73dd36238746281fbc80fde89ea15473207acbf37580efddc41b5ebd25d3"
+    }
+  ],
+  "domains": {
+    "raw_main_code_intervals": [
+      [
+        2147496192,
+        2147505696
+      ],
+      [
+        2147505888,
+        2150860416
+      ]
+    ],
+    "finite": [
+      2147586844,
+      2147627492,
+      2147629408,
+      2147658780,
+      2147689140,
+      2147698356,
+      2147698384,
+      2147741496,
+      2147870592,
+      2148033956,
+      2148051056,
+      2148281888,
+      2148281980,
+      2148282824,
+      2148469748,
+      2148598428,
+      2148599380,
+      2148610116,
+      2148611232,
+      2148611624,
+      2148623860,
+      2148623940,
+      2148628868,
+      2148633516,
+      2148636860,
+      2148669552,
+      2148671320,
+      2148696604,
+      2148792132,
+      2148792164,
+      2148799036,
+      2148799396,
+      2148803328,
+      2148803672,
+      2148898428,
+      2148898464,
+      2149451912,
+      2149516808,
+      2149517004,
+      2149598212,
+      2149600296,
+      2149663388,
+      2150232928,
+      2150433996,
+      2150448364,
+      2150456396,
+      2172714976,
+      2180056612
+    ],
+    "features": [
+      2147751464,
+      2147890984,
+      2148438968,
+      2148593340,
+      2148593692,
+      2148593884,
+      2148595028,
+      2148674864,
+      2148753380,
+      2148753404,
+      2148957960,
+      2149040976
+    ],
+    "events": [
+      2147586844,
+      2147629408,
+      2147741496,
+      2147870592,
+      2147871268,
+      2147878540,
+      2147913068,
+      2148281852,
+      2148492472,
+      2148492528,
+      2148492584,
+      2148492640,
+      2148492696,
+      2148492752,
+      2148492808,
+      2148492864,
+      2148493032,
+      2148493088,
+      2148493144,
+      2148493212,
+      2148493324,
+      2148493580,
+      2148493692,
+      2148493804,
+      2148493916,
+      2148494028,
+      2148494140,
+      2148494252,
+      2148494364,
+      2148494476,
+      2149088284,
+      2149088536,
+      2149111236,
+      2149111412,
+      2149417952,
+      2149419412,
+      2149419516,
+      2149419628,
+      2149782180,
+      2149784328,
+      2155285000,
+      2162757996,
+      2172714976
+    ],
+    "static_intercepts": [
+      2147581912,
+      2148141920,
+      2148371896,
+      2148663688,
+      2148915212,
+      2148918256,
+      2148919900,
+      2149050264,
+      2149050476,
+      2149062196,
+      2149067408,
+      2149431896,
+      2149439840,
+      2149775868,
+      2149778912,
+      2149779988,
+      2149782952,
+      2149844804,
+      2149846760,
+      2149847416,
+      2149847544,
+      2150644304,
+      2150664860,
+      2150691504,
+      2150692260,
+      2150692376,
+      2150693596,
+      2150693836,
+      2150732716,
+      2150737640,
+      2150747472,
+      2150748896,
+      2150749184,
+      2150749240,
+      2150750972,
+      2150751388,
+      2150751616,
+      2150753736,
+      2150754124,
+      2150754500,
+      2150754888,
+      2150755432,
+      2150756248,
+      2150756576,
+      2150757192,
+      2150757468,
+      2150758044,
+      2150758344,
+      2150758716,
+      2150758788,
+      2150771488,
+      2150771656,
+      2150797188,
+      2178941140,
+      2178947976,
+      2178948004
+    ],
+    "special": [
+      2147555740,
+      2147583316,
+      2148674864,
+      2149865024
+    ],
+    "feature_inclusive_intervals": [
+      [
+        2149977004,
+        2149993548
+      ],
+      [
+        2148000900,
+        2148004796
+      ]
+    ]
+  },
+  "finite_family_true_domains": {
+    "hud": [
+      2147658780,
+      2148033956,
+      2149516808,
+      2149517004,
+      2149598212,
+      2149600296,
+      2150433996,
+      2150448364,
+      2150456396
+    ],
+    "health": [
+      2148281888,
+      2148281980,
+      2148282824,
+      2148598428,
+      2148599380,
+      2148623860,
+      2148623940,
+      2148628868,
+      2148633516,
+      2148671320,
+      2148792132,
+      2148792164,
+      2148898428,
+      2148898464
+    ],
+    "quick": [
+      2147627492,
+      2147629408,
+      2147741496,
+      2148610116,
+      2148611232,
+      2148611624,
+      2148669552,
+      2148799036,
+      2148799396,
+      2148803328,
+      2148803672
+    ],
+    "dialogue": [
+      2147689140,
+      2147698356,
+      2147698384,
+      2149451912,
+      2149663388,
+      2150232928
+    ],
+    "enhancement": [
+      2148051056,
+      2148636860,
+      2148696604,
+      2180056612
+    ],
+    "autosave": [
+      2147586844,
+      2147627492,
+      2147870592,
+      2148469748,
+      2172714976
+    ]
+  },
+  "finite_family_proof_notes": {
+    "hud": "Every true return contains one of nine exact address equalities. Enabled/memory/actor/meter/leaf state only narrows it. The host wrapper only forwards; it does not refresh identity or initialize state.",
+    "health": "candidate(address) is mandatory before pending[] comparison. Its six equalities plus the immutable eight-entry damage-return table bound even arbitrary active pending return_pc values. LR/config/owner/outer-active restrictions only narrow. requested/identity are plain read-only predicates; no cancellation/attachment runs here.",
+    "quick": "The first rejection limits to frame/ship entry/ship return/execute and seven exact proc_address equalities. Overlay, config, pending, crane/fire can enable only these keys; dynamic g_pending is not an address wildcard. Off-domain returns before bluewake_quick_items_enabled.",
+    "dialogue": "Only six literal addresses reach true or pending scans. Pending entries contribute active booleans, never return-address matches. Off-domain never calls multiplier or reads guest memory.",
+    "enhancement": "An explicit four-address rejection precedes CPU/config/LR checks. Canonical LR only gates commit/animation at those addresses; active wind/boots enable only fixed returns. No arbitrary LR or pending-return address expands the domain.",
+    "autosave": "Only SERIALIZE/POLL/FPU_REOWN/private return/frame can be true. Atomic public_phase/config activity is consulted only at those addresses; off-domain short-circuits false. Atomic changes cannot enlarge this set."
+  },
+  "static_excluded_main_slots": 5262,
+  "maintenance": "Whole-source pins intentionally conservative. Review complete true domains and live policy for changes; updating hashes alone is not recertification. Regenerate the exact table and rerun implication/lifetime/runtime qualification. Unknown profile or source disables only this optional shortcut.",
+  "text_normalization": "CRLF-to-LF-only"
+}

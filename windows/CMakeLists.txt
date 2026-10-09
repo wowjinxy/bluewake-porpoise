@@ -143,6 +143,10 @@ target_compile_definitions(BlueWake PRIVATE
     BLUEWAKE_ENABLE_DEVELOPER_TRACING=$<BOOL:${BLUEWAKE_WINDOWS_DEVELOPER_TRACING}>
     BLUEWAKE_EDGE_CENSUS=0
     BLUEWAKE_WINDOWS=1)
+
+include("${BLUEWAKE_REPO_ROOT}/cmake/HostObservationFast.cmake")
+bluewake_enable_host_observation_fast(BlueWake
+    "${BLUEWAKE_WINDOWS_DEVELOPER_TRACING}" "0")
 # The game's translated code recurses on the host stack as the guest does on
 # the GameCube's; macOS gives the main thread 8 MB, Windows only 1 MB.
 target_link_options(BlueWake PRIVATE "LINKER:/STACK:67108864")

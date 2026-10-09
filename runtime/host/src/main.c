@@ -32,6 +32,7 @@
 #include "efb_peek.h"
 #include "game_options.h"
 #include "game_events.h"
+#include "game_event_observation_view.h"
 #include "finite_observer_filter.h"
 #include "song_host_adapter.h"
 #include "hud_host.h"
@@ -2324,13 +2325,20 @@ static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 addre
     return host_can_skip_observation_facts(user, cpu, address, 0u);
 }
 
-static bool host_direct_can_skip(void* user, const CPUState* cpu, u32 address) {
+#include "host_observation_fast.h"
+static __attribute__((noinline)) bool host_direct_can_skip_full(void* user, const CPUState* cpu, u32 address) {
     const bool allowed = host_can_skip_observation(user, cpu, address);
     if (g_direct_call_trace) {
         g_direct_call_queries++;
         g_direct_call_allowed += allowed;
     }
     return allowed;
+}
+
+static bool host_direct_can_skip(void* user, const CPUState* cpu, u32 address) {
+    if (host_maincode_can_skip_observation(cpu, address))
+        return true;
+    return host_direct_can_skip_full(user, cpu, address);
 }
 
 static bool host_direct_can_skip_facts(void* user, const CPUState* cpu, u32 address, u32 facts) {
@@ -8681,6 +8689,7 @@ int main(int argc, char** argv) {
         const bool want = host_feature_wanted("BLUEWAKE_DIRECT_CALLS") &&
                           getenv("BLUEWAKE_PER_BLOCK_TURNS") == NULL &&
                           dlsym(lib, "bluewake_set_edge_service") != NULL;
+        g_host_event_observation_view = bluewake_game_events_observation_view();
         const bool enabled = direct_calls != NULL && direct_calls(
             want, &g_interrupt_sources_dirty, &g_guest_decrementer_pending,
             &g_interrupts.pi_cause, &g_interrupts.pi_mask, host_direct_can_skip, NULL);
@@ -17061,6 +17070,7 @@ int main(int argc, char** argv) {
     bw_hud_host_suspend(); bw_health_host_suspend(); bluewake_sprint_reset(NULL);
     host_song_owner_revoke();
     bluewake_game_events_reset(NULL, BW_GAME_RESET_MODULE_RELOAD);
+    g_host_event_observation_view = NULL;
     bw_module_cpu_free(&module_storage);
     if (g_gx_flush_census) {
         fprintf(stderr, "[gx-flush] retrace=%llu calls=%llu us=%llu\n",

@@ -94,6 +94,10 @@ target_compile_definitions(bluewake_host PRIVATE
     BLUEWAKE_ENABLE_DEVELOPER_TRACING=$<BOOL:${BLUEWAKE_ENABLE_DEVELOPER_TRACING}>
     BLUEWAKE_EDGE_CENSUS=$<BOOL:${BLUEWAKE_EDGE_CENSUS}>)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/HostObservationFast.cmake")
+bluewake_enable_host_observation_fast(bluewake_host
+    "${BLUEWAKE_ENABLE_DEVELOPER_TRACING}" "${BLUEWAKE_EDGE_CENSUS}")
+
 if(APPLE)
     set(BLUEWAKE_APP_DIR "${CMAKE_CURRENT_BINARY_DIR}/BlueWake.app")
     set(BLUEWAKE_MAC_ICON "${CMAKE_CURRENT_BINARY_DIR}/BlueWake.icns")
