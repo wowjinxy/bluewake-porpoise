@@ -1387,7 +1387,8 @@ incorrect publication/order variants. The first emission attempt stopped at
 an unused-constant warning in the deliberately broken suffix variant; its
 failure remains preserved. A minimal successor marked only that mutant's
 constant unused, retained the two successful emissions and completed the
-remaining three. No emitted adapter code has executed at this checkpoint.
+remaining three. The emitted objects subsequently executed in the differential
+fixture described below; no host or game module has linked them.
 
 Independent passive inspection qualified all sixteen emitted functions: ten
 have complete matching unwind records and six are frameless leaves. Every
@@ -1401,19 +1402,61 @@ A source inventory found guard writers at startup or synchronous dispatch
 boundaries in the examined common-host/C2 routes, with no off-dispatch writer
 identified. Exported alias/journal setters do not enforce thread ownership;
 arbitrary concurrent hosts and asynchronous PC-observer semantics remain
-outside this proof. The actual complete-state/RAM/callback differential
-fixture remains to be executed. Its ASan profiles instrument the C harness
-and canonical providers; the emitted adapter itself is uninstrumented.
+outside this proof. The ASan fixture profiles instrument the C harness and
+canonical providers; the emitted adapter itself is uninstrumented.
 No backend or installed game binary has changed.
 
 The first generic-O2 fixture configuration has compiled all eight canonical
-C translation units and completed linking, but no fixture has executed.
-Preserved setup failures cover the reader's incorrect file-bound check for
+C translation units and completed linking. Preserved setup failures before
+execution cover the reader's incorrect file-bound check for
 uninitialized COFF sections, a missing shared-memory extern declaration,
 and two unsuitable Windows linker-selection options. The fixes retain the
 successful objects and the original test bodies; no comparison has been
 removed or relaxed. These are harness/tooling failures, not semantic test
 results.
+
+The final four-profile fixture passes and all owned children are drained.
+Generic and fixed-MEM1 O2, and their two C-provider ASan configurations, each
+pass the same 1,396 original cases and 1,503 complete 3,552-byte CPU/32 MiB
+memory comparisons. Each profile retains 508 callback cases, four rounding
+modes and four DAZ/FTZ states. All eleven construction-time frontiers pass
+88 direct comparisons; four reachable range-failure frontiers plus success
+pass ten comparisons. Nine read-only admission rejections, six new semantic
+negative variants and three retained legacy controls also pass. Actual
+physical link-provider checks, M/MD closure and the final 166-file discovered
+dependency union are preserved. This qualifies the bounded pilot's tested
+behavior, not full-module integration, gameplay or performance.
+An independent audit reproduced the four log summaries and checked all sixty
+fresh owned rows, thirty-two C-TU M/MD multiplicities, actual argument vectors,
+dependency-union records and physical-link-provider records. It did not
+rehash the large C objects, runtime bank or link-reproduction archive bodies;
+the original runner's before/after physical-input checks remain that authority.
+
+A separate census examined 1,752 textual integer prefixes in the eight mapped
+hot owners. Of these, 1,455 have the standard entry/prepaid/precise-exit seam.
+Only the earlier 384 have the previous AST/fixture/ABI scope; they belong to
+the closed, slower integer-locals candidate, not this new SSA adapter.
+The compatible source intervals associate 193 of 4,852 innermost RIP samples;
+excluding three retained final refund checks leaves 190 (3.916%). These are
+source associations, not admitted execution or removable time. Helper-owned
+RIP costs are separate. Another 117 samples occur later in parent copies
+blocked first by FP/paired-single operations, mainly scalar loads/stores;
+56 later integer-run associations lack a proved mid-region entry contract.
+The census does not justify expanding thousands of tiny private helpers.
+
+The next integer scaling case is a 113-operation display-list command block
+with 83 ordered memory accesses and 19 associated samples. Its original
+115-cycle charge, all 114 publication frontiers and 84 post-operation deadline
+targets remain explicit. It can test a reusable emitter, but cannot alone
+solve the crowded intro. A separate source inventory found local FP-state
+modeling feasible for four finite/non-NaN scalar paths; exact FPR/PS1/FPSCR/CR,
+NaN fallback and fenv/MXCSR behavior still require differential qualification.
+Scalar memory lowering also needs its own exact model: translated `lfs` writes
+both FPR and PS1, and translated `stfs` uses integer extraction/shift rather
+than IEEE truncation or `force_single`. Interpreter scalar load/store entry
+points add alignment exceptions that the translated bodies do not. A future
+failure exit must therefore resume the exact original translated instruction;
+substituting the interpreter entry would change behavior on unaligned access.
 
 ## Validation boundary and retained evidence
 
@@ -1690,7 +1733,14 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `llvm-bounded-prefix1/passive-admission2/admission.json`
 - `llvm-bounded-prefix1/{fixture-binding-failure5,recipe7}.json`
 - `llvm-bounded-prefix1/fixture-attempt1/result.json`
+- `llvm-bounded-prefix1/fixture-attempt{2,3,4,5}/result.json`
+- `llvm-bounded-prefix1/fixture-attempt6/result.json`
+- `llvm-bounded-prefix1/{canonical-qualification1,peer-fixture-actual-audit1}.json`
 - `llvm-bounded-prefix1/next-scale-feasibility1/{result1,original-frontiers1}.json`
+- `llvm-bounded-prefix1/FP-state-footprint1.json`
+- `llvm-bounded-prefix1/LFS-STFS-footprint1.json`
+- `integer-lane-feasibility1/{eight-owner-handoff1,eight-owner-result1,eight-owner-frontiers1,next-region1}.json`
+- `integer-lane-feasibility1/EIGHT_OWNER_REPORT1.md`
 - `v3-entry-frames1/result1.json`
 - `cursor-integer-general1/regression-audit1/{receipt1.json,FINDINGS1.md}`
 - `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
