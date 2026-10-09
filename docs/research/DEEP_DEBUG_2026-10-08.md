@@ -1493,8 +1493,9 @@ The 113-op block also passes all four configurations, with 486 complete CPU/
 comparisons, 219 complete continuation/scenario comparisons, 27 reachable range
 exits and nine read-only admission rejections. All 114 forced frontiers reached
 their required direct and continuation counts; the 27 real range cases cover
-23 distinct frontiers, not all 83 memory operations independently. Each profile
-includes 26 callback cases and rejects three deliberately incorrect consumers.
+23 distinct frontiers, not all 83 memory operations independently. Generic
+profiles include 26 callback cases and fixed-memory profiles include 22; each
+rejects three deliberately incorrect consumers.
 Thirty-six changed C translation units and twenty-four retained providers cover
 the four profiles; all eighty-four fresh owned steps completed and drained.
 Active gather output, arbitrary concurrent hosts and full game-dispatch behavior
@@ -1502,9 +1503,56 @@ remain outside these fixtures. Neither stage is a performance measurement.
 
 A private production overlay now changes only the corresponding prefix in
 original C2 chunk0181, retaining its full-file inverse, original cycle charge,
-all precise labels and remaining game code. Its full-module compile/link and
-fresh game correctness/timing comparison remain separate next gates. No
-installed binary has changed.
+all precise labels and remaining game code. The original-flags production
+compile and module link now pass: 47 actual M/MD dependencies, one original
+chunk replacement, 834 retained C2 objects and one additional production SSA
+object. All five previous C2 objects remain, with 836 direct objects, fifteen
+providers and 853 link-reproduction members. The original exports, imports,
+resources and PE ABI match. Chunk text grows from 713,490 to 719,554 bytes,
+plus 4,306 bytes for the SSA object; those counts are not a speed result.
+
+Fresh root-owned control/candidate intro replays pass all six complete guest
+CPU, MEM1, MEM2 and ordered-alias checkpoints and exact full P6 equality on the
+same common host. Both actual games exit normally and drain. Installed
+executable/module hashes were reverified unchanged. An independent build audit
+reconciles the
+actual M/MD, argument vectors and physical-provider records but does not
+repeat the original runner's large module/archive body hashes.
+
+The independent fixed eight-run SSA113 timing experiment is now closed with no
+qualified gain. All eight games exit normally, drain and pass exact primary/
+segment work, terminal GX, clock and dispatch checks, with zero terminal
+pipeline creations. In the preregistered VI750-1500 window, dispatch CPU mean
+changes from 15.1015625 to 15.10546875 seconds (+0.0258665%); elapsed mean
+changes from 15.137861775 to 15.1614383 seconds (+0.1557454%). Thread cycles
+increase 0.164136%. The four CPU pair changes are +1.240951%, -0.940439%,
++3.128259% and -3.255341%; elapsed changes are +1.584856%, -0.596827%,
++2.922792% and -3.221109%. Both the consistent-pair and one-percent mean-gain
+requirements fail. This is not a reliable speedup, an ordinary FPS result or
+evidence that the larger FP design will help. The result, all calibration rows
+and unresolved CPU timer-step materiality remain; no overhead is subtracted.
+The candidate is not installed or promoted, and there is no retry/rescue block.
+The reusable compiler and correctness fixtures remain available for distinct
+larger experiments.
+
+An independent audit recomputed all eight raw 1,801-row VI streams and 1,025-row
+calibration streams, primary/five-segment metrics, absolute work cursors and
+all four pair changes. It confirms the failed gain result and all eight normal
+drains, 272 runtime checks and zero terminal pipelines. It performs no new
+game execution or large binary/archive rehash.
+
+The next source-only scope is the 46-operation callback-free initial phase of
+GroundCrossGrpRp, stopping before its original guest call. It has 27 source
+associations of 4,852 (0.556%), ten scalar loads, six compares and fourteen
+original leaders; this is not the full routine's sampled cost. The plan uses
+integer FP bit models and retains path-specific leader charges and publication.
+Review caught a concrete entry-guard counterexample: positive deadline1 with
+downcount100 can satisfy a total-charge proof while the original suffix6
+access still refunds. A conservative successor also rejects positive deadlines
+below the maximum existing suffix8. The original comparison is suffix greater
+than deadline, so deadline8 is sufficient. A pure integer boundary model checks
+19,542 states and all cumulative totals0-47 for 4,779 admitted states. This is
+static model evidence, not emitted-code, full-CFG, game or performance proof.
 
 ## Validation boundary and retained evidence
 
@@ -1794,10 +1842,21 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `llvm-bounded-prefix1/generic-seed-fixture1/source-preparation1.json`
 - `llvm-bounded-prefix1/generic-seed-fixture1/{recipe2,canonical-qualification1}.json`
 - `llvm-bounded-prefix1/generic-seed-fixture1/attempt1/result.json`
+- `llvm-bounded-prefix1/generic-seed-fixture1/peer-actual-audit1.json`
 - `llvm-bounded-prefix1/generic-integer-fixture1/{fixture-plan1,source-validation1,peer-source-corpus1,recipe2,canonical-qualification1}.json`
 - `llvm-bounded-prefix1/generic-integer-fixture1/attempt1/result.json`
+- `llvm-bounded-prefix1/generic-integer-fixture1/peer-actual-audit1.json`
 - `llvm-bounded-prefix1/generic-integer-module1/source1/source-receipt1.json`
+- `llvm-bounded-prefix1/generic-integer-module1/{recipe1/source-preparation1,peer-source-review1,independent-build-audit2}.json`
+- `llvm-bounded-prefix1/generic-integer-module1/{compile-attempt1,module-attempt1}/result.json`
 - `ssa113-c2-runtime1/{plan2,source-copy1}.json`
+- `ssa113-c2-runtime1/{binding1,preparation1,source-validation2,peer-generated-source1,correctness-batch1}.json`
+- `ssa113-c2-runtime1/native-efb1/ssa113-c2-per-vi-input-parity1.json`
+- `ssa113-c2-runtime1/{independent-correctness-audit1,root-quiescence1,controlled-batch1}.json`
+- `ssa113-c2-runtime1/controlled-input1/ssa113-c2-per-vi-eight-run1.json`
+- `ssa113-c2-runtime1/independent-timing-audit1.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/{source-assessment1,entry-bounds-model1}.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/DESIGN1.md`
 - `integer-lane-feasibility1/{eight-owner-handoff1,eight-owner-result1,eight-owner-frontiers1,next-region1}.json`
 - `integer-lane-feasibility1/EIGHT_OWNER_REPORT1.md`
 - `v3-entry-frames1/result1.json`
