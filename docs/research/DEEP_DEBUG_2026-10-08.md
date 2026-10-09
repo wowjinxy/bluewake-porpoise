@@ -37,6 +37,14 @@ Sampling passes are excluded from performance comparisons.
 There are 4,586 samples: 3,454 in the translated module, 1,097 in the host,
 and 35 elsewhere. Sampling completed without errors or partial output.
 
+A later loaded control (`literal-b1`) reproduces the crowded slowdown in
+12 one-second performance windows ending at VI 866 through 1,365: 43.4–45.8 VI
+retraces per second, roughly 21.7–22.9 game frames per second. The host reports
+97–101% game-thread CPU time relative to elapsed wall time in those windows;
+the slight overshoot reflects window/CPU accounting granularity. This supports
+a game-thread CPU limit in this bounded route. It is not a GPU timing result or
+a measurement of exclusive time in an individual function.
+
 | Native function | Samples | Share of all main-thread samples |
 | --- | ---: | ---: |
 | `host_chassis_requires_full` | 267 | 5.82% |
@@ -262,9 +270,74 @@ dispatch counts and replay inputs, but regresses in both pairs:
 The CPU/wall pairs regress +1.97%/+2.21% and +0.99%/+1.48%. **Reject this
 candidate as a speed improvement; keep it private and inactive.** Static
 lookup elimination is insufficient evidence of a cheaper executed path. A
-registration-lifetime and dynamic-coverage audit is pending. This is a loaded
+registration-lifetime and dynamic-coverage audit followed. This is a loaded
 fixed-input title result with owned compiler jobs held, not general gameplay
 or displayed-FPS evidence.
+
+Native disassembly rules out an added nested readiness call as the regression's
+cause: all 35 selected objects already outlined the old helper, and the new
+helpers remain outlined. Inspected hot objects use tail jumps without new
+spills. Four repeated guard reads follow from legitimate registration and
+revocation ownership, but removing them needs a separate capability contract;
+the existing synthetic global-tamper tests remain unchanged.
+
+### Observer-domain specialization: first matched gain
+
+A separate capability certifies the literal keys against the actual host's
+event and finite-observer domains: 44 raw event addresses (43 canonical) and
+48 unique finite-observer addresses. All 5,283 literal keys miss those domains.
+The ten keys in the particle-feature interval retain its complete live
+predicate. Global state, census, jumps, CPU/deadline/exception checks, quiet
+state, overlap aliases and unknown-address fallbacks remain live. Descriptor
+registration checks complete arrays, ABI, source identity and the existing
+56 static keys before publishing the callback. Replacement revokes first.
+
+The production observer fixtures pass 3,153,164 checks in each of four profiles
+(optimized, AddressSanitizer, developer and edge census), including complete
+CPU/counter/decision comparisons, all literal keys across 512 dynamic-state
+masks and positive particle-feature witnesses. Descriptor-bypass and omitted
+feature-predicate mutants fail. Three comment-only source-hash mutants prove
+hash sensitivity only; they do not prove behavioral domain-change rejection.
+
+The candidate changes one literal-state module object and the host's main TU;
+the previously qualified literal helpers and translated chunks are unchanged.
+Both variants use the same diagnostic host. All six complete guest states,
+the full captured P6 image, and all 1,134 replay contexts match the earlier
+observation-facts control.
+
+Two separate timing comparisons now pass their fixed-workload
+gates, with owned compiler jobs held and no capture, state hashing or sampler:
+
+| Matched title comparison | Process CPU change | Process wall change | Process cycles change |
+| --- | ---: | ---: | ---: |
+| Original module to chassis-only facts | -1.39% | -2.37% | -1.91% |
+| Chassis-only facts to total observer-domain candidate | -6.31% | -6.13% | -5.82% |
+
+The first row's CPU pairs are -0.23% and -2.50%; its wall pairs are -2.09% and
+-2.65%. The second row's CPU pairs are -6.15% and -6.46%; its wall pairs are
+-6.25% and -6.01%. All terminal GX counters, clock fields and dispatch counts
+match within each batch. These are separate common-host batches; do not add
+their percentages or infer a direct original-to-total result. Direct total
+comparison, independent replication and normal-host validation are pending.
+**Keep the candidate private and inactive until those checks finish.**
+
+### Floating-point helper pilot and pipeline accounting
+
+Forced inlining of four unchanged floating-point helper bodies passes
+3,546,112 complete-CPU fixture comparisons across optimized and sanitizer
+profiles. The private 42-object module preserves the original import surface.
+An ordinary native run passes its runtime gate but has the existing
+uncontrolled state variation. Its matched-input run reproduces all six complete
+states, pixels and terminal work counts in an offline comparison, but fails
+the runtime gate with 34 pipeline completions. **No timing or promotion is
+qualified for this candidate.**
+
+The frozen host's counter includes queued cached-pipeline completions after the
+first watched retrace. Both runs load the same 242 cached configurations, and
+their final cache rows are byte-identical, supporting a startup-overlap
+hypothesis. The exact 34 increments have not been identified. A bounded origin
+and first-retrace counter diagnostic is being prepared; the original failure
+and strict zero-pipeline gate remain unchanged.
 
 A compiler-vectorization pilot enables SLP for one vector-heavy profiled chunk,
 with every source byte and other compiler flag unchanged. Its emitted code
@@ -340,6 +413,16 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `literal-facts1/native1/literal-ordinary-parity1.json`
 - `literal-facts1/native-efb1/literal-input-parity1.json`
 - `literal-facts1/controlled-input1/literal-controlled-abba1.json`
+- `literal-facts1/diagnostic-design1/{native-path-review1,registration-lifetime-review2}.json`
+- `chassis-controlled1/native-efb1/chassis-input-parity1.json`
+- `chassis-controlled1/controlled-input1/chassis-controlled-abba1.json`
+- `literal-domain1/fixture-attempt2/result.json`
+- `literal-domain1/fixture-extra1/verification1.json`
+- `literal-domain1/native-efb1/h-input-parity1.json`
+- `literal-domain1/controlled-input1/h-controlled-abba1.json`
+- `fp-inline1/semantics2/result.json`
+- `fp-inline1/native-efb2/fp42-replay2/result.json`
+- `fp-inline1/offline-diagnosis1/{result,counter-source-binding1}.json`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not
