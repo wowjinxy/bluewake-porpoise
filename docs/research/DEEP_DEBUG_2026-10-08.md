@@ -1281,8 +1281,8 @@ and dispatcher have no frame; all 297 resolved transfers restore their own
 frame before jumping, with no additional private return slot. Private frames
 are 136/56/88/72 bytes versus the original 152. Whole-TU text is 728,481 bytes
 (+2.626%) and static CALL sites are 9,224 (+88). These are structural results,
-not runtime equivalence or performance results; this variant has not yet been
-linked or run.
+not runtime equivalence or performance results. At that compiler checkpoint
+the variant had not yet been linked or run.
 
 The source inverse reconstructs every byte of the original retained chunk.
 Incoming prepaid state is not always false, but all 296 distinct internal
@@ -1294,6 +1294,44 @@ Some frozen pilot notes call the original flags "noSLP." That describes an
 early argv spelling, not the effective frontend: later optimization flags
 enable SLP. Both pilots retain the original compiler argv; there is no
 effective SLP-disable claim.
+
+The tail variant was subsequently linked with exactly one changed C2 object,
+834 retained direct objects and the same 15 physical providers. Actual
+LINKREPRO contents and order, exports/ordinals/imports, resources and ABI
+fields matched the original. The post-link checker initially failed because
+the pinned PE parser calls the reserved DWORD `Reserved1`, rather than
+`Win32VersionValue`. A passive successor checked its raw bytes at optional
+header offset 52 and repeated the complete original verification suffix.
+The original failure is preserved; the linked output was not rebuilt.
+
+Two fresh root-owned correctness games passed all six complete guest
+CPU/MEM1/MEM2/ordered-alias checkpoints and full P6 byte equality. Both
+completed the same 1,134-entry EFB trace with zero pipeline compilations.
+An independent raw-log/state/pixel audit confirmed the result. The same
+2b9 host was used in both arms, with all four observation options explicitly
+zero and their registrations off. Other agents stopped local work before
+the following fixed `A-C-C-A,C-A-A-C` timing block and remained stopped until
+all eight games and analysis finished.
+
+| Tail variant primary timing, VI 750-1500 | C2 mean | Candidate mean | Change |
+| --- | ---: | ---: | ---: |
+| Main-thread CPU | 17.67578125 s | 17.421875 s | -1.436464% |
+| Elapsed time | 17.7227221 s | 17.502599175 s | -1.242038% |
+| Thread cycles | 63,226,307,295.25 | 62,450,137,485.25 | -1.227606% |
+
+The four paired CPU changes were -2.049530%, -6.324786%, +5.030891% and
+-2.283539%; elapsed changes were -1.230958%, -6.612641%, +5.160928% and
+-2.151124%. All eight runtime checks, primary/five-segment work, absolute
+cursors and terminal GX/clock/dispatch matched. The mean gain condition
+passed, but the predefined requirement for a CPU and elapsed reduction in
+every pair failed. This is a mixed result, not a reliable improvement for
+promotion. No rescue block, partition expansion or installed update follows.
+All calibration CPU steps remained unresolved; no overhead was subtracted.
+An independent audit reparsed all 1,801 VI rows and 1,025 calibration rows in
+each case and exactly recomputed the means and four pairs. It confirmed that
+the sole final failure is the paired gain condition. These current-load
+timings are specific to this block and do not establish ordinary displayed
+FPS or a solution to the crowded intro slowdown.
 
 The earlier bounded SDK search missed the existing development kit at
 `C:/devkitpro/msys2/ucrt64`: LLVMConfig identifies version 19.1.7, and the C++
@@ -1308,7 +1346,18 @@ failed before compiling because an early explicit system include directory
 prevented C++ `include_next` from finding `stdlib.h`; a separately retained
 query proved the corrected search order. The corrected full attempt reached
 linking and stopped at the declared but undefined diagnostic function
-`dolllvm_codegen_fingerprint`. No synthetic emitted code or game ran.
+`dolllvm_codegen_fingerprint`. That failed attempt remains preserved. A
+minimal successor removed only the optional diagnostic call from the test
+driver, retained the 25 qualified backend/IR/decoder objects, and checked the
+complete 540-file prior dependency union before and after. Four fresh owned
+steps compiled the driver, linked the generator and emitted Windows COFF for
+all five synthetic cases. The actual IR contains 83 PHI instructions and no
+state allocas; the scalar loop's running path contains arithmetic and branches
+without state loads, stores or calls. This demonstrates the available SSA
+mechanism, not current-runtime compatibility or a measured game improvement.
+The 4,884-byte emitted object has 3,604 text bytes and was neither linked nor
+executed. Its non-leaf functions lack Windows unwind sections; a future
+production adapter must also establish its own ABI/frame/unwind behavior.
 
 A separate constant-only two-frontend test compared the canonical production
 C header against the standalone generator's C++ header. All 114 shared layout
@@ -1318,6 +1367,23 @@ constants and four union-alias constants matched, covering every one of the
 checks compiled layout only; callback conventions and the current runtime's
 memory, observer, cycle and publication semantics remain separate obligations.
 No backend or installed game binary has changed.
+
+A separate source-only SSA adapter now covers the ten-instruction integer
+prefix of `GXCallDisplayList` at 0x80326B80-0x80326BA4, before the original
+branch at 0x80326BA8. This is a semantic seed with only five associated sampled
+instances, not a large measured hotspot or the earlier GXProject FP pilot.
+Its complete original-C inverse and independent source review preserve the
+leader's original cycle charge, paid first-instruction seam and irregular
+PC/suffix publication at each continuation. Admission rejects unsupported
+RAM ownership/size, alias overlap, reservations, journals, short positive
+deadlines and CPU/MEM1 storage overlap before writing state. Each memory
+access uses an unsigned strict MEM1 range check and explicit big-endian bytes.
+
+The new adapter uses SSA promotion separately from the backend's incompatible
+cycle and memory-exit protocol, and explicitly requests Windows unwind tables.
+These are source properties only. The emitted adapter, complete-state/RAM/
+callback differential fixture and live metadata-writer closure remain
+unqualified; no adapter code has been compiled, linked, executed or installed.
 
 ## Validation boundary and retained evidence
 
@@ -1570,11 +1636,23 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `chunk-partition1/tailcall-source2/{source-receipt1,peer-source-review1}.json`
 - `chunk-partition1/tailcall-abi-attempt1/{result,tail-codegen1}.json`
 - `chunk-partition1/tailcall-compile1/{result,tail-codegen1,unwind-tail2}.json`
+- `chunk-partition1/tailcall-module1/{recipe1/source-preparation1,passive-preparation2}.json`
+- `chunk-partition1/tailcall-module1/attempt1/{negative,result,actual-link-inputs,PE-surface}.json`
+- `chunk-partition1/tailcall-module1/qualification2/qualification2.json`
+- `chunk-partition1/tailcall-module1/{peer-runtime-source1,independent-correctness-audit1}.json`
+- `chunk-partition1/tailcall-module1/independent-timing-audit1.json`
+- `tailcall-c2-runtime1/{preparation1,source-validation2,correctness-batch1,controlled-batch1}.json`
+- `tailcall-c2-runtime1/native-efb1/tailcall-c2-per-vi-input-parity1.json`
+- `tailcall-c2-runtime1/controlled-input1/tailcall-c2-per-vi-eight-run1.json`
 - `llvm-sdk-ssa1/DESIGN1.md`
 - `llvm-sdk-ssa1/{recipe4,peer-source-review4}.json`
 - `llvm-sdk-ssa1/{SDKsearch-order1,attempt3,attempt4}/result.json`
+- `llvm-sdk-ssa1/{recipe5,peer-source-review5,passive-inspection1}.json`
+- `llvm-sdk-ssa1/attempt5/{result,codegen-inspection,actual-link-inputs}.json`
 - `llvm-production-abi1/{recipe1.json,DESIGN_ERRATUM1.md}`
 - `llvm-production-abi1/attempt1/{result,canonical-witness,standalone-witness}.json`
+- `llvm-bounded-prefix1/{fixture-plan1,peer-source-review1}.json`
+- `llvm-bounded-prefix1/source1/source-receipt1.json`
 - `v3-entry-frames1/result1.json`
 - `cursor-integer-general1/regression-audit1/{receipt1.json,FINDINGS1.md}`
 - `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
