@@ -2123,6 +2123,73 @@ callbacks, hooks and function-pointer types kept compatible.
 | `internal-calling-convention1/candidate-compile-attempt1/result.json` | `e52b968c2e4abcbd23ffd1a3aa07a25c1cfb8447ca04fcf3f46a03121fd62971` |
 | `internal-calling-convention1/candidate-compile-attempt1/codegen1.json` | `b37bc8fcf380def8651a2831ea5f9a7d52765bed7170e6f02bdf1d7de9f597f8` |
 
+## Complete-function LLVM prototype, October 9
+
+The ordinary 19 FPS feedback remains unresolved. Passive inspection of the
+ordinary log also corrects a unit assumption: GX, present and end-frame values
+are milliseconds accumulated per wall second, not milliseconds per frame.
+The label `gpu` measures host `aurora_end_frame` elapsed time; it is not a
+hardware GPU timestamp. Dip intervals show roughly 93-100% main-thread busy,
+with GX and presentation accounting for only a few milliseconds per second.
+This supports investigating main-thread work, without proving a single cause.
+Audio has only eight of 4,286 source associations in the reviewed union;
+no audio-quality or audio-offload change follows from this evidence.
+
+A detached source overlay now adapts ExpansionPak/DolRecomp commit
+`c876e2b9e022e084aa9a690fe15e2ad79a0706cd` to the original C2 CPU, scheduler,
+memory callbacks and selected-call semantics. It uses the existing 3552-byte
+CPU layout and ordinary Windows C ABI, with local register SSA across a
+complete function CFG. It rejects incompatible runtime/native/state modes.
+Exact original scheduling rows preserve paid/precise charges, deliberately
+stale PC values, suffix writes and refund points. Callback reloads invalidate
+entry-derived control facts. Canonical LFS widening uses integer operations
+to retain signed zero, subnormals and signalling/payload NaN bits.
+
+All 49 actual generator translation units compile. The actual complete
+93-instruction GroundCrossGrpRp range emits all 93 resume entries, its
+traversal loop, retained direct/indirect call continuations and original
+central-return cases. Independent inspection confirms ten integer-only LFS
+paths and no host float-widening instruction. The pure bit model covers
+100,352 cases; this is not execution of the emitted object. Three real C2
+adapter translation units also compile, including the complete private
+original chunk with narrow scoped-return additions. Its original body and
+the retained call bodies reconstruct byte-for-byte.
+
+The first complete object lacked Windows unwind metadata and was rejected
+for execution. Explicit asynchronous unwind emission repairs that omission:
+the successor's `.pdata`/`.xdata` cover the exact private body and all 13
+prologue operations. Its executable bytes and named relocations match the
+prior object exactly. The default wrapper is a frameless tail jump. A prior
+unused-constant compiler failure and a later runner bookkeeping failure are
+retained with their actual logs and drained children.
+
+This is still a compiler prototype. No new game module was linked, no emitted
+game code ran and no performance comparison was made. The conservative object
+has 26 memory-service frontiers with substantial guest-state publication and
+reload traffic, making it unsuitable to assume a speed gain. A guarded fixed
+MEM1 draft aims to avoid that traffic on ordinary RAM while retaining original
+alias/journal/reservation/callback behavior. It is being reviewed separately.
+Outer entry routing also requires an explicit return-ownership channel;
+CPU.pc alone cannot distinguish a central return from a side exit. Original
+scoped return gates must remain authoritative even across nested entries.
+
+The function accounts for only 41 of 4,286 source associations in the current
+ordinary profile. It tests the compiler architecture; optimizing it alone is
+not a sufficient full-speed product fix. The generic compiler source is
+preserved in `patches/compiler/drafts/canonical-c2-whole-function-llvm.patch`,
+inactive in all game builds. Generated game code, scheduling rows and player
+data remain local.
+
+Local evidence under `build/deep-debug-20261008/`:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `ordinary-feedback-assessment1/FINDINGS.md` | `c04810695d57f7f4150162f8362f252ed6e571c8f2d407752bd9e347b85dcd78` |
+| `moderngekko-whole-function1/build-attempt4/output/groundcross93.obj` | `5b6c79ea4087bd32bcaccf2e9858095ed0e80aae14bc97a0c39dfa687f973427` |
+| `moderngekko-whole-function1/build-attempt4/output/groundcross93.ll` | `7b22ac6e7aba3e250121bebc010b24a8fdc7c2ea811a23248e813b45c684cff2` |
+| `moderngekko-whole-function1/build-attempt4/passive-codegen3.json` | `803ea7c1ad7501e23d366036454673e5a03302dedc59eafbb92fa30968460048` |
+| `moderngekko-whole-function1/b-passive-audit2.json` | `a713273e19f03eaaddc0743564630fbef013843e55cc5d93f3af915c9c811062` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
