@@ -75,6 +75,17 @@ all 485 immutable stack snapshots. C2 has no qualified module MAP/PDB, so its
 frame labels retain raw RVAs; only the exact host PDB supplies function names.
 No original-A module symbols or leaf rules are borrowed for C2.
 
+A later passive relink qualifies a C2 MAP: all 835 object inputs and their order,
+15 physical library providers and 852 reproduction members match the accepted
+five-TU C2 build. The entire DLL matches C2 except four COFF timestamp bytes.
+The first verifier rejected a warning already present in the original link;
+that negative is retained, and verification of the same outputs accepts only
+the exact original 129-byte warning. No game code from the relink is executed.
+Exact-C2 RIP naming identifies `func_802456E0` (148),
+`bw_direct_call_ready` (137), `func_803256E0` (113),
+`func_802D56E0` (110) and `bw_fp_fmuls` (97) among the largest module owners.
+These are sampled instruction frequencies, not call counts or exclusive times.
+
 The last visible paired-single playtest independently records the crowded intro
 at roughly 39–43 VI/s with the game thread about 92–99% busy. That launcher was
 already clean. This supports CPU pressure in the player's actual play mode;
@@ -982,6 +993,18 @@ boundary attribution remains tentative. The original naming pass's duplicate
 dictionary-key error is preserved; its narrow successor changes serialization
 only. No instruction/stack sample is a throughput or displayed-FPS result.
 
+A separately qualified original-A leaf extension uses 26 exact linked byte
+ranges and decoded instruction boundaries. All other gaps and unavailable
+frames retain their original stops. Pure verification admits those ranges and
+rejects 34 semantic/range counterexamples. It caught an in-range JMP into a
+displacement byte; the narrow correction rejects it without changing any
+admitted bytes. The offline worker completes in 1.453 seconds with all 368
+original snapshots unchanged. Exactly 49 rows gain 243 physical frames, and
+all previously recovered frames remain identical prefixes. Rows with at least
+two frames rise from 268 to 317; 32 unregistered leaf gaps and 331 uncaptured
+or system-boundary read stops remain. Added ancestry confirms repeated host
+approval paths but does not measure their exclusive cost.
+
 The actual hidden renderer log reports framebuffer 640x480 at scale 2. During
 the crowded sampled interval, existing perf rows report about 42–45 VI/s and
 97–101 percent dispatch busy. The 58–67 VI/s rows belong before or after that
@@ -1141,6 +1164,11 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `visible-c2-profile1/{preparation1,offline-source-preparation1,ranking-preparation1}.json`
 - `visible-c2-profile1/title-visible-c2-native1/{result,native-rip,stack-ranking-visible1,rip-ranking-visible1}.json`
 - `visible-c2-profile1/title-visible-c2-native1/offline-unwind1/{result,unwind}.json`
+- `visible-c2-profile1/c2-map1/{source-preparation1,verification-source2,verification2/result}.json`
+- `visible-c2-profile1/ranking-map-preparation2.json`
+- `native-stacks1/game-admission1/{leaf-source-preparation3,leaf-pure-tests3,leaf-coverage-audit1}.json`
+- `native-stacks1/game-admission1/leaf-request1/{preparation,stack-ranking1}.json`
+- `native-stacks1/game-admission1/leaf-request1/offline-unwind1/{result,unwind}.json`
 - `mixed-thinlto1/{build-preparation2,hot-owner-codegen1}.json`
 - `mixed-thinlto1/verification1/result.json`
 - `mixed-thinlto-clean-per-vi2/{preparation1,correctness-batch1,controlled-batch1,peer-controlled-audit1}.json`
