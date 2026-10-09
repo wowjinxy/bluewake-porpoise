@@ -1031,9 +1031,11 @@ shaders.
 
 ## Local integer state and compact observer qualification, October 9
 
-Two independent candidates are being prepared over the existing C2 paired-single
-module. Neither has a new game performance result as of 10:56 UTC. The ordinary
-crowded-intro slowdown remains unresolved.
+Two independent candidates over the existing C2 paired-single module completed
+fresh correctness checks and their fixed eight-run comparisons on October 9.
+Both passed the matched-input title correctness checks and failed the required
+performance gate. Neither is promoted or selected for an ordinary tester build.
+The ordinary crowded-intro slowdown remains unresolved.
 
 The integer candidate admits 384 first prefixes in the two sampled chunks,
 covering 3,106 guest instructions and 1,372 memory operations at widths 8, 16
@@ -1100,13 +1102,52 @@ they are not atomic snapshots, fast-path hit counts or admission frequencies.
 Concurrent build/fixture work was allowed for this correctness-only run.
 Its durations and reported frame rates are excluded from performance claims.
 
-The next comparison uses C2 as control on the same compact host, preserves
-all five paired-single changes, and measures the candidates independently.
-Fresh six-state/P6 parity precedes timing. The fixed eight-run order,
-750–1,500 VI window, five 150-VI segments, exact work, all four CPU/wall pair
-signs, one-percent mean gate, zero terminal pipeline creation, no rescue and
-ordinary visible confirmation remain required. Tracing, checkpoints, captures
-and the read-only guard sampler are absent from timing runs.
+Each candidate was compared independently against C2 on the same qualified
+compact host, preserving all five paired-single changes. Fresh correctness
+runs matched all six complete logical CPU/MEM1/MEM2/ordered-alias checkpoints
+and the full captured P6. Both consumed the exact 1,134-entry EFB replay while
+retaining the physical read before replacing its value. Physical values still
+differed from the recording: 78/62 entries for the integer control/candidate
+and 67/78 for the compact control/candidate. This establishes parity for that
+controlled-input title route, not ordinary determinism or every-instruction
+equivalence. A separate host-transposition comparison also matched all six
+states and the full P6 for unchanged C2 on the earlier b21e host and the new
+2b9b host. It is a correctness check, not a speed comparison.
+
+The preregistered eight-run order was A-C-C-A, C-A-A-C, with the primary window
+at 750–1,500 VI and five 150-VI segments. All sixteen runtime cases passed,
+drained normally and reported zero terminal pipeline creation. Primary and
+segment work and their absolute endpoint cursors matched exactly, as did
+terminal GX counts, guest clock and dispatch. Direct-call and game-event
+tracing were disabled, the autosave trace key was absent, and checkpoints,
+captures and the read-only guard sampler were absent from timing runs.
+
+Percent changes below compare candidate with its paired control; positive
+values mean more elapsed time or thread cycles. CPU is the measured main
+thread CPU time, not total machine utilization.
+
+| Independent candidate | Mean CPU | Mean wall | Mean thread cycles | Paired CPU changes | Paired wall changes | Strict result |
+| --- | ---: | ---: | ---: | --- | --- | --- |
+| Two-chunk integer locals | +4.325% | +3.045% | +4.077% | +0.864%, +5.297%, +2.194%, +9.021% | -3.318%, +4.868%, +1.574%, +9.323% | Fail; all four CPU pairs regress |
+| Compact observer storage/query | -2.054% | -1.513% | -1.721% | +5.044%, -4.707%, -0.096%, -8.240% | +4.697%, -4.220%, +0.537%, -6.866% | Fail; inconsistent paired gains |
+
+The compact candidate's lower mean does not satisfy the unchanged requirement
+for all four CPU and wall pairs to improve and both means to improve by at
+least one percent. The integer candidate regresses despite its local codegen
+and fixture results. These are completed negative experiments, with no rescue
+runs, lane expansion, promotion, ordinary candidate selection or installation
+change. Current background load and unresolved timer-calibration materiality
+remain recorded; no overhead was subtracted. Earlier failed attempts, the
+ASan timeout, 108 normal-completion gaps and prior uncontrolled-state failures
+remain preserved. The generic ordinary-visible comparison adapter is source
+only; its existing strict eight-run PASS prerequisite admits neither candidate.
+
+The retained integer eight-run report is identified by SHA-256
+`6a395ca48a5faa4a7d4786b89745be5bd45a1cf6ba5ee3acbe792575cf3cb629`;
+the compact report by
+`4e512ed20463724870faf22633239f010c7d88ee6bd2a6c5cbd116b6a0f09722`.
+Their enclosing batch receipts retain `FAIL_PRESERVED`. Correctness and
+host-transposition receipts remain separate from those performance failures.
 
 ## Validation boundary and retained evidence
 
@@ -1329,12 +1370,21 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `cursor-integer-general1/{source1/source-receipt,source-validation1}.json`
 - `cursor-integer-general1/fixture-attempt2/{optimized-result,result,row-47}.json`
 - `cursor-integer-general1/{range-preparation1,fixture-ranges-attempt1/result}.json`
+- `cursor-integer-general1/module1/{recipe3/source-preparation,attempt1/result}.json`
 - `observation-live-view1/certified-v3-source1/source-preparation1.json`
 - `observation-live-view1/v3-fixture1/{qualification2,attempt2/result}.json`
 - `observation-live-view1/certified-v3-host1/verification6/result.json`
 - `compact-c2-runtime1/{control-validation1,guard-c2-result1,plan1}.json`
 - `compact-c2-runtime1/guard-efb1/{preparation1,launch1}.json`
 - `compact-c2-runtime1/guard-efb1/c2-guard-baseline1/{result,guard-samples1}.json`
+- `integer-c2-runtime1/{preparation1,correctness-batch1,controlled-batch1,secondary-host-transposition1}.json`
+- `integer-c2-runtime1/native-efb1/integer-c2-per-vi-input-parity1.json`
+- `integer-c2-runtime1/controlled-input1/integer-c2-per-vi-eight-run1.json`
+- `compact-c2-runtime1/{preparation1,correctness-batch1,controlled-batch1}.json`
+- `compact-c2-runtime1/native-efb1/compact-c2-per-vi-input-parity1.json`
+- `compact-c2-runtime1/controlled-input1/compact-c2-per-vi-eight-run1.json`
+- `observation-live-view1/module-v3-1/attempt3/result.json`
+- `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
 - `native-stacks1/game-admission1/{leaf-source-preparation3,leaf-pure-tests3,leaf-coverage-audit1}.json`
 - `native-stacks1/game-admission1/leaf-request1/{preparation,stack-ranking1}.json`
 - `native-stacks1/game-admission1/leaf-request1/offline-unwind1/{result,unwind}.json`
