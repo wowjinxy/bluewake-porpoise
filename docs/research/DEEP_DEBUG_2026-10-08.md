@@ -317,9 +317,24 @@ The first row's CPU pairs are -0.23% and -2.50%; its wall pairs are -2.09% and
 -2.65%. The second row's CPU pairs are -6.15% and -6.46%; its wall pairs are
 -6.25% and -6.01%. All terminal GX counters, clock fields and dispatch counts
 match within each batch. These are separate common-host batches; do not add
-their percentages or infer a direct original-to-total result. Direct total
-comparison, independent replication and normal-host validation are pending.
-**Keep the candidate private and inactive until those checks finish.**
+their percentages or infer a direct original-to-total result.
+
+The subsequent direct original-to-total comparison reproduces all six states
+and the full image. The ordinary normal host also completes the title route
+with clean runtime/renderer checks, zero watched pipeline completions and the
+same captured image, without readback substitution. These correctness runs
+are excluded from timing and do not establish whole-game behavior.
+
+The reverse-order H-A-A-H timing replication preserves all terminal work but
+**fails the paired-gain gate**. Its averages improve CPU -2.68%, wall -4.77%
+and cycles -2.95%, while its CPU/wall pairs are -9.93%/-10.94% and
++4.83%/+1.66%. Candidate process CPU is 47.594 seconds in the first run and
+53.594 in the second. External load remains uncontrolled; the source of that
+variation is not identified. Preserve every sample. The earlier positive
+observer result remains unreplicated, with no confirmed total speed gain.
+**Keep the candidate private and inactive; do not retry until a pass or
+promote the favorable average.** A preregistered dispatch-thread timing
+protocol and fixed route segments are being investigated separately.
 
 ### Floating-point helper pilot and pipeline accounting
 
@@ -420,6 +435,10 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `literal-domain1/fixture-extra1/verification1.json`
 - `literal-domain1/native-efb1/h-input-parity1.json`
 - `literal-domain1/controlled-input1/h-controlled-abba1.json`
+- `h-total-controlled1/native-efb1/total-input-parity1.json`
+- `h-total-controlled1/normal1/h-total-normal1/result.json`
+- `h-total-controlled1/controlled-input1/total-controlled-baab1.json`
+- `owned-literal1/fixture-attempt1/result.json`
 - `fp-inline1/semantics2/result.json`
 - `fp-inline1/native-efb2/fp42-replay2/result.json`
 - `fp-inline1/offline-diagnosis1/{result,counter-source-binding1}.json`
