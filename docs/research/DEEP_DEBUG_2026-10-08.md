@@ -1274,9 +1274,26 @@ and static calls from 9,136 to 9,772. Although the private function frames were
 smaller, the active wrapper plus private frame and added return address needed
 168-248 bytes versus the original 152-byte frame. These are actual COFF/unwind
 properties, not measured game costs. This pilot was not linked or run in the
-game. A different guaranteed-tail-transfer design remains source-only; it
-must demonstrate actual entry jumps and avoid the same code inflation before
-any runtime qualification.
+game. A separate guaranteed-tail-transfer variant has now passed its actual
+one-TU compile and code-layout checks. It uses four private functions and a
+shared dispatcher with the same two-argument signature. The export wrapper
+and dispatcher have no frame; all 297 resolved transfers restore their own
+frame before jumping, with no additional private return slot. Private frames
+are 136/56/88/72 bytes versus the original 152. Whole-TU text is 728,481 bytes
+(+2.626%) and static CALL sites are 9,224 (+88). These are structural results,
+not runtime equivalence or performance results; this variant has not yet been
+linked or run.
+
+The source inverse reconstructs every byte of the original retained chunk.
+Incoming prepaid state is not always false, but all 296 distinct internal
+destinations overwrite it before reading it; the shared dispatcher never
+reads it. This permits a fresh local flag at each tail entry without adding
+CPU-state writes. Independent source review checked that distinction. The
+earlier packed-return pilot and its negative layout results remain intact.
+Some frozen pilot notes call the original flags "noSLP." That describes an
+early argv spelling, not the effective frontend: later optimization flags
+enable SLP. Both pilots retain the original compiler argv; there is no
+effective SLP-disable claim.
 
 The earlier bounded SDK search missed the existing development kit at
 `C:/devkitpro/msys2/ucrt64`: LLVMConfig identifies version 19.1.7, and the C++
@@ -1285,8 +1302,22 @@ present. No SDK installation was required. A ROM-free emitter source capsule
 can now test the existing SSA mechanism with an explicit MSVC object target.
 SDK availability does not resolve the previously listed current-runtime
 alias, deadline, observation, journaling or state-publication gaps. At this
-checkpoint that capsule has not been compiled or executed, and no backend or
-installed game binary has changed.
+checkpoint all 26 source files have passed actual dependency discovery,
+compilation and exact M/MD closure checks. The first header-search attempt
+failed before compiling because an early explicit system include directory
+prevented C++ `include_next` from finding `stdlib.h`; a separately retained
+query proved the corrected search order. The corrected full attempt reached
+linking and stopped at the declared but undefined diagnostic function
+`dolllvm_codegen_fingerprint`. No synthetic emitted code or game ran.
+
+A separate constant-only two-frontend test compared the canonical production
+C header against the standalone generator's C++ header. All 114 shared layout
+constants and four union-alias constants matched, covering every one of the
+53 shared members, CPU size/alignment and primitive widths. CPUState remains
+3,552 bytes with alignment 8. Both objects contain no executable code. This
+checks compiled layout only; callback conventions and the current runtime's
+memory, observer, cycle and publication semantics remain separate obligations.
+No backend or installed game binary has changed.
 
 ## Validation boundary and retained evidence
 
@@ -1535,7 +1566,15 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `chunk-partition1/{source6/source-receipt1,compile-preparation2,peer-source-review1}.json`
 - `chunk-partition1/compile-attempt1/{result,codegen1}.json`
 - `chunk-partition1/{TERMINAL1,MUSTTAIL_DESIGN1}.md`
+- `chunk-partition1/{prepaid-flow1,tailcall-terminal2}.json`
+- `chunk-partition1/tailcall-source2/{source-receipt1,peer-source-review1}.json`
+- `chunk-partition1/tailcall-abi-attempt1/{result,tail-codegen1}.json`
+- `chunk-partition1/tailcall-compile1/{result,tail-codegen1,unwind-tail2}.json`
 - `llvm-sdk-ssa1/DESIGN1.md`
+- `llvm-sdk-ssa1/{recipe4,peer-source-review4}.json`
+- `llvm-sdk-ssa1/{SDKsearch-order1,attempt3,attempt4}/result.json`
+- `llvm-production-abi1/{recipe1.json,DESIGN_ERRATUM1.md}`
+- `llvm-production-abi1/attempt1/{result,canonical-witness,standalone-witness}.json`
 - `v3-entry-frames1/result1.json`
 - `cursor-integer-general1/regression-audit1/{receipt1.json,FINDINGS1.md}`
 - `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
