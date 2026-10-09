@@ -731,9 +731,19 @@ default-off implementation binds a compact generation/target token to the CPU,
 published PC and owner thread, and revokes before every parent setter mutation.
 The generation saturates instead of wrapping. All 342 sites publish the exact
 target PC first; only one caller has been emitted for an initial codegen pilot.
-Legacy/general entry points retain their original callback behavior. Compiled
-CPU qualification and actual caller codegen remain pending; added token checks
-are not assumed cheaper than the removed second predicate.
+Legacy/general entry points retain their original callback behavior. Four
+generic/fixed-memory O2/ASan profiles pass 95 full CPU/RAM/native-counter
+comparisons each; all three behavioral mutants are rejected. The first
+fixture compile's Windows identifier collision and a mutant harness that
+initially reused the unmutated consumer object are preserved separately.
+
+The single-caller codegen pilot also passes exact 51-file M/MD admission and
+owned compilation. Its by-value token remains in registers, but the outlined
+readiness helper grows from 144 bytes/36 instructions to 288 bytes/67
+instructions, adds three nonvolatile register saves and a shadow frame, and
+accesses thread-local state. The complete selected TU adds 352 code bytes and
+78 instructions. This establishes a concrete added cost, not a speed gain;
+the prototype remains inactive without a 342-site expansion or module build.
 
 ## Clean observer-domain comparison
 
@@ -902,9 +912,27 @@ recover the actual optimized leaf, four recursive frames, dynamic-frame
 middle, outer and entry chain; system frames outside the admitted image stop
 explicitly. Truncated stacks remain partial, invalid image/unwind identities
 are rejected, and callback/frame/read caps and owned timeout/drain tests pass.
-The original RIP sampler remains unchanged. Real-game image lifetime admission,
-profiling and stack attribution are still pending. Synthetic capture latency
-does not establish game profiling overhead or a performance improvement.
+The original RIP sampler remains unchanged. Synthetic capture latency does not
+establish game profiling overhead or a performance improvement.
+
+A separate original-A hidden title run now passes all 24 route/input checks,
+normal owned exit/drain, 1,800 retraces and zero terminal pipeline compilations.
+It collects 3,688 native RIP samples and 368 sparse immutable stack snapshots
+between actual retraces 798 and 1,451. The largest observed suspend interval is
+0.3276 ms, with no sampler error or pause-limit stop. The source-qualified
+static lifetime admission accepts only the exact host/module images and their
+registered unwind ranges; it rejects alternative inventory/reward module
+leases and all general leaf inference. Original saves and inputs are retained.
+
+The snapshot-only helper completes all 368 rows in about one second after the
+game drains. The naming pass finds 268 rows with at least two physical frames,
+96 with one and four with none. Stops remain explicit: 81 unregistered leaf
+gaps, 282 reads outside admitted images/captured bytes, four unknown frames
+and one StackWalk failure. Common dispatch frames are inclusive ancestry,
+not evidence that their full descendant cost is removable. Raw return-PC
+boundary attribution remains tentative. The original naming pass's duplicate
+dictionary-key error is preserved; its narrow successor changes serialization
+only. No instruction/stack sample is a throughput or displayed-FPS result.
 
 Instruction-pointer frequencies are neither call stacks nor exclusive CPU
 time. Guest CFG ownership is incomplete at shared labels. Main and worker
@@ -1041,8 +1069,16 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `native-preapproval1/{DESIGN1.md,census2.json,source-audit1.json}`
 - `native-preapproval1/writer-closure6/result.json`
 - `native-preapproval1/source1/source-receipt.json`
+- `native-preapproval1/qualification-negative3/result.json`
+- `native-preapproval1/{pilot-source-preparation1,pilot-source-preparation2,pilot-header51-admission1}.json`
+- `native-preapproval1/pilot-attempt2/{result,codegen1}.json`
 - `native-stacks1/{test-preparation1,codegen1,offline-preparation1}.json`
 - `native-stacks1/{source-tests1,compile1,abi1,synthetic1,offline-tests1}/result.json`
+- `native-stacks1/game-admission1/{source-admission1,root-profile2-peer-review1,ranking-preparation2}.json`
+- `root-game-profile1/{preparation1,preparation2}.json`
+- `root-game-profile1/title-stack-native1/{result,native-rip,stack-ranking2}.json`
+- `root-game-profile1/title-stack-native1/offline-request1/preparation.json`
+- `root-game-profile1/title-stack-native1/offline-unwind1/{result,unwind}.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
