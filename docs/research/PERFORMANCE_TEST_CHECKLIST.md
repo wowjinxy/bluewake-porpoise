@@ -6,6 +6,17 @@ Checking a box means locally qualified for its stated benefit and recorded,
 not merely downloaded. Gameplay FPS claims require separate timing evidence.
 Donor gains are evidence to investigate, not promised gains on this machine.
 
+October 9 benchmark correction: inspect the **actual constructed child
+environment** before timing or profile training. The deep-debug families
+accidentally enabled direct-call, game-event and autosave tracing; their retained
+results are traced diagnostic evidence. For clean runs, direct/event trace values
+must be `0`, and `BLUEWAKE_AUTOSAVE_TRACE` must be absent because its frozen
+getter tests presence. Remove inherited trace/watch variables by exact tokens,
+preserving `MAX_RETRACES` and intended performance logging. Runtime admission
+needs source or hit evidence; do not infer it from a loader message or assume
+these runtime trace flags disable every fast path. See
+[the corrected investigation](DEEP_DEBUG_2026-10-08.md).
+
 ## Implementation progress
 
 All 38 numbered candidates remain in scope. Implement dependency groups in

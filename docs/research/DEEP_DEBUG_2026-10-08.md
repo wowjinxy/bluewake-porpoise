@@ -4,10 +4,60 @@ October 8, 2026. Investigation in progress; no new performance improvement is
 claimed by this report.
 
 The quantized paired-single playtest did not resolve the player's slowdown.
-Fresh native instruction-pointer sampling now identifies two broad sources of
-game-thread overhead: repeated observation checks and publication of translated
-CPU bookkeeping. This is a more useful starting point than optimizing the
-most frequently called GX function without measuring its cost.
+The fresh capture with observation tracing disabled still identifies observation
+checks and translated game code as CPU optimization candidates. No repeatable
+ordinary-play speedup is qualified yet.
+
+**Benchmark environment correction (October 9):** actual command records show
+that the main/worker sampling template and the chassis, observer-domain,
+paired-single and per-VI timing families inherited
+`BLUEWAKE_DIRECT_CALL_TRACE=1`, `BLUEWAKE_GAME_EVENTS_TRACE=1` and
+`BLUEWAKE_AUTOSAVE_TRACE=1`. Earlier descriptions of those timings as free of
+tracing were incorrect. Their results and failed gates are preserved as
+**traced diagnostic comparisons**, and cannot establish ordinary gameplay
+speed or that a guarded fast path was exercised. The two-file PGO training and
+its first per-VI comparison also used this traced environment. A clean capture
+and source-backed fast-path admission review are now complete.
+
+Autosave tracing is enabled by variable presence in the frozen host: setting
+its variable to `0` still enables it. A clean launcher must omit that key.
+The visible paired-single playtest launcher strips inherited diagnostic
+variables and does not set these trace keys. This benchmark error therefore
+does not establish the cause of the player's observed slowdown.
+
+### Clean capture and admission review, October 9
+
+The original control host/module completed a fresh 1,800-VI route with direct-call
+and game-event tracing set to `0` and the autosave trace key absent. The launcher
+also removes inherited diagnostic variables. Its token-based filter preserves
+`MAX_RETRACES`; a substring search for `TRACE` would incorrectly remove that
+limit. All 24 runtime checks pass, including zero pipeline creations, complete
+terminal GX/clock/dispatch records and unchanged inputs. This is a diagnostic
+sampling pass, excluded from timing.
+
+The owned 3 ms sampler collected 4,401 samples without errors over VI 771–1465:
+3,337 (75.82%) in the translated module and 1,032 (23.45%) in the host. Independent
+PDB attribution assigns 439 mutually exclusive innermost samples (9.97% of all
+samples) to `host_chassis_requires_full` (163),
+`bluewake_game_events_observes` (151) and `host_can_skip_observation` (125).
+Including their inlined callees gives an outer union of 568 (12.91%); these
+counts overlap and must not be added. The largest translated MAP owners remain
+`func_803256E0` (143) and `func_802456E0` (130), the two selected PGO chunks.
+Sample frequencies are not exclusive CPU time or a predicted gain, and the old
+and new sampling windows differ.
+
+Source review also corrects a possible overinterpretation of the benchmark
+error: those three runtime trace flags do **not** globally disable the B/H
+readiness predicates or H literal-domain registration. They do change event
+observation and diagnostic work. The old shared query counters prove approvals
+occurred, but cannot isolate H-specific admissions; the fresh clean capture has
+no such query census. Loader registration alone proves neither hits nor savings.
+
+The last visible paired-single playtest independently records the crowded intro
+at roughly 39–43 VI/s with the game thread about 92–99% busy. That launcher was
+already clean. This supports CPU pressure in the player's actual play mode;
+neither hidden throughput nor these host measurements establish GPU execution
+time or an individual function's exclusive cost.
 
 ## Current baseline and reproduction
 
@@ -349,8 +399,8 @@ Primary mean dispatch CPU is 15.902344 seconds for A and 15.941406 for H:
 +3.39%, -2.20%. Whole-process secondary changes are -0.20% CPU and +0.05%
 wall. The raw calibration remains retained; unresolved CPU calibration steps
 are not interpreted as zero timer cost, and no overhead was subtracted.
-These results provide no repeatable benefit for H, including within the
-predeclared crowded-scene window. Keep it inactive; no further block is
+These traced results provide no repeatable benefit for H within that experiment,
+including its predeclared crowded-scene window. Keep it inactive; no further block is
 authorized to rescue this experiment.
 
 ### Floating-point helper pilot and pipeline accounting
@@ -459,6 +509,17 @@ displayed FPS. Its A/H result above failed the gain gate. A separate
 profile-use comparison preregisters A-P-P-A then P-A-A-P with the same fixed
 windows and gates; its observer capabilities are disabled in both arms.
 
+That eight-run profile-use comparison is complete. All workload, state, pixel,
+replay and zero-pipeline gates pass, but the paired gain gate fails. Primary
+means change by -3.35% dispatch CPU, -3.71% wall and -3.52% thread cycles. CPU
+pairs are -0.10%, -10.48%, +0.46%, -2.87%; wall pairs are -1.06%, -11.96%,
++1.43%, -2.84%. Preserve all runs rather than promoting the favorable average.
+Both training and these timings used the three trace flags, so this does not
+qualify ordinary-play PGO performance. All eight CPU calibration results remain
+unresolved at timer resolution; a computed zero overhead is not evidence of
+zero or immaterial cost, and no overhead is subtracted. The clean capture still
+supports the same two owners for a fresh, separately preserved training profile.
+
 ## Fresh GX-worker findings
 
 Of 4,147 worker samples, 1,568 (37.81%) land in
@@ -561,6 +622,11 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `per-vi-protocol1/controlled-input1/per-vi-eight-run1.json`
 - `pgo-use-native1/{correctness-batch1,native-efb1/pgo-use-input-parity1}.json`
 - `pgo-use-per-vi1/{PROTOCOL1.md,preparation1.json}`
+- `pgo-use-per-vi1/{controlled-batch1,independent-audit1}.json`
+- `untraced-profile1/{preparation1,offline-ranking-summary1}.json`
+- `untraced-profile1/title-untraced-native1/{result,native-rip,offline-ranking1}.json`
+- `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
+- `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not
