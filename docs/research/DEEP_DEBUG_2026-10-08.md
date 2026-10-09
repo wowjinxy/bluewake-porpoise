@@ -341,7 +341,7 @@ spills. Four repeated guard reads follow from legitimate registration and
 revocation ownership, but removing them needs a separate capability contract;
 the existing synthetic global-tamper tests remain unchanged.
 
-### Observer-domain specialization: first matched gain
+### Observer-domain specialization: earlier traced comparisons
 
 A separate capability certifies the literal keys against the actual host's
 event and finite-observer domains: 44 raw event addresses (43 canonical) and
@@ -365,7 +365,7 @@ Both variants use the same diagnostic host. All six complete guest states,
 the full captured P6 image, and all 1,134 replay contexts match the earlier
 observation-facts control.
 
-Two separate timing comparisons now pass their fixed-workload
+Two separate traced timing comparisons passed their original fixed-workload
 gates, with owned compiler jobs held and no capture, state hashing or sampler:
 
 | Matched title comparison | Process CPU change | Process wall change | Process cycles change |
@@ -596,6 +596,24 @@ counts remain fixed. Possible native block sharing does not prove fewer dynamic
 readiness calls. The exact 48 dependency inputs and drained compile job pass
 review, so this bounded experiment is closed without a larger build.
 
+### Effective O3 one-chunk pilot
+
+The exact original A0145 chunk was also compiled with only its final effective
+`-O2` changed to `-O3`. The earlier CMake `-O3`, cap-10 coalescer, disabled SLP,
+strict contraction policy, fixed CPU/MEM1, source, include/define order and all
+48 dependencies remain unchanged. Its retained pristine control is byte exact
+to original COFF except the timestamp. Actual compiler M/MD match and all
+inputs remain preserved; there was one owned compile and no link/game run.
+
+Actual text grows 10,688 bytes (1.51%) and 2,649 instructions. Static calls
+increase 98, register-copy sites increase one, and stack operand sites remain
+103. PC-write sites increase 34, downcount-write sites decrease one, and suffix
+writes are unchanged. Defined/undefined function surfaces remain fixed. These
+are complete-chunk static counts, including cold paths, rather than dynamic
+cost or proven spills. The pilot does not show the intended reduction in CPU
+state traffic; preserve it without expanding to a broad O3 build or claiming
+a semantic/runtime/performance result.
+
 ## Event-filter and register-save experiments
 
 The event observer now has a private conservative negative-filter candidate.
@@ -643,10 +661,14 @@ the frozen successor tests the actual off/on routes and retains that failure.
 
 The eight fixed-order runs have descriptive mean changes of -2.60% CPU,
 -2.92% wall and -2.80% cycles. The third pair increases CPU 1.92% and wall
-1.13%, failing the all-pairs rule. A source search also overlapped the first
-control run: available clock readings bound the search to approximately
+1.13%, failing the all-pairs rule. Independent raw-log decoding confirms all
+eight runtime/cache gates, zero terminal pipeline creations, and exact primary
+and five-segment work, endpoint cursors and terminal GX/clock/dispatch.
+A source search also overlapped the first control case wrapper: available
+clock readings bound the search to approximately
 05:28:45-05:29:01 UTC, rather than establishing exact child start/end times.
-That self-generated contention is an independent measurement limitation.
+Its overlap with individual measured VI windows cannot be reconstructed.
+That self-generated activity is an independent measurement limitation.
 The block is retained unchanged, with no extra runs or changed window and
 no accepted controlled-gain claim even if its numeric rule had passed.
 
@@ -829,6 +851,7 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `fp-inline-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-audit1}.json`
 - `fp-inline-clean-per-vi1/controlled-input1/fp-inline-clean-per-vi-eight-run1.json`
 - `coalescer-cap1/{source-preparation1,attempt1/result,attempt1/codegen1}.json`
+- `o3-pilot1/{source-preparation1,attempt1/result,attempt1/codegen1,attempt1/symbol-census1}.json`
 - `inactive-native-applicability1/{source-census1,feasibility-receipt1}.json`
 - `event-negative1/{native-preparation1,source-validation1,peer-source-review1}.json`
 - `event-negative1/{correctness-batch1,controlled-batch1,actual-independent-audit1}.json`
@@ -836,6 +859,7 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `gpr-split1/{source1/source-receipt,fixture-attempt1/result}.json`
 - `gpr-split1/pilot-attempt1/{result,codegen1}.json`
 - `h-clean-per-vi1/{preparation2,source-validation2,correctness-batch1,controlled-batch1}.json`
+- `h-clean-per-vi1/{independent-audit1,timing-incident1}.json`
 - `h-clean-per-vi1/native-efb1/h-clean-per-vi-input-parity1.json`
 - `llvm-backend-feasibility1.md`
 - `quaternion-local1/{DESIGN2.md,existing-caller1.json}`
