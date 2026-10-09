@@ -128,6 +128,30 @@ two displayed instructions. Whole-function static store totals increase because
 slow/refund paths are duplicated, so they cannot be used to claim a general
 instruction reduction or speedup.
 
+The 35-chunk candidate now passes all six complete-state checkpoints and exact
+pixels with matched EFB inputs. Its ordinary native route also exits normally,
+with clean renderer/pipeline and preserved-input checks, but has uncontrolled
+MEM1 differences like the repeated controls. These results are retained.
+
+A separate named controlled-input ABBA experiment removes checkpoint hashing,
+frame capture, sampling and extra diagnostics. Both variants use the same
+qualified diagnostic host, initial player files, warm caches, physical EFB reads
+and 1,134-entry replay trace. All four runs match every terminal GX counter,
+guest clock field and dispatch count, and consume the complete identical trace.
+External system load remains uncontrolled.
+
+| Controlled-input metric | Control mean | Lean 35-chunk mean | Change |
+| --- | ---: | ---: | ---: |
+| Process CPU seconds | 45.055 | 45.797 | +1.65% |
+| Process wall seconds | 30.438 | 31.414 | +3.21% |
+| Process cycles | 162.025 billion | 165.734 billion | +2.29% |
+
+Both CPU/wall pairs regress: +1.14%/+2.88% and +2.16%/+3.53% respectively.
+**Reject this candidate for performance; do not enable or expand it on the basis
+of the reduced source bookkeeping.** This is a loaded fixed-input throughput
+result, not ordinary displayed FPS or proof of a regression on every machine.
+The original ordinary gates and every failed/negative run remain unchanged.
+
 A separate register-frame readiness change proves the whole cached-MEM1 span
 once when aliases and journals are absent and ownership is unchanged. All
 remaining cases retain the per-word resolver. Generic and fixed-RAM optimized
@@ -142,6 +166,21 @@ comments. It does not count fast-path activations throughout the route. The
 module records 122,554,366 resolver calls, of which 120,868,425 are immediately
 pruned by bounds; 1,685,798 hit aliases. These instrumented counts identify a
 further target for investigation, not resolver time or a prospective speedup.
+
+Actual sampled FIFO helpers contain two out-of-line resolver calls, for the raw
+FIFO address and its masked mirror. The resolver's 78 sampled instructions
+include 50 prologue/epilogue sites. Existing maintained range bounds can reject
+impossible full-span lookups inline, but raw and masked alias precedence, fixed
+RAM ownership and the host graphics cache's independent one-byte probe must
+remain. A separate private prototype is being qualified; no gain is established.
+
+A separate direct-call census finds 16,958 literal readiness queries in 8,479
+paired static-call blocks across the 35 original chunks. Actual watch-table
+membership and code-domain checks can prove these miss at preparation time.
+These are static counts, not runtime coverage. A distinct optional capability
+is being prepared so this proof can remove the repeated host lookup without
+silently changing the chassis-only contract. Protected equipment/health/native
+boundaries, unknown indirects and interpreter continuations retain full checks.
 
 A compiler-vectorization pilot enables SLP for one vector-heavy profiled chunk,
 with every source byte and other compiler flag unchanged. Its emitted code
@@ -196,8 +235,13 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `observation-facts1/{legacy1/attempt6,dispatch-compat1/attempt1}/result.json`
 - `lean1/fixture-attempt5/result.json` and `fast-ram-codegen1.json`
 - `lean1/module-attempt2/result.json`
+- `lean1/native-efb1/lean-input-parity1.json`
+- `native/lean-complete-parity1.json`
+- `controlled-input1/{source-preparation,lean-controlled-abba1,batch1}.json`
 - `gpr1/fixture-attempt1/result.json`
 - `native/alias-cost1/`
+- `alias-envelope1/{FEASIBILITY1.md,receipt2.json}`
+- `literal-facts1/{DESIGN.md,site-census1.json}`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not
