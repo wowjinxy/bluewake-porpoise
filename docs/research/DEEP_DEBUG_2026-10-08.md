@@ -1149,6 +1149,86 @@ the compact report by
 Their enclosing batch receipts retain `FAIL_PRESERVED`. Correctness and
 host-transposition receipts remain separate from those performance failures.
 
+## Observer entry census and expanded attribution, October 9
+
+An accounting pass assigns every one of the existing visible capture's 4,852
+native RIP samples once by image and outer physical owner. Generated chunk and
+loop bodies contain 2,236 samples (46.08%), module support 1,319 (27.18%), host
+runtime 1,106 (22.79%), and OS/CRT 191 (3.94%). All generated-body addresses
+match exact MAP/unwind spans; names for 302 support samples remain tentative
+nearest-MAP associations. Inline host frames and stack ancestors are not added
+to this partition. Three host predicates plus the module readiness helper
+account for 769 disjoint RIP samples, but this is not a removable-time ceiling.
+The remaining generated work is spread over many owners, with no demonstrated
+dominant scheduler/polling loop. Terminal idle PC and guest clock totals do not
+measure idle cost. The accounting receipt is SHA-256
+`11e026d8f51e1ed9e457d0939a0d799bd3a84e744c53104e74f1cb6caa7ee858`.
+
+A separate diagnostic host adds two relaxed atomic entry counters to the
+existing full-facts and can-skip-facts predicates. It changes one main object
+on the qualified compact host and preserves the timer, EFB replay, event
+object, original predicate decisions, imports and resources. These counters
+make every run ineligible for timing; they are not enabled in the player
+installation. The actual diagnostic host is SHA-256
+`ac71a2a4309ac4492b8c792281fbfb9a76e75955e01c800efcc14c2f8ff2ccb1`.
+
+Root ran the unchanged C2 and compact-v3 modules on that common host. First,
+both completed the 1,800-VI replay with all six complete logical guest-state
+checkpoints and exact captured P6 pixels equal. Then two separate quiet replays
+disabled checkpointing and capture. Both quiet runs completed normally,
+consumed all 1,134 EFB contexts, created zero terminal pipelines, and matched
+the complete terminal GX, clock and dispatcher summaries. Their primary
+VI 750-1,500 window has the same 547,802 blocks, 6,075,000,001 guest cycles and
+99 EFB contexts, including identical absolute start/end cursors and all five
+segment cursors.
+
+An independent raw-log audit also matches the block, cycle and EFB cursor
+triples at every one of the 1,801 recorded VI positions. The two predicates
+are overlapping query stages and their counts must not be summed.
+
+| Predicate entries | C2 control | Compact v3 | Difference |
+|---|---:|---:|---:|
+| Full facts, VI 750-1,500 | 148,210,839 | 119,071,888 | -29,138,951 |
+| Can skip facts, VI 750-1,500 | 140,885,512 | 111,746,561 | -29,138,951 |
+| Full facts, whole intro | 260,932,963 | 210,922,121 | -50,010,842 |
+| Can skip facts, whole intro | 246,963,298 | 196,952,456 | -50,010,842 |
+
+This establishes fewer entries into both host predicates during the same
+quiet guest workload. The shortcut is not merely registered without affecting
+these calls. The counters do not count unique queries or individual helper
+hits, establish CPU cost, or qualify a performance gain. The earlier compact
+eight-run timing failure remains unchanged; no candidate is promoted or
+expanded on the strength of this census. The independent counts report is
+SHA-256 `3527488d154f582b4c616c6bd409bd925657e4d18559ecdf696f4b326f36118f`.
+
+Six additional passive CodeView objects now match the retained C2 executable
+bytes, named relocations and symbol offsets exactly. Together with the two
+earlier objects they cover 706 of the existing visible profile's 4,852 native
+RIP samples. Of these, 639 have unique optimized-source/public-range
+associations; 52 shared entry/dispatch/epilogue and 15 line-zero samples remain
+unassigned. The audit verifies 86 direct-call frame occurrences at 54 distinct
+sites against actual decoded E8 instructions and relocations. This adds
+attribution to the existing capture without a new profiled game or replacing
+any production object.
+
+The mapped collision traversal family has 89 associated samples. All mapped
+J3DGD routines total 100, including 35 for the two TEV color packet writers.
+Those small leaf-shaped writers preserve deliberate repeated command words
+and overflow callbacks; their counts do not support a large speedup claim.
+GXProject has zero associated samples in the fully mapped owner. Chunk symbols
+remain containers for many guest routines and must not be named as single
+hot guest functions. These associations are not exclusive instruction costs.
+
+A separate actual-COFF audit finds identical entry prologue bytes, saved
+registers, stack allocations and unwind records in all 35 compact-v3 changed
+chunks. The integer candidate does have larger common entry frames in the
+two inspected chunks: four extra saved registers each, and additional stack
+traffic in one. One pure four-operation path grows from 42 to 46 native
+instructions solely through those entry pushes, whereas the long integer
+path still shrinks from 181 to 109. This explains a concrete source of added
+overhead, not the fraction of its measured regression caused by that overhead.
+The integer rollout remains closed.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
@@ -1384,6 +1464,14 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `compact-c2-runtime1/native-efb1/compact-c2-per-vi-input-parity1.json`
 - `compact-c2-runtime1/controlled-input1/compact-c2-per-vi-eight-run1.json`
 - `observation-live-view1/module-v3-1/attempt3/result.json`
+- `observer-census-host1/{source1/source-preparation1,attempt1/result}.json`
+- `observer-census-runtime1/{preparation1,peer-source-review1,correctness-batch1,counts-batch1,observer-entry-counts1,independent-counts-audit1}.json`
+- `observer-census-runtime1/native-efb1/observer-census-input-parity1.json`
+- `line-map-next6-1/attempt1/{result,analysis-result1}.json`
+- `guest-routine-attribution1/{result2,audit2}.json`
+- `exclusive-native-budget1/result1.json`
+- `v3-entry-frames1/result1.json`
+- `cursor-integer-general1/regression-audit1/{receipt1.json,FINDINGS1.md}`
 - `ordinary-visible-c2-1/{PROTOCOL1.md,preparation1.json}`
 - `native-stacks1/game-admission1/{leaf-source-preparation3,leaf-pure-tests3,leaf-coverage-audit1}.json`
 - `native-stacks1/game-admission1/leaf-request1/{preparation,stack-ranking1}.json`
