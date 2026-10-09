@@ -46,6 +46,16 @@ counts overlap and must not be added. The largest translated MAP owners remain
 Sample frequencies are not exclusive CPU time or a predicted gain, and the old
 and new sampling windows differ.
 
+Fresh offline native-CFG attribution covers the clean capture's 35 hottest
+translated chunks: 1,477 samples, of which 1,234 have unique guest-routine
+ownership and 243 remain shared or unknown. Exact direct native memory operands
+identify 457 sampled instructions accessing CPU bookkeeping: downcount 156,
+cycle-observation suffix 154, PC 118, deadline budget 27 and cycle budget two.
+That is 10.38% of all samples. These counts omit register-indirect accesses;
+they do not establish that the operations can safely be removed. The largest
+recovered guest owner has only 39 samples, supporting investigation of shared
+translation overhead rather than a single dominant guest routine.
+
 Source review also corrects a possible overinterpretation of the benchmark
 error: those three runtime trace flags do **not** globally disable the B/H
 readiness predicates or H literal-domain registration. They do change event
@@ -520,6 +530,17 @@ unresolved at timer resolution; a computed zero overhead is not evidence of
 zero or immaterial cost, and no overhead is subtracted. The clean capture still
 supports the same two owners for a fresh, separately preserved training profile.
 
+Fresh clean training has now passed the independent six-state/full-P6 comparison
+with all 1,134 replay entries and zero pipeline creations. The actual owned
+process produced a new raw profile in a new directory; matching tools merged
+and recognized every one of the 161 function hashes and 80,863 counter widths.
+Its derived entry counts and zero set happen to match the traced predecessor.
+Direct byte comparisons also prove that both the raw and merged profile are
+identical to that predecessor. The existing profile-use binary can therefore be
+reused with an explicit provenance bridge; no redundant rebuild is claimed or
+required. This qualifies the training input, **not** the earlier traced timing
+result or an ordinary-play speedup.
+
 ## Fresh GX-worker findings
 
 Of 4,147 worker samples, 1,568 (37.81%) land in
@@ -625,6 +646,9 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `pgo-use-per-vi1/{controlled-batch1,independent-audit1}.json`
 - `untraced-profile1/{preparation1,offline-ranking-summary1}.json`
 - `untraced-profile1/title-untraced-native1/{result,native-rip,offline-ranking1}.json`
+- `untraced-profile1/{guest-attribution1,guest-contexts1,guest-summary1}.json`
+- `pgo-clean-training2/{source-validation1,profile-equivalence1}.json`
+- `pgo-clean-training2/training3/{training-batch1,clean-training-parity1,profile-census1}.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
