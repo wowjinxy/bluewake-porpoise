@@ -1769,6 +1769,59 @@ whereas the candidate uses integer conversion/classification, generic-target
 instruction choices and a new 184-byte helper frame. These are cost mechanisms,
 not measurements assigning cycles to individual instructions.
 
+## Broad main-code observer shortcut, October 9
+
+A new diagnostic checks a conservative negative observer predicate against the
+actual existing callback, and always returns the existing callback's answer.
+It admits only aligned original main-DOL text, excludes a generated union of
+static hook addresses/ranges, retains the actual finite observer filter, and
+checks current interrupt, pending-return, overlap and tracing state. Unknown
+state falls back. Its ROM-free fixture passes 842,559 queries in optimized,
+ASan, developer and census profiles, with full CPU/RAM and read-only checks;
+four deliberate implication faults are detected. This is predicate evidence,
+not permission to omit any side effects of the original callback.
+
+The qualified diagnostic host completed the original visible C2 intro with all
+34 route and preservation checks passing, no sampler or automated input, zero
+pipeline creations and zero implication mismatches. Between VI 750 and 1500:
+
+| Decision | Queries |
+|---|---:|
+| Proved eligible for the proposed shortcut | 100,685,229 |
+| Finite observer bucket; retain complete callback | 20,438,657 |
+| Outside admitted main-code domain | 1,654,128 |
+| Static exclusion | 682,759 |
+| Total | 123,460,773 |
+
+The proposed shortcut applies to 81.55% of this window's queries. Across the
+whole 1,800-VI run it applies to 175,373,317 of 217,671,251 queries. None falls
+back for live policy, interrupt, pending return, overlap or raw REL state in
+this particular route; these guards remain required for other gameplay.
+Eligibility is not a speedup measurement. Diagnostic atomic counters and the
+complete callback still execute. A counter-free candidate additionally needs
+source proof of skipped side effects and borrowed-state ownership, followed
+by controlled state/pixel and CPU/wall comparisons.
+
+The subsequent source audit finds no required skipped cache initialization or
+other write. Finite-family observers are already short-circuited on eligible
+addresses. The current host owns CPU/event/alias mutations on its game thread;
+DSP interrupt delivery is synchronous, and the query calls no dispatcher or
+state-replacement service. This supports that existing ownership contract,
+without claiming safety for concurrent external setters. The candidate adds
+only the unchanged proof header and a `PROVED` return before the original
+callback body. Its original fallback and tracing remain byte-identical.
+The counter-free host builds successfully with one replaced main object and
+169 unchanged physical link inputs. State/pixel and speed qualification remain
+outstanding; it is not installed or promoted by this build result.
+
+Exact private evidence is retained under
+`build/deep-debug-20261008/host-maincode-negative1/`:
+`fixture-attempt2/result.json` (`f3c0e65b...`),
+`host-attempt1/result.json` (`26109ebd...`), and
+`title-maincode-negative-c2-1/{result,reason-counts}.json`
+(`47b6589b...` and `331512e2...`). Original player data and installed binaries
+remain untouched.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
