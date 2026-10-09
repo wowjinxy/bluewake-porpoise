@@ -49,7 +49,7 @@ and new sampling windows differ.
 Fresh offline native-CFG attribution covers the clean capture's 35 hottest
 translated chunks: 1,477 samples, of which 1,234 have unique guest-routine
 ownership and 243 remain shared or unknown. Exact direct native memory operands
-identify 457 sampled instructions accessing CPU bookkeeping: downcount 156,
+identify 457 samples on instructions accessing CPU bookkeeping: downcount 156,
 cycle-observation suffix 154, PC 118, deadline budget 27 and cycle budget two.
 That is 10.38% of all samples. These counts omit register-indirect accesses;
 they do not establish that the operations can safely be removed. The largest
@@ -541,6 +541,43 @@ reused with an explicit provenance bridge; no redundant rebuild is claimed or
 required. This qualifies the training input, **not** the earlier traced timing
 result or an ordinary-play speedup.
 
+The separate clean eight-run comparison is also **unqualified**. Fresh A/P
+correctness on the common timer host passes six complete states and full P6.
+Seven timed runs pass every runtime gate; the final P4 fails only the strict
+zero-pipeline gate with 13 terminal pipeline completions. Their request origins
+are unknown. Earlier cached-startup diagnoses cannot identify these 13
+retroactively. The original failed batch remains intact, with no replacement
+run or relaxed gate.
+
+Independent decoding still finds identical primary/five-segment work and both
+endpoint cursors in all eight records. Descriptive means change by -3.19% CPU,
+-3.29% wall and -3.08% cycles, but one pair regresses CPU +1.27% and wall +1.62%.
+The other CPU pairs are -10.38%, -0.94%, -2.25%. Thus the paired gain rule fails
+independently of the pipeline failure. These failed-gate means do not qualify a
+speedup; unresolved CPU calibration remains unresolved, with no subtraction.
+
+### Register-coalescing build-cost tradeoff
+
+A new single-chunk pilot changes only the Clang register-coalescing cap from
+10 to its version-19.1.5 default of 256. The selected 0145 source, effective O2,
+other flags and all 48 actual dependencies remain fixed. The pristine control
+already matches the original object except its COFF timestamp, and the new
+bounded compile passes with preserved inputs. The cap controls compile-time
+work rather than promising better code. [LLVM 19.1.5 source](https://github.com/llvm/llvm-project/blob/llvmorg-19.1.5/llvm/lib/CodeGen/RegisterCoalescer.cpp#L103-L108).
+
+Actual whole-object code inspection finds 976 fewer code bytes, 194 fewer
+instructions and 18 fewer call sites, but **no change** in register-copy or
+stack-memory operand counts. This does not support the proposed copy/spill
+reduction for that chunk. Static stack references are not automatically spills,
+and no module link, runtime comparison or speed qualification follows.
+
+Independent COFF review locates all changes in `func_802456E0`, with helper
+definitions unchanged. Nine direct-call readiness and nine GPR readiness static
+sites disappear, along with nine PC store sites; downcount and suffix store
+counts remain fixed. Possible native block sharing does not prove fewer dynamic
+readiness calls. The exact 48 dependency inputs and drained compile job pass
+review, so this bounded experiment is closed without a larger build.
+
 ## Fresh GX-worker findings
 
 Of 4,147 worker samples, 1,568 (37.81%) land in
@@ -649,6 +686,8 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `untraced-profile1/{guest-attribution1,guest-contexts1,guest-summary1}.json`
 - `pgo-clean-training2/{source-validation1,profile-equivalence1}.json`
 - `pgo-clean-training2/training3/{training-batch1,clean-training-parity1,profile-census1}.json`
+- `pgo-clean-per-vi2/{preparation1,correctness-batch1,controlled-batch1,independent-audit2}.json`
+- `coalescer-cap1/{source-preparation1,attempt1/result,attempt1/codegen1}.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
