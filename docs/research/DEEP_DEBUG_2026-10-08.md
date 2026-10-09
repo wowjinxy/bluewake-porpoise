@@ -2037,6 +2037,92 @@ Local evidence under `build/deep-debug-20261008/`:
 | `unpaired-c2-runtime1/independent-correctness-audit1.json` | `5a4b080175d63b0c5481451353158da8078d1cf67b1e2dbfd7d9a927c959d4dd` |
 | `unpaired-c2-runtime1/independent-timing-audit1.json` | `a093cc8b03cd0882c0713c57d411b2d05f1548aedc4c5c1889130b5c4d06e7bd` |
 
+## Ordinary public-host comparison, October 9
+
+An unsampled visible A-C-C-A block compares the ordinary control host
+`e5c93d9d` with public candidate `13c83a6a`, using the identical accepted C2
+module. Both use copied player data, the same warmed cache, visible
+2560x1440 output, audio, live RTC and wall pacing, with Smooth Motion off.
+Sampling, checkpoints, EFB input replay, per-VI recording and experimental
+observation capabilities remain off.
+
+Two reporting mistakes were corrected before completing the block. The
+producer's held-adjusted CPU busy value has no upper clamp, so a valid 101%
+reading must not fail parsing. The ordinary host also unconditionally prints
+one `observation-facts=off` status. The corrected check requires exactly that
+line and rejects enabled, duplicate or additional capability registrations.
+The first control's failed validation remains in `ordinary-public-visible4`;
+it is not promoted or substituted into the subsequent four-run block.
+
+All four subsequent games pass 32 individual checks, reach 1800 retraces,
+exit normally, drain their owned jobs and create zero graphics pipelines.
+The full comparison nevertheless **fails the exact terminal-work gate**:
+live RTC timebase values differ, dispatch totals differ by two blocks, and
+the final control has eight fewer in the submitted/planned GX counters and
+sixteen fewer zero-quad noops. These differences remain visible; the gate
+was not relaxed and no speedup is established by this block.
+
+| Run | Rolling rate mean, endpoints 750-1500 | Whole-process elapsed seconds | Pre-run system CPU |
+| --- | ---: | ---: | ---: |
+| A1, control | 44.631 | 37.891 | 39.712% |
+| C1, candidate | 49.294 | 35.922 | 54.785% |
+| C2, candidate | 41.729 | 39.250 | 45.769% |
+| A2, control | 38.768 | 41.610 | 38.654% |
+
+Rates are raw rolling retrace diagnostics grouped by endpoint, not displayed
+FPS or exact fixed-VI elapsed measurements. CPU values are one-second
+pre-run snapshots, not continuous load controls. The two candidate passes
+use identical binaries and show substantial variation. The maintainer
+reported 23-24 FPS and then about 19 FPS while watching the sequence. A
+process snapshot after the latter message identifies the active window as
+the final control; it does not establish the exact frame/scene of either
+reported reading. Full-speed ordinary intro or crowded gameplay is still
+unverified. The earlier controlled eight-run result remains separate.
+
+Local evidence under `build/deep-debug-20261008/`:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `ordinary-public-visible4/batch-result1.json` | `007de714af661a371ba0cad1b5594f07241f00438fbad7cf52d8e2ec28caba88` |
+| `ordinary-public-visible5/preparation1.json` | `671ccebaed7408d9d6b73dd9161cef60d3688ef20fbcaeff1aa66578724c84e3` |
+| `ordinary-public-visible5/batch-result1.json` | `1c95db11201d6be1297d732073674170e447a2b7c2c3a76067f01df1438ebb98` |
+| `ordinary-public-visible5/ordinary-public-visible-abba1.json` | `1189c6b42d64b51705a8b24491a967be7efc56a913605d1a9fcb6ff702ae6803` |
+| `ordinary-public-visible5/local-raw-audit1.json` | `3621b14209b0cb12570c0c326e5d1e545c59d717f64023319e59f3cc8a4b96e2` |
+
+### Private calling-convention feasibility
+
+The pinned Windows Clang 19.1.5 accepts `preserve_none` and rejects both
+directions of incompatible ordinary/private function-pointer assignment.
+Actual COFF instructions and Windows unwind records confirm the private
+convention. This is compiler evidence; no emitted probe object was executed.
+
+A private prototype retains all 1528 original fast copies and changes only
+the two selected main definitions, eight static-loop conventions, matching
+private declarations, default-ABI wrappers and the selected original-function
+dispatch calls. Three actual objects compile successfully with the original
+ordered flags and exact substituted dependency closures of 48, 45 and 53.
+No game module was linked or launched from these objects.
+
+The machine code shows a significant boundary tradeoff. Main frames shrink
+from 152/184 to 136/152 bytes, and the eight loop frames become 40 bytes.
+Each default wrapper instead saves seven GPRs and XMM6-XMM15 in a 216-byte
+frame. The shared `dolrecomp_call_original` frame grows from 56 to 248 bytes
+and gains the same wide save set. The main functions still contain 9067 and
+7673 static call sites respectively. Executable-section changes are only
+-2336, -2848 and +240 bytes for the two chunks and module dispatcher.
+
+This partial conversion moves preservation work into public boundaries and
+the shared dispatcher. Static size/frame changes do not establish dynamic
+cost or a speedup; the prototype remains inactive. Propagating a private
+convention across internal calls would be a separate change, with public
+callbacks, hooks and function-pointer types kept compatible.
+
+| Local compiler evidence | SHA-256 |
+| --- | --- |
+| `internal-calling-convention1/attempt1/result.json` | `483bf7ef4dfe3b7fdb628de9388e2f76f7cf508d0f9cec8a327c987f7e97bd9c` |
+| `internal-calling-convention1/candidate-compile-attempt1/result.json` | `e52b968c2e4abcbd23ffd1a3aa07a25c1cfb8447ca04fcf3f46a03121fd62971` |
+| `internal-calling-convention1/candidate-compile-attempt1/codegen1.json` | `b37bc8fcf380def8651a2831ea5f9a7d52765bed7170e6f02bdf1d7de9f597f8` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
