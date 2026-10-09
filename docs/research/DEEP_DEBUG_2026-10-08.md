@@ -1858,6 +1858,73 @@ remain untouched. The counter-free build is `host-fast-attempt1/result.json`
 `native-efb1/maincode-host-per-vi-input-parity1.json` (`b5e5d2c4...`) and
 `controlled-input1/maincode-host-per-vi-eight-run1.json` (`69df2b4f...`).
 
+### Getter-free revision: controlled timing passes
+
+Version 2 removes the conservative finite Bloom filter only after a constructive
+source audit proves that all six observer families stay inside the static union:
+46 raw DOL keys are excluded, and two private keys are outside the admitted DOL
+domain. Dynamic configuration and return context select subsets of these keys;
+they do not introduce arbitrary addresses. Interrupt, pending event return,
+overlap, live tracing/policy and raw REL checks remain fresh and unchanged.
+
+The event-storage pointer is borrowed once before callback registration from a
+process-lifetime static object. Reset mutates that object in place. A null pointer
+uses the original callback, and teardown clears it after final reset and before
+CPU destruction. The original callback is outlined with `noinline`; no other
+new compiler attributes or cached eligibility answers are introduced.
+
+The actual four-profile fixture compares the complete candidate callback with
+the original, including identical trace-counter deltas. Each profile passes
+842,606 queries, 1,598 full 32-MiB RAM comparisons and 206 static-domain groups.
+This retains the complete earlier corpus and adds seven pointer lifecycle cases
+and 40 finite-filter collisions. All four deliberately broken consumers fail
+the implication check. Optimized and ASan profiles admit 836,630 queries;
+developer/census profiles conservatively use the fallback throughout.
+
+The private one-object host build retains all 169 other physical link inputs.
+Its actual fast wrapper has 491 instruction bytes plus five alignment bytes,
+no nested calls, no saved registers, no stack allocation and no stack operands.
+Unknown cases tail-jump to the outlined fallback. Original full-predicate and
+chassis instruction bytes and named relocations remain unchanged. Whole main
+text grows 480 bytes against the control and equals version 1's text size.
+
+Fresh intro runs match all six complete CPU/MEM1/MEM2/ordered-alias checkpoint
+rows and every byte of the 1,228,335-byte P6 image. The fixed eight-run timing
+block then passes all route checks and the predeclared paired-gain gate:
+
+| Pair | Main-thread CPU | Wall | Thread cycles |
+|---|---:|---:|---:|
+| 1 | -15.01% | -15.61% | -15.38% |
+| 2 | -13.06% | -13.63% | -13.37% |
+| 3 | -14.89% | -14.81% | -14.72% |
+| 4 | -3.30% | -2.32% | -3.22% |
+
+In the predeclared VI750--1500 window, mean main-thread CPU changes from
+17.0703125 to 15.06640625 seconds (-11.74%), wall from 17.2411732 to
+15.206241725 seconds (-11.80%), and thread cycles by -11.86%. Primary and all
+five segment work/endpoints, terminal GX, guest clock and dispatch match; all
+eight routes report zero terminal pipeline creations. No timing run captures
+images, hashes guest state or samples PCs. All eight runs and calibration rows
+are retained, with no overhead subtraction.
+An independent audit reparses all 1,801 VI and 1,025 calibration rows in each
+run and reproduces the four pairs, means, exact-work checks and passed gates.
+
+This qualifies the named loaded, unpaced 1,134-EFB-replay experiment. It does
+not establish ordinary displayed FPS, full-game speed or shipping promotion.
+CPU calibration materiality remains unresolved. Public source landing requires
+separate qualification of two host objects because the current public event
+implementation lacks the private grouped storage/getter. No installed binaries
+are changed by this experiment; version 1's failed block remains closed.
+
+Private evidence in the same directory: `finite-true-domain-proof1.json`
+(`d200bdfd...`), `fixture-fast-attempt2/result.json` (`4103728e...`),
+`host-fast2-attempt1/result.json` (`d0db0fbf...`),
+`predicate-cost-fast2/codegen1.json` (`568baf06...`),
+`runtime2/native-efb1/maincode2-host-per-vi-input-parity1.json` (`b90068f2...`),
+and `runtime2/controlled-input1/maincode2-host-per-vi-eight-run1.json`
+(`2da614a3...`), with `runtime2/independent-timing-audit1.json`
+(`626774c8...`).
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
