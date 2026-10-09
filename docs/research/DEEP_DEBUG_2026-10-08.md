@@ -92,6 +92,50 @@ already clean. This supports CPU pressure in the player's actual play mode;
 neither hidden throughput nor these host measurements establish GPU execution
 time or an individual function's exclusive cost.
 
+### Exact source-line attribution and local-state pilot, October 9
+
+Two passive debug-line recompiles now map the existing visible-C2 capture to
+the actual original `0145` and `0201` sources. Before using either mapping, the
+verifier requires every executable-section byte and every named relocation to
+match the exact object retained by C2. Both pass: 709,841 executable bytes and
+50,147 relocations for `0145`; 679,971 bytes and 47,975 relocations for `0201`.
+Only debug sections are added. These objects are not linked into a game or run.
+
+| Qualified chunk | Sampled instruction addresses | Samples | Direct bookkeeping-operand samples |
+| --- | ---: | ---: | ---: |
+| `0145`, `func_802456E0` | 139 | 148 | 32 |
+| `0201`, `func_803256E0` | 101 | 113 | 26 |
+
+Every sampled address lands on an actual decoded instruction boundary. The
+direct-operand counts include downcount, PC, observation suffix and deadline
+fields; they omit accesses through registers. Optimized source-line intervals
+assign 75 and 41 samples to cycle bookkeeping respectively, but those intervals
+also contain inlined work. They must not be reported as direct metadata accesses,
+exclusive CPU cost or removable time. Six `0145` samples have compiler line zero
+and remain unattributed.
+
+A private local-state prototype covers one 27-instruction, callback-free block
+in `GXProject`. It keeps guest register values local, delays only the superseded
+floating-point result classification and publishes committed state before every
+slow exit. Optimized and AddressSanitizer fixtures each pass 1,672 differential
+cases over complete CPU state, all 32 MiB of RAM, floating-point environment and
+ordered callbacks. Forced exits, alias paths, exceptions, reservations, journals,
+deadline edges and three deliberately broken variants are included.
+
+The first production-policy compile exposes a drawback: it adds 9,712 executable
+bytes while retaining the original fallback, and the new lane still calls 17
+pure conversion or rounding helpers. A narrow private inline-helper successor
+is under investigation. This block has **zero samples in the visible capture**;
+its tests qualify the mechanism only. No route speedup, whole-module change or
+default enablement follows from the fixture or code-size result.
+
+The adjacent native-call prototype also passes its differential tests, but its
+first fused helper retains a larger stack frame across the native body. A
+tail-call successor is being checked before considering wider application.
+The borrowed live-observer view passes all four fixture configurations at one
+literal target; its actual production code is still being inspected. Neither
+prototype has a qualified game timing result.
+
 ## Current baseline and reproduction
 
 The control uses host SHA-256
@@ -1166,6 +1210,13 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `visible-c2-profile1/title-visible-c2-native1/offline-unwind1/{result,unwind}.json`
 - `visible-c2-profile1/c2-map1/{source-preparation1,verification-source2,verification2/result}.json`
 - `visible-c2-profile1/ranking-map-preparation2.json`
+- `line-map1/attempt1/{native-identity1,sampled-lines2,sampled-instructions1}.json`
+- `line-map2011/attempt2/{native-identity1,sampled-lines2,sampled-instructions1}.json`
+- `cursor-fprf1/source3/source-receipt.json`
+- `cursor-fprf1/fixture-attempt2/result.json`
+- `cursor-fprf1/codegen-attempt2/{result,lane-cfg1}.json`
+- `native-adjacent-stack1/{qualification-attempt1,negative-attempt1,codegen-attempt2}/result.json`
+- `observation-live-view1/source3/source-receipt.json`
 - `native-stacks1/game-admission1/{leaf-source-preparation3,leaf-pure-tests3,leaf-coverage-audit1}.json`
 - `native-stacks1/game-admission1/leaf-request1/{preparation,stack-ranking1}.json`
 - `native-stacks1/game-admission1/leaf-request1/offline-unwind1/{result,unwind}.json`
