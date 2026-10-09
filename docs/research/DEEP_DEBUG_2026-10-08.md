@@ -196,7 +196,32 @@ FIFO address and its masked mirror. The resolver's 78 sampled instructions
 include 50 prologue/epilogue sites. Existing maintained range bounds can reject
 impossible full-span lookups inline, but raw and masked alias precedence, fixed
 RAM ownership and the host graphics cache's independent one-byte probe must
-remain. A separate private prototype is being qualified; no gain is established.
+remain. A separate private 36-object prototype moves that full-span bounds
+rejection ahead of both resolver calls. It retains 799 original module objects
+and the matrix archive; the installed host and module are unchanged.
+
+Generic, fixed-RAM and fixed-RAM AddressSanitizer fixtures each compare 7,100
+queries using exact CPU, RAM, alias, trace and pointer results. They also check
+83 bounds-maintenance assertions. Wrong masked-address and stale-removal-bound
+mutations fail the oracle. The ordinary native intro has identical pixels but
+matches only one of six complete-state checkpoints. With recorded EFB inputs,
+all six complete states and pixels match. Both results are retained.
+
+The independent controlled-input ABBA has identical terminal GX counters,
+guest clock fields, dispatch count and full replay consumption:
+
+| Alias-envelope metric | Control mean | Candidate mean | Change |
+| --- | ---: | ---: | ---: |
+| Process CPU seconds | 44.695 | 44.391 | -0.68% |
+| Process wall seconds | 30.202 | 29.969 | -0.77% |
+| Process cycles | 159.944 billion | 159.598 billion | -0.22% |
+
+The first CPU/wall pair regresses +0.52%/+0.83%; the second improves
+-1.89%/-2.36%. This fails the predefined consistent-pair and one-percent mean
+CPU/wall criteria. **No performance gain is accepted and the candidate remains
+private and inactive.** The compiler jobs were held during measurement;
+external background load remains uncontrolled. These measurements apply to the
+fixed-input title experiment, not displayed FPS or general gameplay.
 
 A separate direct-call census finds 16,958 literal readiness queries in 8,479
 paired static-call blocks across the 35 original chunks. Actual watch-table
@@ -269,6 +294,11 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `gpr1/controlled-input2/{gpr-controlled-abba1,batch1}.json`
 - `native/alias-cost1/`
 - `alias-envelope1/{FEASIBILITY1.md,receipt2.json}`
+- `alias-envelope1/fixture-attempt3/result.json`
+- `alias-envelope1/module-attempt1/result.json`
+- `alias-envelope1/native-efb1/alias-input-parity1.json`
+- `native/alias-complete-parity1.json`
+- `alias-envelope1/controlled-input1/alias-controlled-abba1.json`
 - `literal-facts1/{DESIGN.md,site-census1.json}`
 - `slp1/attempt2/`
 
