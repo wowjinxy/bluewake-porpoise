@@ -646,9 +646,45 @@ unchanged-source/flags checks. Its actual common helper is 176 bytes and 40
 instructions, with no saved-register or stack frame, and tail-jumps to the
 retained 464-byte cold predicate on uncertain cases. The caller is unchanged;
 whole-object call/stack/metadata sites remain fixed because the cold path is
-retained. This confirms a distinct common-path mechanism, without a module,
-runtime or speed qualification. Full consumer selection uses the clean profile
-and remains separate from the earlier traced selection.
+retained. The subsequent independent module replaces exactly 30 header
+consumers from the clean profile: 29 fresh actual M/MD compiles and one
+identical-input pilot reuse, with 805 original direct objects and the original
+15 library inputs retained. Sources, effective O2/cap-10/strict-FP flags,
+physical link inputs and the PE surface pass their checks. Fresh same-host
+title replay comparisons match all six complete states and full P6 pixels,
+consume all 1,134 EFB contexts, and finish with zero pipeline creations.
+Performance is still unqualified. This selection remains separate from the
+earlier traced selection and contains no other candidate changes.
+
+## Clean paired-single comparison and startup readiness
+
+The existing standalone C2 paired-single module passed a fresh same-host clean
+six-checkpoint/full-P6 comparison. Its exact PE admission permits only the
+source-proven removal of the ldexp import; all other import order/hints,
+exports, ABI and resource payloads match the original. The complete 835-object
+symbol census finds no remaining ldexp reference, and the two runtime scaling
+expressions and five-profile fixtures remain bound to the original build.
+
+The clean fixed-order timing attempt stopped after A1, C1 and C2. The first two
+runs pass; the third exits normally with all route/state/input-preservation
+gates passing except seven terminal pipeline creations. No eight-run result,
+means or accepted gain is available, and the block is not retried. Independent
+raw timer decoding confirms equal primary/five-segment work and endpoint
+cursors across the three completed runs. Four brief source/receipt reads also
+occurred after a timing-hold acknowledgement; the last two absolute times and
+their overlap with measurement are unknown. Their durations and incorrect
+inferred message timestamp are preserved separately.
+
+Source review found a concrete startup-readiness gap: dequeuing is earlier than
+pipeline creation, and pending-set removal is earlier than the original
+notification/counter/prune/log epilogue. Either empty-container test alone can
+report completion too soon. A private opt-in completion-fence draft tracks
+workers through that epilogue and waits for closed loading, empty queues and
+pending set, and no workers in flight. Lifecycle/error tests and compilation
+are pending. The failed C2 log reports 242 cached completions after early VI
+activity, but does not identify the seven creations' origins. This draft does
+not yet explain or fix the steady crowded-scene CPU slowdown, guarantee future
+cache hits, or certify successful cache persistence.
 
 ## Clean observer-domain comparison
 
@@ -686,8 +722,12 @@ store is not the opportunity. Quaternion's dynamic share is unknown.
 Peer source review caught an edge before any fixture compile: classifying a
 rounded single after rereading its widened FPR can change subnormal behavior
 under host DAZ. The failed draft is retained; its successor must retain and
-classify the final rounded single directly. Whole-TU differential fixtures,
-including rounding/FTZ/DAZ and an explicit reread-FPR mutant, remain required.
+classify the final rounded single directly. Corrected whole-TU fixtures now
+pass 10,267 whole-CPU/64 KiB comparisons in each generic O2/ASan profile and
+2,587 whole-CPU/32 MiB comparisons in each fixed O2/ASan profile. All four
+deliberate arithmetic/status mutations fail with CPU-byte mismatches. The
+reread-FPR mutant reproduces the DAZ/subnormal classification failure. Module,
+gameplay and performance qualification remain separate and unfinished.
 A separate native_math include experiment targets its existing ps_sum0 calls.
 Its complete original/candidate translation units passed 5,776 whole-CPU/64 KiB
 comparisons in each generic O2 and ASan profile, and 2,192 whole-CPU/32 MiB
@@ -706,11 +746,14 @@ there is no established wrong-input or zero-input failure. The stronger fixed
 fixture coverage and input assertions remain useful. The source correction
 is retained separately from the frozen drafts.
 
-The quaternion generic O2 fixture crashed before completing qualification.
-A separate ASan-only diagnostic localizes a read fault to the fixture's input
-assertion. Its address expression and faulting instruction are being checked;
-the production candidate has not been repaired, qualified or run in the game.
-Both failed executions remain preserved, with no speed claim.
+The first quaternion O2 fixture and separate ASan diagnostic crashed in the
+fixture's input assertion. Existing machine bytes prove that its enum/pointer
+expression emitted offset 0xffffffff00002004 instead of 0x2004. A narrowly
+audited successor computes guest offsets in integer space before pointer
+addition in both fixtures. Production sources, inputs, case counts, modes and
+mutants are unchanged. Both corrected candidates passed all four profiles and
+their seven total deliberate-failure tests; earlier crashes and the first
+native-math pass remain preserved. No game or speed claim follows.
 
 A bounded audit of the local LLVM backend found real SSA register promotion,
 but also compatibility gaps: ordered external aliases, the host's native-region
@@ -871,14 +914,22 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `event-negative1/host1/attempt3/{result,codegen1/result}.json`
 - `gpr-split1/{source1/source-receipt,fixture-attempt1/result}.json`
 - `gpr-split1/pilot-attempt1/{result,codegen1}.json`
+- `gpr-split1/clean-module5/attempt1/{result,actual-objects1,actual-link-inputs1,PE-surface1}.json`
+- `gpr-split-clean-per-vi1/{preparation1,source-validation1,correctness-batch1}.json`
+- `gpr-split1/hold-deviation2.json`
 - `h-clean-per-vi1/{preparation2,source-validation2,correctness-batch1,controlled-batch1}.json`
 - `h-clean-per-vi1/{independent-audit1,timing-incident1}.json`
 - `h-clean-per-vi1/native-efb1/h-clean-per-vi-input-parity1.json`
 - `llvm-backend-feasibility1.md`
 - `quaternion-local1/{DESIGN2.md,existing-caller1.json}`
 - `quaternion-local1/{SOURCE_CORRECTION1.md,fixture-attempt1/result.json,diagnostic-asan1/result.json}`
+- `quaternion-local1/{fixture-address-fault1,fixture-address-repair1,final-cpu-handoff1}.json`
+- `quaternion-local1/fixture-attempt2/result.json`
 - `native-math-inline1/{fixture-preparation3.json,fixture-attempt1/result.json,cpu-qualification1.json}`
+- `native-math-inline1/fixture-attempt2/result.json`
 - `qps-clean-per-vi1/{preparation1.json,source-validation1.json,pe-surface3.json,ldexp-closure1.json}`
+- `qps-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-attempt-audit1}.json`
+- `pipeline-preload1/source1/source-receipt.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
