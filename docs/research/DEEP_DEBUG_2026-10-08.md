@@ -332,8 +332,8 @@ and cycles -2.95%, while its CPU/wall pairs are -9.93%/-10.94% and
 53.594 in the second. External load remains uncontrolled; the source of that
 variation is not identified. Preserve every sample. The earlier positive
 observer result remains unreplicated, with no confirmed total speed gain.
-**Keep the candidate private and inactive; do not retry until a pass or
-promote the favorable average.** A preregistered dispatch-thread timing
+**Keep the candidate private and inactive; do not repeat runs merely to obtain
+a pass or promote the favorable average.** A preregistered dispatch-thread timing
 protocol and fixed route segments are being investigated separately.
 
 ### Floating-point helper pilot and pipeline accounting
@@ -351,8 +351,19 @@ The frozen host's counter includes queued cached-pipeline completions after the
 first watched retrace. Both runs load the same 242 cached configurations, and
 their final cache rows are byte-identical, supporting a startup-overlap
 hypothesis. The exact 34 increments have not been identified. A bounded origin
-and first-retrace counter diagnostic is being prepared; the original failure
-and strict zero-pipeline gate remain unchanged.
+and first-retrace counter diagnostic now records each completion's immutable
+request origin and the exact counter snapshots used by the existing watcher.
+The original failure and strict zero-pipeline gate remain unchanged.
+
+Fresh original/42-object runs on the same diagnostic host both pass the strict
+runtime gate, all six complete state checkpoints and exact captured pixels.
+Each records 242 completions before the first watched retrace and zero during
+the watched intervals: 218 cache-origin requests and 24 cache-derived uber
+requests, with no runtime-origin requests. The bounded accounting closes with
+no missing or duplicate records, overflow or pending requests. This supports the startup
+overlap hypothesis for this build; it does **not** identify the historical 34
+increments retroactively. Recording changes the diagnostic host and adds work,
+so these runs are excluded from timing and do not qualify a speed gain.
 
 A compiler-vectorization pilot enables SLP for one vector-heavy profiled chunk,
 with every source byte and other compiler flag unchanged. Its emitted code
@@ -360,6 +371,43 @@ sections are byte-identical: 713,490 bytes and 129,977 disassembled instructions
 It provides no code-generation improvement for that chunk and is not scheduled
 for a speed comparison. This result does not establish what other chunks would
 do.
+
+### Quantized paired-single controlled comparison
+
+The isolated four-chunk/CPU quantized paired-single candidate is compared with
+the original module on the same original physical-EFB diagnostic host. Both
+consume all 1,134 recorded input contexts, pass the zero-pipeline runtime gate
+and match all six complete state checkpoints and exact captured pixels.
+
+A separate four-run A/B/B/A comparison passes the strict workload and paired
+gain gates: process CPU -3.23%, elapsed time -2.99% and process cycles -3.15%.
+The CPU pairs are -3.74%/-2.71%; elapsed-time pairs are -4.38%/-1.53%.
+All terminal GX, clock and dispatch counts match exactly.
+
+The single preregistered reversed B/A/A/B replication **fails** the paired-gain
+gate while preserving exact workload counts. Its averages are CPU +0.02%,
+elapsed time +0.34% and process cycles +0.01%. CPU pairs are -3.56%/+3.70%;
+elapsed-time pairs are -4.15%/+5.02%. All four raw cases remain, with no discarded
+or replacement samples. No further whole-process batch is planned to obtain a
+pass. The initial gain is unreplicated; keep this candidate experimental and
+do not promote it on these timings. Background load remains uncontrolled, and
+no displayed-FPS, whole-game or ordinary native performance gain is qualified.
+Earlier unmatched timing failures remain preserved.
+
+### Game-module compiler profile
+
+The authentic stable module build receipt records `profile: null`, O2 and no
+module ThinLTO. The existing builder supports game PGO, and an app profile
+exists, but neither establishes that this module was profiled. Checklist item
+38 now distinguishes support from the selected build's actual configuration.
+
+A private two-chunk pilot selects the two highest sampled translated owners
+(150 and 133 samples). Source bytes, source paths, includes and every non-PGO
+compiler flag remain fixed. Its pristine control rebuild matches both original
+objects after normalizing only their COFF timestamps. Fresh instrumentation,
+actual function/hash/counter coverage and subsequent emitted-code comparison
+are required before any speed test. This is a narrow feasibility trial; no
+profile-driven gain or broad module rebuild is qualified yet.
 
 ## Fresh GX-worker findings
 
@@ -442,6 +490,15 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `fp-inline1/semantics2/result.json`
 - `fp-inline1/native-efb2/fp42-replay2/result.json`
 - `fp-inline1/offline-diagnosis1/{result,counter-source-binding1}.json`
+- `pipeline-origin1/{source2/source-receipt,fixture2/attempt2/result}.json`
+- `pipeline-origin1/host1/attempt2/result.json`
+- `pipeline-origin1/native2/{strict-pair1,offline-pair1}.json`
+- `pipeline-origin1/native2/{origin-a1,origin-g1}/origin-accounting.json`
+- `qps-controlled1/native-efb1/qps-input-parity1.json`
+- `qps-controlled1/controlled-input1/qps-controlled-abba1.json`
+- `qps-controlled1/reverse-baab1/preparation.json`
+- `qps-controlled1/reverse-baab1/{batch-result,reverse-baab-analysis}.json`
+- `pgo-hot2-1/recipe1/source-preparation.json`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not

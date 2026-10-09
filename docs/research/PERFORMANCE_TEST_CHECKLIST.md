@@ -483,8 +483,11 @@ remain opt-in locally. Set 7's cached quiet-host helper needs adaptation.
   modules alone do not establish a speed improvement.
 
 - [ ] **38. [Train the game profile on more representative gameplay](https://github.com/dougchansan/DolRecomp/commit/0f069ef2edfd610f23b6ced16486d047966f15b2).**
-  Game-module PGO is already enabled; test better coverage rather than importing
-  it again. This is separate from the app profile in 36.
+  The builder supports game-module PGO, but the stable module used by the
+  October 8 deep-debug comparisons records `profile: null`, O2 and no module
+  ThinLTO in its authentic build receipt. Do not infer active game PGO from
+  builder support or the separate app profile in 36. Qualify a fresh matching
+  game profile before comparing coverage quality.
   **Test:** extend the training routes beyond the opening playbacks, then use
   existing retraining controls with matching source/compiler. Use `--no-tiered`
   in both builds to isolate profile quality, or record changed O1/O2 assignments.
