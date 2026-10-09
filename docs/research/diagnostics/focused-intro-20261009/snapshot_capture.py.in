@@ -1,0 +1,153 @@
+"""Owned-child AMD64 snapshot capture. Importing performs no Win32 calls.
+
+No DbgHelp, file I/O, module enumeration, or PE parsing is allowed in capture().
+The returned local bytes may be persisted only after this function returns.
+"""
+import ctypes
+from ctypes import wintypes
+import time
+
+CONTEXT_BYTES = 1232
+CONTEXT_FULL = 0x0010000B
+MAX_STACK_BYTES = 65536
+MAX_SNAPSHOTS = 512
+
+
+class ResumeFailure(OSError):
+    """Fatal to the caller-owned job, never an ordinary truncated snapshot."""
+
+
+class ContextPrefix(ctypes.Structure):
+    _fields_ = [('home', ctypes.c_uint64 * 6), ('ContextFlags', ctypes.c_uint32),
+                ('MxCsr', ctypes.c_uint32), ('segments', ctypes.c_uint16 * 6),
+                ('EFlags', ctypes.c_uint32), ('debug', ctypes.c_uint64 * 6),
+                ('integer', ctypes.c_uint64 * 16), ('Rip', ctypes.c_uint64)]
+
+
+class MemoryBasicInformation(ctypes.Structure):
+    _fields_ = [('BaseAddress', ctypes.c_void_p), ('AllocationBase', ctypes.c_void_p),
+                ('AllocationProtect', wintypes.DWORD), ('PartitionId', wintypes.WORD),
+                ('RegionSize', ctypes.c_size_t), ('State', wintypes.DWORD),
+                ('Protect', wintypes.DWORD), ('Type', wintypes.DWORD)]
+
+
+def declare_capture_apis(kernel):
+    """Only called by an explicitly authorized owned launcher after DLL load."""
+    for name, args, result in (
+        ('SuspendThread', [wintypes.HANDLE], wintypes.DWORD),
+        ('ResumeThread', [wintypes.HANDLE], wintypes.DWORD),
+        ('GetThreadContext', [wintypes.HANDLE, ctypes.c_void_p], wintypes.BOOL),
+        ('VirtualQueryEx', [wintypes.HANDLE, ctypes.c_void_p,
+                            ctypes.POINTER(MemoryBasicInformation), ctypes.c_size_t], ctypes.c_size_t),
+        ('ReadProcessMemory', [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                               ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)], wintypes.BOOL),
+        ('GetProcessId', [wintypes.HANDLE], wintypes.DWORD),
+        ('GetThreadId', [wintypes.HANDLE], wintypes.DWORD),
+        ('GetProcessIdOfThread', [wintypes.HANDLE], wintypes.DWORD),
+    ):
+        function = getattr(kernel, name)
+        function.argtypes, function.restype = args, result
+
+
+def capture(kernel, hp, ht, pid, tid, *, stack_bytes=MAX_STACK_BYTES):
+    """Capture only the explicitly caller-owned hp/ht; no opening by PID.
+
+    Returns a failure record after resuming for ordinary capture errors. A
+    ResumeThread failure raises: the owning launcher must terminate/drain its
+    own job, never leave an owned live process in an uncertain suspend state.
+    """
+    if not (stack_bytes == 0 or 8 <= stack_bytes <= MAX_STACK_BYTES):
+        raise ValueError('Bounded stack slice required')
+    if ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise RuntimeError('AMD64 capture requires 64-bit Python')
+    if not (pid > 0 and tid > 0 and kernel.GetProcessId(hp) == pid and
+            kernel.GetThreadId(ht) == tid and kernel.GetProcessIdOfThread(ht) == pid):
+        raise ValueError('Caller-owned hp/ht/pid/tid mismatch')
+    assert ContextPrefix.ContextFlags.offset == 0x30 and ContextPrefix.Rip.offset == 0xF8
+    assert ContextPrefix.integer.offset == 0x78 and ctypes.sizeof(MemoryBasicInformation) == 48
+    context_storage = ctypes.create_string_buffer(CONTEXT_BYTES + 15)
+    context_address = (ctypes.addressof(context_storage) + 15) & ~15
+    context = ContextPrefix.from_address(context_address)
+    context.ContextFlags = CONTEXT_FULL
+    stack_storage = ctypes.create_string_buffer(stack_bytes)
+    region = MemoryBasicInformation()
+    actual = ctypes.c_size_t()
+    requested = 0
+    rip = rsp = rbp = 0
+    error = None
+    winerror = None
+    resume_count = None
+    started = time.perf_counter_ns()
+    previous_count = kernel.SuspendThread(ht)
+    if previous_count == 0xFFFFFFFF:
+        return dict(status='capture_failed', reason='SuspendThread',
+                    winerror=ctypes.get_last_error(), pid=pid, tid=tid,
+                    context=b'', stack=b'', held_ns=0, own_increment=False)
+    try:  # IMMEDIATE ownership scope after every successful increment.
+        if previous_count != 0:
+            error = 'already_suspended'
+        elif not kernel.GetThreadContext(ht, ctypes.c_void_p(context_address)):
+            error, winerror = 'GetThreadContext', ctypes.get_last_error()
+        else:
+            rip = int(context.Rip)
+            rsp, rbp = int(context.integer[4]), int(context.integer[5])
+            if not (0 < rsp < (1 << 63)):
+                error = 'invalid_rsp'
+            elif stack_bytes == 0:
+                pass  # Full-context RIP sample, no stack query/read this time.
+            elif kernel.VirtualQueryEx(hp, ctypes.c_void_p(rsp), ctypes.byref(region),
+                                       ctypes.sizeof(region)) != ctypes.sizeof(region):
+                error, winerror = 'VirtualQueryEx', ctypes.get_last_error()
+            else:
+                base = int(region.BaseAddress or 0)
+                end = base + int(region.RegionSize)
+                # MEM_COMMIT, readable page kinds, neither PAGE_GUARD nor NOACCESS.
+                readable = (region.Protect & 0xFF) in (2, 4, 8, 0x20, 0x40, 0x80)
+                if not (region.State == 0x1000 and readable and not region.Protect & 0x100
+                        and 0 <= base <= rsp < end <= (1 << 64)):
+                    error = 'inaccessible_stack_region'
+                else:
+                    requested = min(stack_bytes, end - rsp)
+                    if requested < 8:
+                        error = 'stack_region_too_short'
+                    elif not kernel.ReadProcessMemory(hp, ctypes.c_void_p(rsp), stack_storage,
+                                                       requested, ctypes.byref(actual)):
+                        error, winerror = 'ReadProcessMemory', ctypes.get_last_error()
+                    elif actual.value != requested:
+                        error = 'partial_stack_read'
+    except BaseException as exc:
+        error = 'capture_exception:' + repr(exc)
+    finally:
+        resume_count = kernel.ResumeThread(ht)  # Undo exactly our one increment.
+        ended = time.perf_counter_ns()
+        if resume_count == 0xFFFFFFFF:
+            raise ResumeFailure(ctypes.get_last_error(), 'ResumeThread failed; drain only the owned job')
+    record = dict(status='capture_failed' if error else 'snapshot', reason=error,
+                  winerror=winerror, pid=pid, tid=tid, rip=rip, rsp=rsp, rbp=rbp,
+                  context_flags=CONTEXT_FULL, context_aligned_16=(context_address & 15) == 0,
+                  requested_bytes=requested, actual_bytes=actual.value,
+                  previous_suspend_count=int(previous_count), resume_previous_count=int(resume_count),
+                  own_increment=True, resumed=True, capture_started_ns=started,
+                  capture_ended_ns=ended, held_ns=ended - started,
+                  pause_limit_exceeded=ended - started > 5_000_000,
+                  region_base=int(region.BaseAddress or 0), region_bytes=int(region.RegionSize))
+    # Copy/serialize only after ResumeThread; all referenced buffers are local.
+    record.update(context=ctypes.string_at(context_address, CONTEXT_BYTES) if not error else b'',
+                  stack=stack_storage.raw[:requested] if not error else b'')
+    return record
+
+
+class CaptureBudget:
+    """Every tenth accepted RIP, at most512 stacks; stop stacks after slow pause."""
+    def __init__(self):
+        self.accepted = self.snapshots = 0
+        self.stopped = False
+
+    def select(self):
+        self.accepted += 1
+        return not self.stopped and self.snapshots < MAX_SNAPSHOTS and self.accepted % 10 == 0
+
+    def note(self, record):
+        self.snapshots += 1
+        self.stopped = self.stopped or bool(record.get('pause_limit_exceeded'))
+

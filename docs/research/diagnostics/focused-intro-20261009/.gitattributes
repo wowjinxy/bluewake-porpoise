@@ -1,0 +1,3 @@
+*.py.in text eol=lf
+# Preserve the original snapshot source byte for byte, including its final blank line.
+snapshot_capture.py.in whitespace=-blank-at-eof

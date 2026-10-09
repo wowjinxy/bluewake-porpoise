@@ -1,0 +1,263 @@
+"""Focused timestamped visible C2 diagnostic; no speed/ordinary performance claim."""
+from pathlib import Path
+import argparse, ast, ctypes, hashlib, json, msvcrt, os, re, shutil
+import subprocess, sys, time, _winapi, importlib.util
+from ctypes import wintypes
+from per_vi_log import parse as parse_per_vi
+
+ROOT = Path(__file__).resolve().parents[3]
+OUT = Path(__file__).resolve().parent
+
+def require(ok, message):
+    if not ok:
+        raise RuntimeError(message)
+
+def rec(path):
+    path = Path(path)
+    h = hashlib.sha256()
+    with path.open('rb') as f:
+        for b in iter(lambda: f.read(4 * 1024 * 1024), b''):
+            h.update(b)
+    return dict(path=str(path.resolve()), bytes=path.stat().st_size, sha256=h.hexdigest())
+
+def save(name, value):
+    with (WORK / name).open('x', encoding='utf-8') as f:
+        json.dump(value, f, indent=2)
+        f.write('\n')
+
+def replace_once(source, old, new):
+    require(source.count(old) == 1, 'Launcher template: ' + old[:60])
+    return source.replace(old, new)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--case', required=True)
+parser.add_argument('--module', type=Path, required=True)
+parser.add_argument('--host', type=Path)
+parser.add_argument('--route', choices=('title',), default='title')
+parser.add_argument('--sample', action='store_true')
+parser.add_argument('--assets-receipt',type=Path,required=True)
+parser.add_argument('--cache-seed',type=Path,required=True)
+parser.add_argument('--preparation-sha',required=True)
+args = parser.parse_args()
+require(sys.flags.dont_write_bytecode and sys.flags.no_site and not sys.flags.optimize, 'Explicit Python -B -S with assertions')
+preparation_path = OUT / 'preparation1.json'
+require(rec(preparation_path)['sha256'] == args.preparation_sha, 'Exact frozen root stack-profile recipe')
+preparation = json.loads(preparation_path.read_bytes())
+require(preparation['status'] == 'SOURCE_ONLY_FOCUSED_VISIBLE_C2_TIMESTAMP_PROFILE_NOT_LAUNCHED', 'Exact root diagnostic scope')
+for item in preparation['inputs'] + preparation['outputs']:
+    require(rec(item['path']) == item, 'Every source and synthetic qualification pin before first child')
+require(rec(__file__) in preparation['outputs'], 'Frozen actual game runner')
+require(not args.sample,'Only owned initial-thread native RIP sampling; guest PC sampler remains off')
+require(re.fullmatch('[a-z0-9-]{1,80}', args.case), 'Owned case name')
+# Preserve any interactive game and reject overlapping diagnostic sessions.
+for process_name in ('BlueWake.exe','BlueWake-Control.exe'):
+    check=subprocess.run(['tasklist','/FI','IMAGENAME eq '+process_name,'/FO','CSV','/NH'],capture_output=True,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
+    require(check.returncode==0 and ('"'+process_name+'"') not in check.stdout,'Another game is running; defer private profiling')
+WORK = OUT / args.case
+require(not WORK.exists(), 'Exclusive new case')
+for n in ('host', 'data/states', 'data/logs', 'cache', 'temp', 'logs'):
+    (WORK / n).mkdir(parents=True)
+
+sampler_path = OUT / 'timestamp_sampler.py'
+sys.path.insert(0, str(sampler_path.parent))
+spec = importlib.util.spec_from_file_location('owned_native_sampler', sampler_path)
+sampler_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sampler_module)
+helper = ROOT / 'build/core-efb-production-compile-20261006/attempt2/run.py'
+source = helper.read_text()
+tree = ast.parse(source)
+launcher_parts = []
+for name in ('Basic', 'IO', 'Limits', 'hidden_run'):
+    node = next(n for n in tree.body if isinstance(n, (ast.ClassDef, ast.FunctionDef)) and n.name == name)
+    body = ast.get_source_segment(source, node)
+    if name == 'hidden_run':
+        body = replace_once(body, 'time.monotonic()-start < 120', 'time.monotonic()-start < 180')
+        body = replace_once(body, 'si.wShowWindow=0;', 'si.wShowWindow=1;')
+        body = replace_once(body, 'subprocess.CREATE_NO_WINDOW|0x4', 'subprocess.CREATE_NEW_PROCESS_GROUP|0x4')
+        body = replace_once(body, "'hidden':True", "'hidden':False")
+        body = replace_once(body, "('SetErrorMode',[wintypes.UINT],wintypes.UINT)", """('GetProcessTimes',[wintypes.HANDLE,*([ctypes.POINTER(wintypes.FILETIME)]*4)],wintypes.BOOL),
+        ('QueryProcessCycleTime',[wintypes.HANDLE,ctypes.POINTER(ctypes.c_ulonglong)],wintypes.BOOL),
+        ('GetProcessAffinityMask',[wintypes.HANDLE,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_size_t)],wintypes.BOOL),
+        ('SetProcessAffinityMask',[wintypes.HANDLE,ctypes.c_size_t],wintypes.BOOL),
+        ('SetErrorMode',[wintypes.UINT],wintypes.UINT)""")
+        body = replace_once(body, 'hp=ht=None;start=', 'native_sampler=None;metrics={};hp=ht=None;start=')
+        body = replace_once(body, 'while wait == 258:', '''while wait == 258:
+                if native_sampler is not None:
+                    native_sampler.raise_if_fatal()
+                if native_sampler is None:
+                    live_log=logpath.read_text(errors='replace')
+                    retraces=re.findall(r'\[perf\] retrace=(\d+)',live_log)
+                    if retraces and int(retraces[-1]) >= 650:
+                        native_sampler=sampler_module.TimestampStackSampler(hp,ht,pid,tid,interval_ms=3,duration_s=60,max_samples=20000).start()
+                        metrics['native_sampler_start_retrace']=int(retraces[-1])
+                if native_sampler is not None:
+                    live_log=logpath.read_text(errors='replace')
+                    live_retraces=re.findall(r'\[perf\] retrace=(\d+)',live_log)
+                    if live_retraces and int(live_retraces[-1]) >= 1550 and not (WORK/'native-rip.json').exists():
+                        save('native-rip.json',native_sampler.stop())
+                        metrics['native_sampler_stop_retrace']=int(live_retraces[-1])
+                    require(native_sampler.stop_reason != 'sampler_error','Native sampler failed; terminate owned job')''')
+        body = replace_once(body, 'if not drained and hp is not None:', '''if native_sampler is not None:
+            try:
+                if not (WORK/'native-rip.json').exists(): save('native-rip.json',native_sampler.stop())
+            except BaseException as exc: error=error or repr(exc)
+        else: error=error or 'Native sampler never reached target retrace'
+        if not drained and hp is not None:''')
+        body = replace_once(body, "assigned=True\n            require(k.ResumeThread", """assigned=True
+            process_mask=ctypes.c_size_t();system_mask=ctypes.c_size_t()
+            require(k.GetProcessAffinityMask(hp,ctypes.byref(process_mask),ctypes.byref(system_mask)), 'Read affinity')
+            require(k.SetProcessAffinityMask(hp,process_mask), 'Set affinity before resume')
+            metrics.update(affinity_mask=process_mask.value, system_affinity_mask=system_mask.value, owned_target_pid=pid, owned_target_tid=tid)
+            require(k.ResumeThread""")
+        body = replace_once(body, 'code=_winapi.GetExitCodeProcess(hp);drained=True', """code=_winapi.GetExitCodeProcess(hp);drained=True
+            times=[wintypes.FILETIME() for _ in range(4)]; cycles=ctypes.c_ulonglong()
+            require(k.GetProcessTimes(hp,*(ctypes.byref(t) for t in times)), 'Read CPU time')
+            require(k.QueryProcessCycleTime(hp,ctypes.byref(cycles)), 'Read CPU cycles')
+            ticks=lambda t:(t.dwHighDateTime<<32)|t.dwLowDateTime
+            metrics.update(cpu_seconds=(ticks(times[2])+ticks(times[3]))*1e-7, cycles=cycles.value)
+""")
+        body = replace_once(body, "'drained':drained,'error':error,'log':rec(logpath)", "'drained':drained,'error':error,'log':rec(logpath),'metrics':metrics")
+    launcher_parts.append(body)
+    exec(compile(body, str(helper), 'exec'), globals())
+
+launcher_text = '\n\n'.join(launcher_parts) + '\n'
+with (WORK/'owned-launcher.py').open('x', encoding='utf8', newline='\n') as stream:
+    stream.write(launcher_text)
+save('launcher-origin.json', dict(authority=rec(helper), derived=rec(WORK/'owned-launcher.py'),
+    derivation=rec(__file__), before_first_game_child=True,
+    changes='Existing clean owned initial-thread profile; separately qualified StackSampler plus fatal-resume check. Original timeout and job ownership retained; padded650..1550 polling, per-sample rawQPC and existing per-VI recorder enabled.'))
+
+tester = ROOT / 'build/quantized-psq-20261008/playtest1'
+launch_path=tester/'launch.json'
+launch=json.loads(launch_path.read_bytes())
+require(args.host is not None,'Explicit selected visible tester host'); host=args.host.resolve()
+module=args.module.resolve()
+require(rec(host)==preparation['selected_host'],'Exact certified2b9 host')
+require(rec(module)['sha256']=='541191776a1b8b7289606d98f34b294a62e71ec23a4ee9008547a1ba77ce89b2','Exact visible C2 module')
+require(module==(tester/'host/gGZLE01_recomp.dll').resolve(),'Exact existing tester C2 module')
+original_player={Path(row['path']).name:row for row in launch['originals']}
+for name in ('GZLE01.card','settings.ini','sram.bin','game.txt','disc.txt'):
+    require(rec(tester/'data'/name)['sha256']==original_player[name]['sha256'],'Tester initial player identity '+name)
+before=[rec(__file__),rec(sampler_path),rec(helper),rec(launch_path),rec(host),rec(module),rec(preparation_path),*preparation['inputs'],*preparation['outputs']]
+for path in sorted((tester/'host').rglob('*')):
+    require(not path.is_symlink(),'No source host links')
+    if path.is_file():
+        before.append(rec(path)); target=WORK/'host'/path.relative_to(tester/'host')
+        target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(host if path.relative_to(tester/'host').as_posix()=='BlueWake.exe' else path,target)
+require(rec(WORK/'host/BlueWake.exe')['sha256']==preparation['selected_host']['sha256'] and rec(WORK/'host/gGZLE01_recomp.dll')['sha256']==rec(module)['sha256'],'Actually copied selected images')
+for path in sorted((tester/'data').rglob('*')):
+    require(not path.is_symlink(),'No source player links')
+    if path.is_file():
+        before.append(rec(path));target=WORK/'data'/path.relative_to(tester/'data')
+        target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,target)
+initial_player={str(path.relative_to(WORK/'data')):rec(path)for path in sorted((WORK/'data').rglob('*'))if path.is_file()}
+initial_states={str(path.relative_to(WORK/'data/states'))for path in (WORK/'data/states').rglob('*')if path.is_file()}
+# Generic settings_load uses setenv(...,1). These actual lower-case Windows
+# preference keys contain no launch-variable keys and cannot replace the three
+# guarded BLUEWAKE_* variables. Windows apply_launch explicitly honors mouse0.
+settings_lines=(WORK/'data/settings.ini').read_text().splitlines()
+settings_keys=[line.split('=',1)[0].strip()for line in settings_lines if '='in line and not line.lstrip().startswith('#')]
+require(not any(key.upper().startswith(('BLUEWAKE_','DOL_','AURORA_','SDL_','LLVM_PROFILE_'))for key in settings_keys),'No generic settings environment override')
+cache_seed=args.cache_seed.resolve()
+require(cache_seed==(tester/'cache').resolve(),'Exact visible tester warmed cache source')
+require({p.name for p in cache_seed.iterdir()if p.is_file()}=={'pipeline_cache.db','dawn_cache.db'},'Closed two-DB drained tester cache')
+for path in sorted(cache_seed.iterdir()):
+    require(path.is_file()and not path.is_symlink(),'Cache files only');before.append(rec(path));shutil.copy2(path,WORK/'cache'/path.name)
+values=launch['environment'].copy()
+values.update(BLUEWAKE_DATA_DIR=str(WORK/'data'),BLUEWAKE_CARD_PATH=str(WORK/'data/GZLE01.card'),BLUEWAKE_SETTINGS=str(WORK/'data/settings.ini'),BLUEWAKE_SRAM=str(WORK/'data/sram.bin'),BLUEWAKE_STATE_DIR=str(WORK/'data/states'),DOL_AURORA_CACHE_DIR=str(WORK/'cache'),BLUEWAKE_LIVE_PAD='0',BLUEWAKE_MOUSE_CAMERA='0',BLUEWAKE_PERF_LOG='1',BLUEWAKE_MAX_RETRACES='1800')
+require(values['BLUEWAKE_RENDERER']=='aurora'and values['BLUEWAKE_WALL_PACE']=='1'and values['BLUEWAKE_SESSION_LOG']=='1','Actual visible audio/display/pacing route')
+require(all(name not in values for name in ('BLUEWAKE_OPTIONS','BLUEWAKE_CLOCK','BLUEWAKE_PRIORITY','BLUEWAKE_OVERLAP_OBSERVATION','DOL_AUDIO_NO_THROTTLE','DOL_AURORA_RENDER_SCALE','DOL_AURORA_WINDOW','DOL_AURORA_PRESENT_COPY')),'Preserve tester settings/defaults, real RTC/audio/presentation, automatic resolution')
+values.update(BLUEWAKE_PER_VI_TIMING='1',BLUEWAKE_OBSERVATION_FACTS='0',BLUEWAKE_LITERAL_OBSERVATION_FACTS='0',BLUEWAKE_LITERAL_OBSERVER_DOMAIN='0',BLUEWAKE_LITERAL_LIVE_CERTIFIED_V3='0')
+removed_diagnostic_inputs={}
+def diagnostic_trace_key(name):return name.endswith(('_TRACE','_WATCH'))or '_TRACE_'in name or '_WATCH_'in name
+require(not any(diagnostic_trace_key(name)for name in values)and 'BLUEWAKE_AUTOSAVE_TRACE'not in values,'Original visible route has no tracing/watch variables')
+require(not any(name.startswith(('BLUEWAKE_PAD_','BLUEWAKE_CAPTURE_','BLUEWAKE_PC_SAMPLE','BLUEWAKE_SAVE_'))for name in values),'No input injection/capture/state sampler')
+asset_receipt_pin=rec(args.assets_receipt)
+require(asset_receipt_pin==preparation['visible_assets'],'Exact visible asset routing/metadata source receipt')
+asset_inputs=json.loads(args.assets_receipt.read_bytes())
+require(asset_inputs['routing']=={name:values[name]for name in('BLUEWAKE_DISC','BLUEWAKE_DOL','BLUEWAKE_RELS_DIR')},'Exact original visible asset routing')
+def asset_metadata_preserved():
+    rels=Path(asset_inputs['routing']['BLUEWAKE_RELS_DIR'])
+    actual={str(path.resolve()).casefold()for path in rels.rglob('*')if path.is_file()}
+    expected={row['path'].casefold()for row in asset_inputs['files']if row['role']=='rel'}
+    return actual==expected and all(Path(row['path']).is_file()and not(Path(row['path']).stat().st_file_attributes&0x400)and Path(row['path']).stat().st_size==row['bytes']and Path(row['path']).stat().st_mtime_ns==row['mtime_ns']for row in asset_inputs['files'])
+require(asset_metadata_preserved(),'Original visible asset metadata unchanged before child')
+before.append(asset_receipt_pin)
+
+env = {k:v for k,v in os.environ.items() if not k.startswith(('BLUEWAKE_', 'DOL_', 'AURORA_', 'SDL_', 'LLVM_PROFILE_'))}
+env.update(values)
+require(all(env.get(name) != '1' for name in ('BLUEWAKE_NATIVE_INVENTORY_CAPTURE','BLUEWAKE_NATIVE_REWARD_SESSION')), 'Ordinary static module lifetime only')
+env.update(PATH=str(WORK / 'host')+';C:/Windows/System32', TEMP=str(WORK / 'temp'), TMP=str(WORK / 'temp'))
+row = dict(role='native-rip-'+args.case, argv=[str(WORK / 'host/BlueWake.exe'), '--module',
+           str(WORK / 'host/gGZLE01_recomp.dll'), '--disc', values['BLUEWAKE_DISC']])
+save('before.json', before)
+save('commands.json', dict(row=row, environment=values, host=rec(host),module=rec(module),sample='native-rip', route=args.route,asset_receipt=asset_receipt_pin,cache_seed=str(cache_seed),initial_player=initial_player,removed_inherited_diagnostics=removed_diagnostic_inputs,observer_traces_explicitly_disabled=True,preference_deviations={'BLUEWAKE_LIVE_PAD':'0','BLUEWAKE_MOUSE_CAMERA':'0'},
+     timing_scope='Visible C2 tester renderer/audio/FIFO, copied original tester settings/player/cache, real RTC, wall pacing. LIVE_PAD and MOUSE_CAMERA intentionally0; no input automation.1800VI bounded stack sampling excluded from timing. Actual framebuffer2560x1440scale2 required; no FPS speedup claim.'))
+error = None
+result = None
+checks = {}
+terminal_record=None;sampler_report=None
+try:
+    result = hidden_run(row, 0, env)
+    log = (WORK / 'logs/0.log').read_text(encoding='utf8',errors='strict')
+    checks = dict(exit_zero=result['exit_code'] == 0 and result['drained'],
+        exact_retraces=bool(re.search(r'\[clock\] summary .*\bretraces=1800\b', log)),
+        title_ready='[boot-milestone] title-ready ' in log,
+        title_stage='/res/Stage/sea_T/Stage.arc' in log,
+        no_file_load=not re.search(r'\[game-events\] Reset .*\breason=2\b', log),
+        visible_renderer='[host] renderer=aurora window='in log and '[noninteractive]'not in log,
+        visible_window='Window shown' in log,
+        visible_surface='surface format BGRA8Unorm, present mode Fifo'in log,
+        visible_framebuffer='Using framebuffer size 2560x1440 scale 2'in log,
+        visible_audio='[audio] output available'in log,
+        live_input_disabled='[pad] platform input initialized; live input disabled for headless backend'in log,
+        settings_options='(40 values written)'in log and '[options] none'not in log,
+        real_clock=bool(re.search(r'\[clock\] time base starts at [1-9]\d*',log)),
+        mouse_camera_disabled='[mouse] click the game to turn the camera with the mouse'not in log,
+        renderer_clean=bool(re.search(r'\[gx-core\] shutdown: submitted=\d+ rejected=0 failed=0\b', log)),
+        no_state_load='[state] loaded ' not in log,
+        no_capture=not (WORK / 'frame.png').exists(),
+        no_state_save={str(path.relative_to(WORK/'data/states'))for path in(WORK/'data/states').rglob('*')if path.is_file()}==initial_states,
+        diagnostic_only=True)
+    terminal_perf=re.findall(r'^\[perf-summary\] exit (.+)$',log,re.M)
+    terminal_creations=re.findall(r'\bpipelines_made=(\d+)\b',terminal_perf[0])if len(terminal_perf)==1 else[]
+    checks['unique_terminal_pipeline_counter']=len(terminal_creations)==1
+    checks['no_compiles']=terminal_creations==['0']
+    def terminal_summary(pattern):
+        found=re.findall(pattern,log,re.M);require(len(found)==1,'Unique full terminal summary')
+        fields=re.findall(r'(\w+)=(\d+)',found[0]);require(len({k for k,v in fields})==len(fields),'No duplicate terminal fields')
+        return dict(raw=found[0],fields={k:int(v)for k,v in fields})
+    gx=terminal_summary(r'^\[gx-core\] shutdown: (.+)$');clock=terminal_summary(r'^\[clock\] summary (.+)$')
+    stopped=re.findall(r'^\[run\] stopped: normal after (\d+) blocks at pc=(0x[0-9a-f]+)$',log,re.M)
+    require(len(stopped)==1,'Unique normal guest dispatch terminal')
+    terminal_record=dict(gx=gx,clock=clock,dispatch=dict(blocks=int(stopped[0][0]),pc=stopped[0][1]),pipelines_made=(int(terminal_creations[0])if len(terminal_creations)==1 else None))
+    checks['complete_clean_terminal_GX_clock_dispatch']=all(gx['fields'][k]==0 for k in('rejected','failed','vertex_decode_failures','payload_overrun'))and clock['fields']['retraces']==1800
+    checks['observer_traces_disabled']=not any(diagnostic_trace_key(name)for name in values)and 'BLUEWAKE_AUTOSAVE_TRACE'not in values
+    checks['no_extra_instrumentation']='[guest-checkpoint]'not in log and '[efb-inputs]'not in log and '[gx-selective]'not in log
+    per_vi_report=parse_per_vi(log)
+    save('per-vi.json',per_vi_report)
+    checks['complete_per_vi_owner_and_api']=per_vi_report['begin']['owner']==result['metrics']['owned_target_tid']
+    sampler_report=json.loads((WORK/'native-rip.json').read_bytes())
+    events=sampler_report['sample_events']
+    checks['per_sample_complete_qpc_events']=len(events)==sampler_report['samples'] and all(e['sequence']==i and e['qpc_before_suspend']<=e['qpc_after_resume'] for i,e in enumerate(events))
+    checks['same_qpc_clock_frequency']=sampler_report['qpc_frequency']==per_vi_report['begin']['qpc_frequency']
+    checks['covers_every_fixed_peak_window']=events[0]['qpc_after_resume']<per_vi_report['rows'][750]['qpc'] and events[-1]['qpc_before_suspend']>=per_vi_report['rows'][1500]['qpc']
+    checks['all_experimental_caps_off']=all(values[k]=='0' for k in ('BLUEWAKE_OBSERVATION_FACTS','BLUEWAKE_LITERAL_OBSERVATION_FACTS','BLUEWAKE_LITERAL_OBSERVER_DOMAIN','BLUEWAKE_LITERAL_LIVE_CERTIFIED_V3'))
+    start=result['metrics'].get('native_sampler_start_retrace',0);stop=result['metrics'].get('native_sampler_stop_retrace',0)
+    checks['owned_sampler_complete']=sampler_report['kind']=='DIAGNOSTIC_NATIVE_RIP_AND_IMMUTABLE_STACK_SNAPSHOTS_NOT_TIMING' and not sampler_report['fatal_owned_resume_failure'] and bool(sampler_report['stack_snapshots'])and sampler_report['interval_ms']==3 and sampler_report['samples']>0 and sampler_report['errors']==[]and sampler_report['stop_reason']=='requested'
+    checks['bounded_actual_sampler_window']=650<=start<750 and 1550<=stop<=1800
+    save('terminal-record.json',terminal_record)
+
+    checks['no_input_or_warp']=not any(n.startswith('BLUEWAKE_PAD_')for n in values) and 'BLUEWAKE_TEST_WARP'not in values
+    require(all(checks.values()), 'Native diagnostic route assertions')
+except BaseException as exc:
+    error = repr(exc)
+finally:
+    checks['inputs_preserved'] = all(rec(p['path'])['sha256'] == p['sha256'] for p in before)
+    checks['asset_metadata_preserved']=asset_metadata_preserved()
+    checks['frozen_profile_recipe_preserved'] = all(rec(item['path']) == item for item in preparation['inputs'] + preparation['outputs'])
+    save('result.json', dict(status='PASS' if error is None and all(checks.values()) else 'FAIL_PRESERVED',
+         row=result, checks=checks, error=error, timing_eligible=False,ordinary_profile=True,visible_tester_profile=True,observer_traces_disabled=True,terminal_record=terminal_record,native_sampler=(rec(WORK/'native-rip.json')if sampler_report is not None else None),initial_player=initial_player,asset_receipt=asset_receipt_pin,
+         sampler_limits='Owned per-RIP raw-QPC events and sparse immutable stacks from padded>=650 to>=1550 observed retraces; exact windows selected after drain using per-VI QPC. No live unwind, published guest-PC read, frame guesses or timing claim. Image/lifetime admission and offline unwind remain separate.'))
+print(json.dumps(dict(error=error, checks=checks)), flush=True)
+sys.exit(0 if error is None and all(checks.values()) else 1)

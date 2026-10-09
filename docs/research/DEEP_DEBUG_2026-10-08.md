@@ -83,6 +83,34 @@ are asynchronous pipe receipt times. The lowest sustained logged interval is
 VI939 through VI974 at 34.5 retraces per second; this is not displayed FPS.
 Exact peak-window RIP attribution cannot be recovered from this capture.
 
+A new root-owned focused capture now retains a raw QPC bracket for every RIP
+and enables the already qualified host's per-retrace recorder. It uses the
+same C2 module and tester settings/audio/FIFO/pacing, with copied writable data,
+live controller/mouse input disabled and experimental capabilities off. Other
+agents held source/tool work during capture. The process exits normally and
+drains; all 35 route, clock, capture and preservation checks pass. It records
+5,231 timestamped RIPs, 512 sparse immutable stack snapshots, 1,801 per-retrace
+rows and 1,025 calibration readings. Sampler and host QPC frequencies both
+equal 10 MHz; timer/capture errors and pipeline creation are zero. Raw capture,
+player data and binaries remain private. Sampling perturbs execution; this is
+not a performance comparison or a qualified speedup.
+
+The exact new source is archived under
+`docs/research/diagnostics/focused-intro-20261009/` with restore paths and hashes.
+Offline naming must select the accepted new host/PDB explicitly: the copied
+tester directory can contain an older PDB. Fixed and actual worst-window
+selection follows the retained QPC records, rather than asynchronous log times.
+
+Passive QPC alignment assigns 3,303 certain RIP observations to the fixed
+sustained VI831..1351 interval, with no samples straddling its endpoints.
+The owning thread consumes 11.546875 CPU seconds over 12.040652 elapsed seconds
+(95.90% busy). The actual longest elapsed 30-VI window within VI750..1500 is
+VI817..847: 0.750000 CPU seconds over 0.8032735 elapsed seconds (93.37% busy),
+with 216 certain RIPs. Per-VI intervals include catch-up, waits and sampling
+pauses and are not presented frames. Coarse CPU timer readings and unresolved
+calibration steps remain retained; no overhead is subtracted and no individual
+RIP receives exclusive CPU cost. Exact function naming is still pending.
+
 A later passive relink qualifies a C2 MAP: all 835 object inputs and their order,
 15 physical library providers and 852 reproduction members match the accepted
 five-TU C2 build. The entire DLL matches C2 except four COFF timestamp bytes.
@@ -1866,6 +1894,10 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `visible-c2-profile1/c2-map1/{source-preparation1,verification-source2,verification2/result}.json`
 - `visible-c2-profile1/ranking-map-preparation2.json`
 - `visible-c2-profile1/peak-window-feasibility1/result1.json`
+- `focused-peak-profile1/{preparation1,root-quiescence1}.json`
+- `focused-peak-profile1/title-focused-c2-1/{result,native-rip,per-vi}.json`
+- `focused-peak-profile1/analysis-source-preparation1.json`
+- `focused-peak-profile1/title-focused-c2-1/{compact-window-summary1,event-vi-assignment1}.json`
 - `line-map1/attempt1/{native-identity1,sampled-lines2,sampled-instructions1}.json`
 - `line-map2011/attempt2/{native-identity1,sampled-lines2,sampled-instructions1}.json`
 - `cursor-fprf1/source3/source-receipt.json`

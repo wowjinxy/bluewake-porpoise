@@ -1,0 +1,143 @@
+"""Source-only focused visible C2 profile successor; never imports Win32 code."""
+import ast
+import difflib
+import hashlib
+import json
+from pathlib import Path
+import shutil
+
+ROOT = Path(__file__).resolve().parents[3]
+OUT = Path(__file__).resolve().parent
+OLD = OUT.parent / 'visible-c2-profile1'
+STACK = OUT.parent / 'native-stacks1'
+
+
+def pin(path):
+    path = Path(path).resolve()
+    data = path.read_bytes()
+    return dict(path=str(path), bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+
+
+def replace(text, old, new):
+    assert text.count(old) == 1, old[:100]
+    return text.replace(old, new)
+
+
+def save_source(name, original, candidate):
+    ast.parse(candidate)
+    path = OUT / name
+    if path.exists():
+        assert path.read_text(encoding='utf8') == candidate
+    else:
+        path.write_text(candidate, encoding='utf8', newline='\n')
+    delta = list(difflib.ndiff(original.splitlines(True), candidate.splitlines(True)))
+    assert ''.join(difflib.restore(delta, 1)) == original
+    assert ''.join(difflib.restore(delta, 2)) == candidate
+    delta_path=OUT / (name + '.ndiff')
+    if delta_path.exists(): assert delta_path.read_text(encoding='utf8') == ''.join(delta)
+    else: delta_path.write_text(''.join(delta), encoding='utf8', newline='\n')
+    return [pin(path), pin(OUT / (name + '.ndiff'))]
+
+
+host_receipt_path = OUT.parent / 'observation-live-view1/certified-v3-host1/verification6/result.json'
+host_receipt = json.loads(host_receipt_path.read_bytes())
+assert pin(host_receipt_path)['sha256'] == '143d06daf81cd39e67052ac41acaa189936054732197a4cd1860f87dd34c6479'
+assert host_receipt['host']['sha256'] == '2b9bc61e97be6392b626d0a908df90f250c1174b2ec9a9e8cb5ffe6532379a54'
+map_proof_path = OLD / 'c2-map1/verification2/result.json'
+map_proof = json.loads(map_proof_path.read_bytes())
+assert pin(map_proof_path)['sha256'] == 'e9935fcbd22e45d50528f77cd4e84c0fd2125d2b147562bbbd345e0d82ab75d4'
+old_preparation = json.loads((OLD / 'preparation1.json').read_bytes())
+
+sampler_original = (STACK / 'stack_sampler.py').read_text(encoding='utf8')
+sampler = replace(sampler_original, 'class StackSampler(original.NativeSampler):', 'class TimestampStackSampler(original.NativeSampler):')
+sampler = replace(sampler, '        declare_capture_apis(self.k)', '''        declare_capture_apis(self.k)
+        self.k.QueryPerformanceCounter.argtypes = [ctypes.POINTER(ctypes.c_int64)]
+        self.k.QueryPerformanceCounter.restype = wintypes.BOOL
+        self.k.QueryPerformanceFrequency.argtypes = [ctypes.POINTER(ctypes.c_int64)]
+        self.k.QueryPerformanceFrequency.restype = wintypes.BOOL
+        frequency = ctypes.c_int64()
+        original._check(self.k.QueryPerformanceFrequency(ctypes.byref(frequency)), 'Read sampler QPF')
+        if frequency.value <= 0: raise RuntimeError('Positive sampler QPF required')
+        self.qpc_frequency = frequency.value
+        self.sample_events = []''')
+sampler = replace(sampler, '    def raise_if_fatal(self):', '''    def _qpc(self):
+        value = ctypes.c_int64()
+        original._check(self.k.QueryPerformanceCounter(ctypes.byref(value)), 'Read sampler raw QPC')
+        if value.value < 0: raise RuntimeError('Nonnegative sampler QPC required')
+        return value.value
+
+    def raise_if_fatal(self):''')
+sampler = replace(sampler, '                row = capture(self.k,self.hp,self.ht,self.pid,self.tid,stack_bytes=65536 if selected else 0)', '''                qpc_before = self._qpc()
+                row = capture(self.k,self.hp,self.ht,self.pid,self.tid,stack_bytes=65536 if selected else 0)
+                qpc_after = self._qpc()  # capture already resumed; no clock API added inside ownership scope.''')
+sampler = replace(sampler, '                self.counts[row[\'rip\']] += 1', '''                self.sample_events.append(dict(sequence=len(self.sample_events), rip=row['rip'],
+                    capture_started_ns=row['capture_started_ns'], capture_ended_ns=row['capture_ended_ns'],
+                    sample_perf_counter_ns=sample_ns, qpc_before_suspend=qpc_before,
+                    qpc_after_resume=qpc_after, thread_cycles_at_pre_capture_query=value.value,
+                    preceding_interval_cycles=delta, held_ns=row['held_ns'],
+                    module_snapshot_index=len(self.snapshots)-1))
+                self.counts[row['rip']] += 1''')
+sampler = replace(sampler, '        report.update(kind=', '''        report.update(qpc_frequency=self.qpc_frequency, sample_events=self.sample_events,
+            sampler_started_perf_counter_ns=self.started_ns, sampler_ended_perf_counter_ns=self.ended_ns,
+            event_semantics='Raw QPC bracket contains the captured RIP instant; timestamps and cumulative thread cycles are diagnostic, not exclusive time.')
+        report.update(kind=''')
+outputs = save_source('timestamp_sampler.py', sampler_original, sampler)
+capture_copy = OUT / 'snapshot_capture.py'
+if not capture_copy.exists(): shutil.copyfile(STACK / 'snapshot_capture.py', capture_copy)
+assert capture_copy.read_bytes() == (STACK / 'snapshot_capture.py').read_bytes()
+outputs.append(pin(capture_copy))
+parser_copy = OUT / 'per_vi_log.py'
+if not parser_copy.exists(): shutil.copyfile(OUT.parent / 'per-vi-protocol1/per_vi_log.py', parser_copy)
+assert parser_copy.read_bytes() == (OUT.parent / 'per-vi-protocol1/per_vi_log.py').read_bytes()
+outputs.append(pin(parser_copy))
+
+profile_original = (OLD / 'profile1.py').read_text(encoding='utf8')
+profile = replace(profile_original, '"""Bounded visible C2 tester diagnostic; copied player files, no desktop input automation."""',
+                  '"""Focused timestamped visible C2 diagnostic; no speed/ordinary performance claim."""')
+profile = replace(profile, 'from ctypes import wintypes', 'from ctypes import wintypes\nfrom per_vi_log import parse as parse_per_vi')
+profile = replace(profile, "SOURCE_ONLY_VISIBLE_C2_STACK_PROFILE_NOT_LAUNCHED", "SOURCE_ONLY_FOCUSED_VISIBLE_C2_TIMESTAMP_PROFILE_NOT_LAUNCHED")
+profile = replace(profile, "sampler_path = ROOT / 'build/deep-debug-20261008/native-stacks1/stack_sampler.py'", "sampler_path = OUT / 'timestamp_sampler.py'")
+profile = replace(profile, 'int(retraces[-1]) >= 750', 'int(retraces[-1]) >= 650')
+profile = replace(profile, 'sampler_module.StackSampler(hp,ht,pid,tid,interval_ms=3,duration_s=180)', 'sampler_module.TimestampStackSampler(hp,ht,pid,tid,interval_ms=3,duration_s=60,max_samples=20000)')
+profile = replace(profile, 'int(live_retraces[-1]) >= 1450', 'int(live_retraces[-1]) >= 1550')
+profile = replace(profile, "require(rec(host)['sha256']=='7c32e473d137900b684e15afbf40f515e0e1c77a3fbd0fbb959e6cec3efc589a','Exact original7c32 host')", "require(rec(host)==preparation['selected_host'],'Exact certified2b9 host')")
+profile = replace(profile, "require(host==(tester/'host/BlueWake.exe').resolve()and module==(tester/'host/gGZLE01_recomp.dll').resolve(),'Exact existing tester files')", "require(module==(tester/'host/gGZLE01_recomp.dll').resolve(),'Exact existing tester C2 module')")
+profile = replace(profile, "before.append(rec(path)); target=WORK/'host'/path.relative_to(tester/'host')\n        target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,target)", "before.append(rec(path)); target=WORK/'host'/path.relative_to(tester/'host')\n        target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(host if path.relative_to(tester/'host').as_posix()=='BlueWake.exe' else path,target)")
+profile = replace(profile, "for path in sorted((tester/'data').rglob('*')):", "require(rec(WORK/'host/BlueWake.exe')['sha256']==preparation['selected_host']['sha256'] and rec(WORK/'host/gGZLE01_recomp.dll')['sha256']==rec(module)['sha256'],'Actually copied selected images')\nfor path in sorted((tester/'data').rglob('*')):")
+profile = replace(profile, "removed_diagnostic_inputs={}", """values.update(BLUEWAKE_PER_VI_TIMING='1',BLUEWAKE_OBSERVATION_FACTS='0',BLUEWAKE_LITERAL_OBSERVATION_FACTS='0',BLUEWAKE_LITERAL_OBSERVER_DOMAIN='0',BLUEWAKE_LITERAL_LIVE_CERTIFIED_V3='0')
+removed_diagnostic_inputs={} """.rstrip())
+profile = replace(profile, "    sampler_report=json.loads((WORK/'native-rip.json').read_bytes())", """    per_vi_report=parse_per_vi(log)
+    save('per-vi.json',per_vi_report)
+    checks['complete_per_vi_owner_and_api']=per_vi_report['begin']['owner']==result['metrics']['owned_target_tid']
+    sampler_report=json.loads((WORK/'native-rip.json').read_bytes())
+    events=sampler_report['sample_events']
+    checks['per_sample_complete_qpc_events']=len(events)==sampler_report['samples'] and all(e['sequence']==i and e['qpc_before_suspend']<=e['qpc_after_resume'] for i,e in enumerate(events))
+    checks['same_qpc_clock_frequency']=sampler_report['qpc_frequency']==per_vi_report['begin']['qpc_frequency']
+    checks['covers_every_fixed_peak_window']=events[0]['qpc_after_resume']<per_vi_report['rows'][750]['qpc'] and events[-1]['qpc_before_suspend']>=per_vi_report['rows'][1500]['qpc']
+    checks['all_experimental_caps_off']=all(values[k]=='0' for k in ('BLUEWAKE_OBSERVATION_FACTS','BLUEWAKE_LITERAL_OBSERVATION_FACTS','BLUEWAKE_LITERAL_OBSERVER_DOMAIN','BLUEWAKE_LITERAL_LIVE_CERTIFIED_V3'))""")
+profile = replace(profile, " and '[per-vi]'not in log", '')
+profile = replace(profile, "750<=start<1450 and 1450<=stop<=1800", "650<=start<750 and 1550<=stop<=1800")
+profile = replace(profile, "Sampler plus fatal-resume check. Original timeout, job ownership and sampling windows retained.", "Sampler plus fatal-resume check. Original timeout and job ownership retained; padded650..1550 polling, per-sample rawQPC and existing per-VI recorder enabled.") if 'Sampler plus fatal-resume check. Original timeout, job ownership and sampling windows retained.' in profile else profile
+profile = profile.replace('Owned main-thread RIP frequencies and sparse immutable stack captures from >=750 to >=1450 retraces.', 'Owned per-RIP raw-QPC events and sparse immutable stacks from padded>=650 to>=1550 observed retraces; exact windows selected after drain using per-VI QPC.')
+outputs += save_source('profile1.py', profile_original, profile)
+
+inputs = [pin(path) for path in (Path(__file__), OLD/'profile1.py', OLD/'preparation1.json',
+           STACK/'stack_sampler.py', STACK/'snapshot_capture.py', host_receipt_path, map_proof_path,
+           OUT.parent/'per-vi-protocol1/per_vi_log.py',
+           OUT.parent/'per-vi-protocol1/source1/source-receipt.json',
+           OUT.parent/'observation-live-view1/certified-v3-source1/tree/runtime/host/src/per_vi_timing.h',
+           OLD/'visible-assets1.json', OLD/'symbolize_visible_map2.py')]
+record = dict(status='SOURCE_ONLY_FOCUSED_VISIBLE_C2_TIMESTAMP_PROFILE_NOT_LAUNCHED',
+              inputs=inputs, outputs=outputs, selected_host=host_receipt['host'],
+              selected_host_receipt=pin(host_receipt_path), selected_host_pdb=host_receipt['pdb'],
+              module=map_proof['accepted_module'], c2_map=map_proof['map'], c2_map_proof=pin(map_proof_path),
+              visible_assets=old_preparation['visible_assets'],
+              source_inverse=True, unchanged_capture_bytes=True,
+              fixed_windows=[[939,974],[831,1351]], actual_worst_30_vi_search_domain=[750,1500],
+              timeout=dict(owned_game_seconds=180,sampler_seconds=60,sampler_max_events=20000,join_seconds=10),
+              scope='Visible tester settings/2560x1440scale2/audio/realRTC/FIFO/wallpace;2b9+C2;capabilities0;timer1. No new host/module/build or launch. Diagnostic sampling changes timing; no performance claim.',
+              deferred='Root source review and explicit launch. Offline symbolizer may run only after owned game has drained.')
+destination=OUT/'preparation1.json'
+assert not destination.exists()
+destination.write_text(json.dumps(record,indent=2)+'\n',encoding='utf8')
+print(json.dumps(pin(destination)))

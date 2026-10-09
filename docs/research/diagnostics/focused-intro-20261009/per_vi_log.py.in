@@ -1,0 +1,109 @@
+"""Strict offline parser of the frozen private recorder, never a game launcher.
+
+Correlated rows define fixed VI intervals. Independent units remain runs/pairs.
+All raw rows/calibration are retained by callers; no selection or subtraction.
+"""
+import re
+
+PREFIX = '[per-vi] '
+ROW_FIELDS = {'index', 'retrace', 'tid', 'qpc', 'cpu_100ns', 'thread_cycles',
+              'block', 'guest_cycles', 'efb', 'api_ok'}
+BEGIN_FIELDS = {'version', 'capacity', 'rows', 'owner', 'qpc_frequency', 'cpu_unit_100ns',
+                'calibration_rows', 'qpc_min_positive', 'cpu_min_positive', 'cycles_min_positive',
+                'cpu_positive_step_observed', 'pipeline_snapshots', 'errors'}
+MONOTONIC = ('qpc', 'cpu_100ns', 'thread_cycles', 'block', 'guest_cycles', 'efb')
+PRIMARY = (750, 1500)
+SEGMENTS = tuple((start, start + 150) for start in range(750, 1500, 150))
+SECONDARY = ((1, 750), (1500, 1800))
+
+
+def require(value, message):
+    if not value:
+        raise RuntimeError(message)
+
+
+def fields(text, expected):
+    tokens = text.split(' ')
+    require(tokens and all(re.fullmatch(r'[a-z_][a-z0-9_]*=[0-9]+', token) for token in tokens), 'Exact integer timer fields')
+    values = [token.split('=', 1) for token in tokens]
+    require(len(values) == len(expected) and {k for k, v in values} == expected, 'Exact timer field set without duplicates')
+    result = {k: int(v) for k, v in values}
+    require(all(v < 1 << 64 for v in result.values()), 'Bounded unsigned64 timer fields')
+    return result
+
+
+def minimum_positive(values):
+    positive = [b - a for a, b in zip(values, values[1:]) if b > a]
+    return min(positive, default=0)
+
+
+def interval(parsed, start, end):
+    require(0 <= start < end <= 1800, 'Fixed bounded VI interval')
+    a, b = parsed['rows'][start], parsed['rows'][end]
+    values = {k: b[k] - a[k] for k in MONOTONIC}
+    require(all(v >= 0 for v in values.values()), 'Nonnegative cumulative interval')
+    return dict(start=start, end=end, vi_intervals=end - start,
+        metrics=dict(cpu_100ns=values['cpu_100ns'], cpu_seconds=values['cpu_100ns'] * 1e-7,
+                     qpc_ticks=values['qpc'], wall_seconds=values['qpc'] / parsed['begin']['qpc_frequency'],
+                     thread_cycles=values['thread_cycles']),
+        work=dict(blocks=values['block'], guest_cycles=values['guest_cycles'], efb_entries=values['efb']),
+        start_cursor={k: a[k] for k in ('block', 'guest_cycles', 'efb')},
+        end_cursor={k: b[k] for k in ('block', 'guest_cycles', 'efb')})
+
+
+def parse(text):
+    tagged = [line for line in text.splitlines() if line.startswith(PREFIX)]
+    require(len(tagged) == 1 + 1025 + 1801 + 1, 'Complete unique timer dump, no dropped/extra tagged records')
+    require(tagged[0].startswith(PREFIX + 'begin ') and tagged[-1].startswith(PREFIX + 'end '), 'One ordered timer begin/end')
+    begin = fields(tagged[0][len(PREFIX + 'begin '):], BEGIN_FIELDS)
+    require(begin['version'] == 1 and begin['capacity'] == begin['rows'] == 1801 and begin['calibration_rows'] == 1025,
+            'Frozen bounded timer ABI')
+    require(0 < begin['owner'] < 1 << 32 and begin['qpc_frequency'] > 0 and begin['cpu_unit_100ns'] == 1,
+            'Valid dispatch owner and timer units/frequency')
+    require(begin['errors'] == 0 and begin['pipeline_snapshots'] == 0, 'No timer failures; optional pipeline snapshots deliberately absent')
+    calibration = []; rows = []
+    for kind, count, target, selected in (
+            ('calibration', 1025, calibration, tagged[1:1026]),
+            ('row', 1801, rows, tagged[1026:-1])):
+        require(len(selected) == count, 'Every bounded timer row retained')
+        for index, line in enumerate(selected):
+            lead = PREFIX + kind + ' '
+            require(line.startswith(lead), 'Exact timer record order/type')
+            row = fields(line[len(lead):], ROW_FIELDS)
+            require(row['index'] == index and row['tid'] == begin['owner'] and row['api_ok'] == 7,
+                    'Sequential owner/API-valid record')
+            require(row['retrace'] == (index if kind == 'row' else 0), 'Exact retrace sequence/calibration distinction')
+            require(row['efb'] <= 1134, 'Bounded existing replay cursor')
+            if kind == 'calibration':
+                require(row['block'] == row['guest_cycles'] == row['efb'] == 0, 'Calibration is pre-guest timer-only data')
+            if index:
+                require(all(row[k] >= target[-1][k] for k in MONOTONIC), 'Monotonic raw counter/cursor stream')
+            target.append(row)
+    require(rows[0]['block'] == rows[0]['efb'] == 0, 'Exact pre-dispatch initial work cursors')
+    require(all(rows[0][k] >= calibration[-1][k] for k in ('qpc', 'cpu_100ns', 'thread_cycles')), 'Calibration precedes route snapshot')
+    steps = dict(qpc_min_positive=minimum_positive([r['qpc'] for r in calibration]),
+                 cpu_min_positive=minimum_positive([r['cpu_100ns'] for r in calibration]),
+                 cycles_min_positive=minimum_positive([r['thread_cycles'] for r in calibration]))
+    require(all(begin[k] == value for k, value in steps.items()), 'Reported calibration steps equal all retained raw readings')
+    require(begin['cpu_positive_step_observed'] == int(steps['cpu_min_positive'] != 0), 'Zero CPU step means unresolved, never zero cost')
+    end = fields(tagged[-1][len(PREFIX + 'end '):], {'version', 'rows', 'errors', 'complete'})
+    require(end == dict(version=1, rows=1801, errors=0, complete=1), 'One complete error-free timer terminal')
+    result = dict(begin=begin, calibration=calibration, rows=rows, end=end,
+        raw_rows_are_independent_samples=False,
+        calibration_cpu_step_unresolved=not bool(begin['cpu_positive_step_observed']),
+        cpu_units_are_not_resolution=True, no_overhead_subtraction=True)
+    result['primary'] = interval(result, *PRIMARY)
+    result['segments'] = [interval(result, *bounds) for bounds in SEGMENTS]
+    result['secondary'] = [interval(result, *bounds) for bounds in SECONDARY]
+    require(result['primary']['metrics']['cpu_100ns'] > 0 and result['primary']['metrics']['qpc_ticks'] > 0,
+            'Long preregistered primary interval resolves positive CPU and wall cost')
+    require(result['primary']['work']['blocks'] > 0 and result['primary']['work']['guest_cycles'] > 0,
+            'Primary interval contains actual guest work')
+    cpu = calibration[-1]['cpu_100ns'] - calibration[0]['cpu_100ns']
+    qpc = calibration[-1]['qpc'] - calibration[0]['qpc']
+    cycles = calibration[-1]['thread_cycles'] - calibration[0]['thread_cycles']
+    result['calibration_span'] = dict(reading_intervals=1024, cpu_100ns=cpu,
+        cpu_seconds=cpu * 1e-7, qpc_ticks=qpc, wall_seconds=qpc / begin['qpc_frequency'], thread_cycles=cycles,
+        scope='Repeated snapshot API/loop component before guest; not a full per-VI hook cost or timer-resolution guarantee',
+        no_cost_subtracted=True)
+    return result

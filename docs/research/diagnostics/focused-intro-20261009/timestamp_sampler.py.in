@@ -1,0 +1,145 @@
+"""Separate diagnostic sampler adapter; preserves the original sampler file.
+
+Import performs no Win32 calls. Explicit instantiation/start requires review.
+Offline unwind is a separate invocation after stop and target resume/drain.
+"""
+import base64
+import ctypes
+from ctypes import wintypes
+import hashlib
+import importlib.util
+from pathlib import Path
+import time
+
+from snapshot_capture import capture, CaptureBudget, declare_capture_apis, ResumeFailure
+
+ORIGINAL_PATH = Path(__file__).resolve().parents[2]/'cpu-hotspots-20261007'/'sampler.py'
+ORIGINAL_SHA = '2e9ca98b0143952b9638c4d763284a09b85d48c372ba539631d3000c6b26d90d'
+if hashlib.sha256(ORIGINAL_PATH.read_bytes()).hexdigest() != ORIGINAL_SHA:
+    raise RuntimeError('Exact preserved RIP sampler authority required')
+spec = importlib.util.spec_from_file_location('pinned_owned_rip_sampler', ORIGINAL_PATH)
+original = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(original)
+
+
+class TimestampStackSampler(original.NativeSampler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        declare_capture_apis(self.k)
+        self.k.QueryPerformanceCounter.argtypes = [ctypes.POINTER(ctypes.c_int64)]
+        self.k.QueryPerformanceCounter.restype = wintypes.BOOL
+        self.k.QueryPerformanceFrequency.argtypes = [ctypes.POINTER(ctypes.c_int64)]
+        self.k.QueryPerformanceFrequency.restype = wintypes.BOOL
+        frequency = ctypes.c_int64()
+        original._check(self.k.QueryPerformanceFrequency(ctypes.byref(frequency)), 'Read sampler QPF')
+        if frequency.value <= 0: raise RuntimeError('Positive sampler QPF required')
+        self.qpc_frequency = frequency.value
+        self.sample_events = []
+        self.stack_budget = CaptureBudget()
+        self.stack_snapshots = []
+        self.fatal_owned_resume_failure = False
+
+    def _qpc(self):
+        value = ctypes.c_int64()
+        original._check(self.k.QueryPerformanceCounter(ctypes.byref(value)), 'Read sampler raw QPC')
+        if value.value < 0: raise RuntimeError('Nonnegative sampler QPC required')
+        return value.value
+
+    def raise_if_fatal(self):
+        """Owner polls this with its process wait (<=250ms), then drains own job."""
+        if self.fatal_owned_resume_failure or self.stop_reason == 'sampler_error':
+            raise RuntimeError('Fatal owned sampler failure: terminate/drain the caller-owned job immediately')
+
+    def _run(self):
+        self.started_ns = time.perf_counter_ns()
+        last_sample_ns = self.started_ns
+        deadline = self.started_ns + int(self.duration_s*1e9)
+        handles = (wintypes.HANDLE*3)(self.stop_event, self.hp, self.timer)
+        previous_cycles = None
+        next_modules_ns = 0
+        self.stop_reason = 'duration'
+        try:
+            while self.attempts < self.max_samples:
+                now = time.perf_counter_ns()
+                if now >= deadline:
+                    break
+                if self.k.WaitForSingleObject(self.hp, 0) == 0:
+                    self.stop_reason = 'process_exited'
+                    break
+                if now >= next_modules_ns:
+                    self._modules()  # Outside every suspend ownership scope.
+                    next_modules_ns = now+1_000_000_000
+                due = ctypes.c_int64(-max(1,min(int(self.interval_ms*10000),(deadline-now)//100)))
+                original._check(self.k.SetWaitableTimer(self.timer,ctypes.byref(due),0,None,None,False),'Arm sampler timer')
+                wait = self.k.WaitForMultipleObjects(3,handles,False,1000)
+                if wait in (0,1):
+                    self.stop_reason = 'requested' if wait == 0 else 'process_exited'
+                    break
+                original._check(wait == 2,'Wait for bounded sampler timer')
+                self.attempts += 1
+                value = ctypes.c_uint64()
+                if not self.k.QueryThreadCycleTime(self.ht,ctypes.byref(value)):
+                    if self.k.WaitForSingleObject(self.hp,0) == 0:
+                        self.stop_reason = 'process_exited'
+                        break
+                    original._check(False,'Query owned thread cycles')
+                delta = 0 if previous_cycles is None else max(0,value.value-previous_cycles)
+                unchanged = previous_cycles is not None and delta == 0
+                previous_cycles = value.value
+                if self.skip_idle and unchanged:
+                    self.idle_skips += 1
+                    continue
+                selected = self.stack_budget.select()
+                qpc_before = self._qpc()
+                row = capture(self.k,self.hp,self.ht,self.pid,self.tid,stack_bytes=65536 if selected else 0)
+                qpc_after = self._qpc()  # capture already resumed; no clock API added inside ownership scope.
+                # capture has already resumed; encoding/allocation/publication follows.
+                self.suspend_total_ns += row['held_ns']
+                self.suspend_max_ns = max(self.suspend_max_ns,row['held_ns'])
+                if selected:
+                    self.stack_budget.note(row)
+                    context, stack = row.pop('context'),row.pop('stack')
+                    self.stack_snapshots.append(dict(**row,context_b64=base64.b64encode(context).decode('ascii'),
+                        stack_b64=base64.b64encode(stack).decode('ascii'),
+                        elapsed_ns=time.perf_counter_ns()-self.started_ns,
+                        preceding_interval_cycles=delta,module_snapshot_index=len(self.snapshots)-1,
+                        mapping_status='captured_inventory_only_requires_separate_lifetime_and_image_admission'))
+                if row['reason'] == 'already_suspended':
+                    self.already_suspended += 1
+                    continue
+                if row['status'] != 'snapshot':
+                    if self.k.WaitForSingleObject(self.hp,0) == 0:
+                        self.stop_reason = 'process_exited'
+                        break
+                    raise RuntimeError('Owned snapshot failed after resume: '+str(row['reason']))
+                sample_ns = time.perf_counter_ns()
+                self.max_gap_ns = max(self.max_gap_ns,sample_ns-last_sample_ns)
+                last_sample_ns = sample_ns
+                self.sample_events.append(dict(sequence=len(self.sample_events), rip=row['rip'],
+                    capture_started_ns=row['capture_started_ns'], capture_ended_ns=row['capture_ended_ns'],
+                    sample_perf_counter_ns=sample_ns, qpc_before_suspend=qpc_before,
+                    qpc_after_resume=qpc_after, thread_cycles_at_pre_capture_query=value.value,
+                    preceding_interval_cycles=delta, held_ns=row['held_ns'],
+                    module_snapshot_index=len(self.snapshots)-1))
+                self.counts[row['rip']] += 1
+                self.cycles[row['rip']] += delta
+            else:
+                self.stop_reason = 'sample_cap'
+        except BaseException as exc:
+            self.fatal_owned_resume_failure = isinstance(exc, ResumeFailure)
+            self.stop_reason = 'sampler_error'
+            self.errors.append(dict(operation='snapshot_sample',error=repr(exc)))
+        finally:
+            self.ended_ns = time.perf_counter_ns()
+
+    def stop(self, join_timeout_s=10):
+        report = super().stop(join_timeout_s)
+        report.update(qpc_frequency=self.qpc_frequency, sample_events=self.sample_events,
+            sampler_started_perf_counter_ns=self.started_ns, sampler_ended_perf_counter_ns=self.ended_ns,
+            event_semantics='Raw QPC bracket contains the captured RIP instant; timestamps and cumulative thread cycles are diagnostic, not exclusive time.')
+        report.update(kind='DIAGNOSTIC_NATIVE_RIP_AND_IMMUTABLE_STACK_SNAPSHOTS_NOT_TIMING',
+            stack_snapshots=self.stack_snapshots,stack_selection='Every tenth eligible nonidle RIP attempt; at most512 snapshots',
+            stack_capture_stopped_after_pause_limit=self.stack_budget.stopped,
+            fatal_owned_resume_failure=self.fatal_owned_resume_failure,
+            limits='Raw RIP frequencies and sparse immutable physical stack snapshots only. No exclusive time, inline/tail frames, or guest ancestry. Module inventory is not proof against unload/base reuse; offline image lifetime admission is separate. Suspend duration includes the SuspendThread call through ResumeThread and is observed, not a hard OS latency guarantee.')
+        return report

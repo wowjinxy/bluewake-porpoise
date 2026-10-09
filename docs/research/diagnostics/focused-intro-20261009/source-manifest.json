@@ -1,0 +1,41 @@
+{
+  "source_root": "build/deep-debug-20261008/focused-peak-profile1",
+  "files": [
+    {
+      "template": "prepare2.py.in",
+      "restore_name": "prepare2.py",
+      "sha256": "20d2855bcaadcb60c18140f606d844a97d839d2a6f5f9b61c3e15caea82e00a9",
+      "bytes": 11828
+    },
+    {
+      "template": "profile1.py.in",
+      "restore_name": "profile1.py",
+      "sha256": "73d5447679633f48bb2e286721d5efa9c037cf5bd1ef890c78e1d0dc54c3ab82",
+      "bytes": 21631
+    },
+    {
+      "template": "timestamp_sampler.py.in",
+      "restore_name": "timestamp_sampler.py",
+      "sha256": "7db354a525f3fcd52fe93fc0d4f39a7439e35f4b77a85580832cbf72e4491fa0",
+      "bytes": 8489
+    },
+    {
+      "template": "snapshot_capture.py.in",
+      "restore_name": "snapshot_capture.py",
+      "sha256": "58ae31a60ec2b36f6fbb3e4175d3228e3ae4da739086d7bd43a52b2f963f1167",
+      "bytes": 7841
+    },
+    {
+      "template": "per_vi_log.py.in",
+      "restore_name": "per_vi_log.py",
+      "sha256": "fa8770ce2029f08492bddadebd39b22764de68649d92b074c8ad177977fdd265",
+      "bytes": 6935
+    },
+    {
+      "template": "analyse_windows1.py.in",
+      "restore_name": "analyse_windows1.py",
+      "sha256": "23f56c3fa4b09765b120820da8771b4b73cb81cb6085e0177c1b7c9f6584d353",
+      "bytes": 7713
+    }
+  ]
+}
