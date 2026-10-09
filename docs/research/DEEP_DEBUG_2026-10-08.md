@@ -333,8 +333,25 @@ and cycles -2.95%, while its CPU/wall pairs are -9.93%/-10.94% and
 variation is not identified. Preserve every sample. The earlier positive
 observer result remains unreplicated, with no confirmed total speed gain.
 **Keep the candidate private and inactive; do not repeat runs merely to obtain
-a pass or promote the favorable average.** A preregistered dispatch-thread timing
-protocol and fixed route segments are being investigated separately.
+a pass or promote the favorable average.**
+
+The subsequent preregistered eight-run dispatch-thread experiment also
+**fails the gain gate**. It used A-H-H-A then H-A-A-H, the fixed VI 750–1500
+window and all five fixed 150-VI segments. The common timer host first matched
+all six complete states and full P6 between A/H; its A checkpoints and image
+also matched the earlier original host. All eight timing runs retained zero
+pipeline creations, exact replay consumption, terminal GX/clock/dispatch and
+identical segment work plus absolute start/end cursors.
+
+Primary mean dispatch CPU is 15.902344 seconds for A and 15.941406 for H:
+**+0.25% CPU, +0.24% wall and +0.16% thread cycles**. CPU pair changes are
++0.80%, -1.09%, +2.90%, -1.66%; corresponding wall changes are +0.90%, -1.17%,
++3.39%, -2.20%. Whole-process secondary changes are -0.20% CPU and +0.05%
+wall. The raw calibration remains retained; unresolved CPU calibration steps
+are not interpreted as zero timer cost, and no overhead was subtracted.
+These results provide no repeatable benefit for H, including within the
+predeclared crowded-scene window. Keep it inactive; no further block is
+authorized to rescue this experiment.
 
 ### Floating-point helper pilot and pipeline accounting
 
@@ -425,8 +442,11 @@ matrix archive, the original PE surface, and no profiling runtime. Emitted
 code changed substantially. The first chunk's text grew from 709,841 to
 1,006,344 bytes while static call sites fell from 9,136 to 8,368; the second
 grew from 679,971 to 737,287 bytes with calls falling from 7,888 to 7,859.
-These are static code-generation results. Native correctness and repeatable
-speed remain unqualified, and the pilot has not expanded to more chunks.
+These are static code-generation results. The final profile-use module then
+matched all six complete states and exact P6 against A on the original
+physical-EFB host, with complete replay consumption and zero pipeline
+creations. Repeatable speed remains unqualified, and the pilot has not
+expanded to more chunks.
 
 A separate, preregistered timing experiment records cumulative wall time,
 dispatch-thread CPU time and thread cycles at fixed VI boundaries. It uses one
@@ -435,7 +455,9 @@ is VI 750 through 1500, with five fixed 150-VI segments and eight counterbalance
 runs (A-H-H-A, then H-A-A-H). State, pixel and workload gates remain mandatory.
 This will distinguish steady dispatch cost from startup and renderer-worker
 process cost; it cannot remove scheduling noise or turn VI intervals into
-displayed FPS. No results from this new experiment are available yet.
+displayed FPS. Its A/H result above failed the gain gate. A separate
+profile-use comparison preregisters A-P-P-A then P-A-A-P with the same fixed
+windows and gates; its observer capabilities are disabled in both arms.
 
 ## Fresh GX-worker findings
 
@@ -533,6 +555,12 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `per-vi-protocol1/PROTOCOL1.md`
 - `per-vi-protocol1/source1/source-receipt.json`
 - `per-vi-protocol1/fixture-attempt4/result.json`
+- `per-vi-protocol1/host1/verification5/result.json`
+- `per-vi-protocol1/native-preparation3.json`
+- `per-vi-protocol1/{correctness-batch1,controlled-batch1}.json`
+- `per-vi-protocol1/controlled-input1/per-vi-eight-run1.json`
+- `pgo-use-native1/{correctness-batch1,native-efb1/pgo-use-input-parity1}.json`
+- `pgo-use-per-vi1/{PROTOCOL1.md,preparation1.json}`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not
