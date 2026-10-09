@@ -556,6 +556,24 @@ The other CPU pairs are -10.38%, -0.94%, -2.25%. Thus the paired gain rule fails
 independently of the pipeline failure. These failed-gate means do not qualify a
 speedup; unresolved CPU calibration remains unresolved, with no subtraction.
 
+### Clean forced-inline comparison
+
+The separately preregistered clean A/G42 comparison has also finished. Fresh
+correctness on the same timer host passes six complete state checkpoints and
+full P6 pixels. All eight timed runs pass the runtime gates, including zero
+pipeline completions, exact 1,134-entry replay consumption, identical primary
+and five-segment work, absolute endpoint cursors and terminal GX/clock/dispatch
+totals. Both runtime trace flags are zero and the presence-based autosave trace
+key is absent.
+
+Independent decoding reproduces mean changes of -0.37% dispatch-thread CPU,
+-0.63% wall and -0.54% cycles. Three pairs regress CPU (+1.79%, +1.88%, +3.60%)
+and wall (+1.51%, +1.33%, +3.18%); the fourth improves CPU -7.55% and wall
+-7.37%. The paired-sign rule and the one-percent mean rule both fail. This
+candidate remains inactive, with no additional block or changed window to
+rescue it. Zero CPU calibration spans remain unresolved. Removing static
+helper calls did not produce a repeatable gain in this clean workload.
+
 ### Register-coalescing build-cost tradeoff
 
 A new single-chunk pilot changes only the Clang register-coalescing cap from
@@ -687,6 +705,9 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `pgo-clean-training2/{source-validation1,profile-equivalence1}.json`
 - `pgo-clean-training2/training3/{training-batch1,clean-training-parity1,profile-census1}.json`
 - `pgo-clean-per-vi2/{preparation1,correctness-batch1,controlled-batch1,independent-audit2}.json`
+- `fp-inline-clean-per-vi1/{preparation1,source-validation1,peer-source-review1}.json`
+- `fp-inline-clean-per-vi1/{correctness-batch1,controlled-batch1,independent-audit1}.json`
+- `fp-inline-clean-per-vi1/controlled-input1/fp-inline-clean-per-vi-eight-run1.json`
 - `coalescer-cap1/{source-preparation1,attempt1/result,attempt1/codegen1}.json`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
