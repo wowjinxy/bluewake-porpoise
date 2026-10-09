@@ -632,6 +632,62 @@ retained. This confirms a distinct common-path mechanism, without a module,
 runtime or speed qualification. Full consumer selection uses the clean profile
 and remains separate from the earlier traced selection.
 
+## Clean observer-domain comparison
+
+The existing total H module was compared against original A on the common
+per-VI host with tracing disabled. Fresh six-checkpoint CPU/MEM1/MEM2/ordered
+alias hashes and full P6 pixels match, with the expected off/on capability
+registrations and 1,134 controlled EFB inputs. A source-only comparator error
+that initially demanded both arms use the off route was caught before launch;
+the frozen successor tests the actual off/on routes and retains that failure.
+
+The eight fixed-order runs have descriptive mean changes of -2.60% CPU,
+-2.92% wall and -2.80% cycles. The third pair increases CPU 1.92% and wall
+1.13%, failing the all-pairs rule. A source search also overlapped the first
+control run: available clock readings bound the search to approximately
+05:28:45-05:29:01 UTC, rather than establishing exact child start/end times.
+That self-generated contention is an independent measurement limitation.
+The block is retained unchanged, with no extra runs or changed window and
+no accepted controlled-gain claim even if its numeric rule had passed.
+
+## Narrow arithmetic and backend feasibility
+
+The quaternion source experiment keeps its existing bounded finite-input,
+alias, journal and whole-cycle guards, all rounding boundaries, registers,
+stores and guest PCs. It proposes removing intermediate unobservable FPRF
+classification and committing the final classification once. Existing A/G42
+caller objects show that forced inlining retained finite/NaN/NI branches and
+per-operation classification, so this is a separate mechanism. The original
+multiply helper already combines FPSCR changes into one store; a duplicate
+store is not the opportunity. Quaternion's dynamic share is unknown.
+
+Peer source review caught an edge before any fixture compile: classifying a
+rounded single after rereading its widened FPR can change subnormal behavior
+under host DAZ. The failed draft is retained; its successor must retain and
+classify the final rounded single directly. Whole-TU differential fixtures,
+including rounding/FTZ/DAZ and an explicit reread-FPR mutant, remain required.
+A separate native_math include experiment targets its existing ps_sum0 calls;
+arbitrary carried-lane NaN/Inf semantics require independent qualification.
+Neither source draft is a speed or gameplay result.
+
+Before fixture execution, root review also exposed a fixed-memory mismatch:
+the canonical fixed resolver can access the global MEM1 while a draft fixture
+compares separate private buffers. That can make two versions agree on the
+wrong inputs. The unexecuted draft is retained; generic and fixed profiles
+must compare the memory each actually uses and bind their canonical runtime,
+compiler and archive to the recorded authorities before compilation.
+
+A bounded audit of the local LLVM backend found real SSA register promotion,
+but also compatibility gaps: ordered external aliases, the host's native-region
+query, the C backend's observation suffix/deadline contract, fixed RAM layout,
+journaling and complete state publication are not yet qualified together.
+Historical patch text does not establish that those changes exist in the
+current backend. Standard local toolchain paths did not contain a compatible
+LLVM C++ development SDK. No SDK provisioning, backend activation or game
+compile was performed. Any future standalone leaf pilot must establish those
+contracts before replacing original game code; it is not a prerequisite for
+the current port work or a predicted large gain.
+
 ## Inactive native-entry reuse
 
 A source census of the older item 17 and 18 drafts matches every selected
@@ -779,6 +835,10 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `event-negative1/host1/attempt3/{result,codegen1/result}.json`
 - `gpr-split1/{source1/source-receipt,fixture-attempt1/result}.json`
 - `gpr-split1/pilot-attempt1/{result,codegen1}.json`
+- `h-clean-per-vi1/{preparation2,source-validation2,correctness-batch1,controlled-batch1}.json`
+- `h-clean-per-vi1/native-efb1/h-clean-per-vi-input-parity1.json`
+- `llvm-backend-feasibility1.md`
+- `quaternion-local1/{DESIGN2.md,existing-caller1.json}`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`

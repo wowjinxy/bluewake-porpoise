@@ -1,0 +1,29 @@
+--- a/runtime/host/src/game_events.c
++++ b/runtime/host/src/game_events.c
+@@ -521,13 +521,25 @@
+ 
+ bool bluewake_game_events_observes(uint32_t address) {
+     if (g_cpu == NULL || g_mask == 0) return false;
++    /* A conservative superset of every static entry and live pending return.
++     * Misses are impossible observer addresses; hits retain the exact checks.
++     * Pending cancellation may leave bits set, so no verdict is cached. */
++    static const uint64_t kEntryBuckets[4] = {
++        UINT64_C(0x0000000400000800),
++        UINT64_C(0x0000000000080000),
++        UINT64_C(0x0008000000000000),
++        UINT64_C(0x0008000000200000)
++    };
++    const unsigned bucket = return_bucket(address);
++    const uint64_t bit = UINT64_C(1) << (bucket & 63u);
++    if (!((kEntryBuckets[bucket >> 6] | g_pending_return_buckets[bucket >> 6]) & bit))
++        return false;
+     if ((address == kExecuteMethod && (g_mask & BW_GAME_EVENT_MASK(BW_GAME_EVENT_PLAYER_UPDATED))) ||
+         (item_entry(address) && (g_mask & BW_GAME_EVENT_MASK(BW_GAME_EVENT_ITEM_AWARDED))) ||
+         (address == kMemoryToCard && (g_mask & BW_GAME_EVENT_MASK(BW_GAME_EVENT_SAVE_SERIALIZED))) ||
+         (address == kSaveSync && (g_mask & BW_GAME_EVENT_MASK(BW_GAME_EVENT_SAVE_COMPLETED))) ||
+         address == kCardToMemory)
+         return true;
+-    const unsigned bucket = return_bucket(address);
+     if (!(g_pending_return_buckets[bucket >> 6] & (UINT64_C(1) << (bucket & 63u))))
+         return false;
+     for (unsigned i = 0; i < kPendingCalls; ++i)
