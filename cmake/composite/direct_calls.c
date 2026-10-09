@@ -1,5 +1,6 @@
 /* The state behind direct calls between chunks (direct_calls.h). */
 #include "direct_calls.h"
+#include "observation_facts.h"
 
 #if defined(_WIN32)
 #define BW_DIRECT_EXPORT __declspec(dllexport)
@@ -21,6 +22,8 @@ const u32* bw_host_pi_cause = &k_zero;
 const u32* bw_host_pi_mask = &k_zero;
 BwHostCanSkipFn bw_host_can_skip;
 void* bw_host_can_skip_user;
+BwHostObservationFactsFn bw_host_observation_facts;
+void* bw_host_observation_facts_user;
 BwHealingReturnCanContinueFn bw_healing_return_can_continue;
 void* bw_healing_return_user;
 
@@ -67,6 +70,50 @@ static void edge_watch_build(void) {
 }
 #endif
 
+static void observation_facts_revoke(void) {
+    bw_host_observation_facts = NULL;
+    bw_host_observation_facts_user = NULL;
+}
+
+BW_DIRECT_EXPORT unsigned bluewake_composite_observation_facts_v1(
+    u32 cpu_abi, u32 cpu_size, const u32* canonical_keys, u32 key_count,
+    BwHostObservationFactsFn callback, void* user) {
+    /* Failed or removed ownership must not leave a previous certificate live. */
+    observation_facts_revoke();
+#ifdef BLUEWAKE_EDGE_FILTER
+    if (cpu_abi != GXRUNTIME_CPU_ABI_VERSION || cpu_size != sizeof(CPUState) ||
+        canonical_keys == NULL || key_count != BW_OBSERVATION_STATIC_KEY_COUNT_V1 ||
+        callback == NULL || !bw_direct_enabled || !bw_edge_filter_enabled ||
+        !bw_edge_watch_ready)
+        return 0u;
+    for (u32 i = 0; i < key_count; ++i) {
+        const u32 key = canonical_keys[i];
+        if (key == 0u || (key & 0x40000000u) != 0u ||
+            (i != 0u && key <= canonical_keys[i - 1u]))
+            return 0u;
+        u32 slot = (key * 0x9E3779B1u) >> 20;
+        bool found = false;
+        for (u32 probes = 0; probes < BW_EDGE_WATCH_SLOTS; ++probes) {
+            const u32 entry = bw_edge_watch_table[slot];
+            if (entry == key) { found = true; break; }
+            if (entry == 0u) break;
+            slot = (slot + 1u) & (BW_EDGE_WATCH_SLOTS - 1u);
+        }
+        /* !bw_edge_unwatched(key) is insufficient: out-of-code keys also
+         * reject, without proving their linked mirrors are watched. */
+        if (!found)
+            return 0u;
+    }
+    bw_host_observation_facts_user = user;
+    bw_host_observation_facts = callback;
+    return BW_OBSERVATION_FACTS_V1;
+#else
+    (void)cpu_abi; (void)cpu_size; (void)canonical_keys; (void)key_count;
+    (void)callback; (void)user;
+    return 0u;
+#endif
+}
+
 /* The dispatcher's own lookup (module_export.c): the chunk that runs a guest
  * address, with the mods' variants and the native entries it resolves. */
 BwChunkFn bw_find_chunk(u32 address);
@@ -100,6 +147,7 @@ BW_DIRECT_EXPORT int bluewake_composite_edge_filter(bool enabled) {
     }
 #endif
     (void)enabled;
+    observation_facts_revoke();
     bw_edge_filter_enabled = false;
     return 0;
 }
@@ -113,6 +161,7 @@ BW_DIRECT_EXPORT int bluewake_composite_direct_calls(bool enabled, const bool* s
     /* The donor handshake cannot describe BlueWake's extra host observations. */
     (void)enabled; (void)sources_dirty; (void)decrementer_pending;
     (void)pi_cause; (void)pi_mask;
+    observation_facts_revoke();
     bw_direct_enabled = false;
     bw_edge_filter_enabled = false;
     bw_host_can_skip = NULL;
@@ -123,6 +172,8 @@ BW_DIRECT_EXPORT int bluewake_composite_direct_calls(bool enabled, const bool* s
 BW_DIRECT_EXPORT int bluewake_composite_direct_calls_v2(
     bool enabled, const bool* sources_dirty, const bool* decrementer_pending,
     const u32* pi_cause, const u32* pi_mask, BwHostCanSkipFn can_skip, void* user) {
+    /* Every change of the legacy flag/callback owner needs a fresh proof. */
+    observation_facts_revoke();
     if (!enabled || sources_dirty == NULL || decrementer_pending == NULL || pi_cause == NULL ||
         pi_mask == NULL || can_skip == NULL) {
         bw_direct_enabled = false;

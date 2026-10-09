@@ -368,6 +368,8 @@ const u32* bw_host_pi_cause=&zero;
 const u32* bw_host_pi_mask=&zero;
 BwHostCanSkipFn bw_host_can_skip;
 void* bw_host_can_skip_user;
+BwHostObservationFactsFn bw_host_observation_facts;
+void* bw_host_observation_facts_user;
 u32 bw_edge_watch_table[BW_EDGE_WATCH_SLOTS];
 static BwChunkFn chunks[74];
 BwChunkFn* const bw_chunk_fns=chunks;

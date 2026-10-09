@@ -17,6 +17,8 @@ const bool* bw_host_decrementer_pending = &decrementer;
 const u32* bw_host_pi_cause = &cause;
 const u32* bw_host_pi_mask = &mask;
 void* bw_host_can_skip_user;
+BwHostObservationFactsFn bw_host_observation_facts;
+void* bw_host_observation_facts_user;
 static unsigned dispatched, delivered, service_calls, largest_batch, mode;
 
 static bool ready(void* user, const CPUState* cpu, u32 address) {

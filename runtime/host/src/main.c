@@ -16,6 +16,7 @@
 #include "core/cpu.h"
 #include "StaticRecompABI.h"
 #include "../../../cmake/composite/module_cpu_contract.h"
+#include "../../../cmake/composite/observation_facts.h"
 #include <stdatomic.h>
 #include "aram_dma.h"
 #include "actor_search_budget.h"
@@ -2110,11 +2111,12 @@ static void host_actor_search_native(CPUState* cpu) {
     g_actor_search_native_runs++;
 }
 
-static inline bool host_chassis_requires_full(const CPUState* cpu, u32 address) {
+static inline bool host_chassis_requires_full_facts(const CPUState* cpu, u32 address, u32 facts) {
     if (__builtin_expect(cpu == NULL || g_turn_census_enabled ||
                              g_boundary_census_enabled ||
                              g_chassis_service_each_block ||
-                             g_interrupt_sources_dirty,
+                             ((facts & BW_OBSERVATION_FACT_QUIET) == 0u &&
+                              g_interrupt_sources_dirty),
                          0))
         return true;
     if (g_overlap_observation && g_name_scene_object >= 0x80000000u &&
@@ -2141,14 +2143,20 @@ static inline bool host_chassis_requires_full(const CPUState* cpu, u32 address) 
     // Retain the conservative canonical-address match for mirrored entries.
     const u32 canonical_address = host_canonical_linked_pc(address);
     if ((g_module1_raw_base != 0u && address == g_module1_raw_base + 0xD4u) ||
-        (bluewake_edge_maybe_intercept(canonical_address) &&
+        ((facts & BW_OBSERVATION_FACT_NO_STATIC_INTERCEPT) == 0u &&
+         bluewake_edge_maybe_intercept(canonical_address) &&
          (canonical_address != 0x80328F84u || cpu->lr == 0x80246A04u)))
         return true;
-    if ((cpu->msr & PPC_MSR_EE) != 0u &&
+    if ((facts & BW_OBSERVATION_FACT_QUIET) == 0u &&
+        (cpu->msr & PPC_MSR_EE) != 0u &&
         (g_guest_decrementer_pending ||
          (g_interrupts.pi_cause & g_interrupts.pi_mask) != 0u))
         return true;
     return false;
+}
+
+static inline bool host_chassis_requires_full(const CPUState* cpu, u32 address) {
+    return host_chassis_requires_full_facts(cpu, address, 0u);
 }
 
 static bool g_direct_call_trace;
@@ -2285,10 +2293,11 @@ static void host_hud_emit(uint8_t reg,uint32_t value,void* unused) {
     (void)unused;dol_platform_gx_write(0x61u,1);
     dol_platform_gx_write(((uint32_t)reg<<24)|(value&0xFFFFFFu),4);
 }
-static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 address) {
+static inline bool host_can_skip_observation_facts(
+    void* user, const CPUState* cpu, u32 address, u32 facts) {
     (void)user;
 #if BLUEWAKE_ENABLE_DEVELOPER_TRACING || BLUEWAKE_EDGE_CENSUS
-    (void)cpu; (void)address;
+    (void)cpu; (void)address; (void)facts;
     return false;
 #else
     const bool finite_observer = bluewake_finite_observer_maybe(address);
@@ -2306,13 +2315,29 @@ static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 addre
                                  !bluewake_enhancement_hooks_observes_context(cpu, address) &&
                                  !bluewake_autosave_observes(address))) &&
            !(address == BW_SEARCH_JUDGE_FILTER && g_actor_search_native) &&
-           !host_chassis_requires_full(cpu, address);
+           !host_chassis_requires_full_facts(cpu, address, facts);
     return allowed;
 #endif
 }
 
+static bool host_can_skip_observation(void* user, const CPUState* cpu, u32 address) {
+    return host_can_skip_observation_facts(user, cpu, address, 0u);
+}
+
 static bool host_direct_can_skip(void* user, const CPUState* cpu, u32 address) {
     const bool allowed = host_can_skip_observation(user, cpu, address);
+    if (g_direct_call_trace) {
+        g_direct_call_queries++;
+        g_direct_call_allowed += allowed;
+    }
+    return allowed;
+}
+
+static bool host_direct_can_skip_facts(void* user, const CPUState* cpu, u32 address, u32 facts) {
+    /* A partial or unknown contract always takes the complete predicate. */
+    if (facts != BW_OBSERVATION_FACTS_ALL)
+        return host_direct_can_skip(user, cpu, address);
+    const bool allowed = host_can_skip_observation_facts(user, cpu, address, BW_OBSERVATION_FACTS_ALL);
     if (g_direct_call_trace) {
         g_direct_call_queries++;
         g_direct_call_allowed += allowed;
@@ -8662,9 +8687,21 @@ int main(int argc, char** argv) {
         typedef int (*EdgeFilterFn)(bool);
         EdgeFilterFn edge_filter = (EdgeFilterFn)
             dlsym(lib, "bluewake_composite_edge_filter");
-        if (edge_filter != NULL)
-            edge_filter(enabled);
+        const bool edge_enabled = edge_filter != NULL && edge_filter(enabled) != 0;
+        typedef unsigned (*ObservationFactsFn)(u32, u32, const u32*, u32,
+                                               BwHostObservationFactsFn, void*);
+        ObservationFactsFn observation_facts = (ObservationFactsFn)
+            dlsym(lib, "bluewake_composite_observation_facts_v1");
+        const char* facts_env = getenv("BLUEWAKE_OBSERVATION_FACTS");
+        const bool want_facts = enabled && edge_enabled && facts_env != NULL &&
+                                strcmp(facts_env, "1") == 0;
+        const unsigned facts_cap = observation_facts == NULL ? 0u : observation_facts(
+            GXRUNTIME_CPU_ABI_VERSION, sizeof(CPUState),
+            want_facts ? g_edge_keys_all : NULL, BLUEWAKE_EDGE_KEY_COUNT,
+            want_facts ? host_direct_can_skip_facts : NULL, NULL);
         fprintf(stderr, "[chassis] direct-calls=%s\n", enabled ? "on" : "off");
+        fprintf(stderr, "[chassis] observation-facts=%s\n",
+                facts_cap == BW_OBSERVATION_FACTS_V1 ? "on" : "off");
     }
     {
         typedef int (*NativeJ3DFn)(bool, bool (*)(void*, const CPUState*, u32), void*);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /* Pure stand-ins for unrelated observer policies. Actual projected main skip
  * predicate is source-extracted: its supplied-CPU health call is NOT copied. */
+#include "finite_observer_filter.h"
 #define BLUEWAKE_ENABLE_DEVELOPER_TRACING 0
 #define BLUEWAKE_EDGE_CENSUS 0
 #define BW_SEARCH_JUDGE_FILTER 0x80001234u

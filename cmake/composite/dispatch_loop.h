@@ -4,6 +4,7 @@
 #include "edge_intercept_abi.h"
 #if defined(BLUEWAKE_DIRECT_CALLS)
 #include "direct_calls.h"
+#include "observation_facts.h"
 #endif
 #if defined(BLUEWAKE_GATHER_PIPE)
 #include "gather_pipe_batch.h"
@@ -17,6 +18,23 @@ static inline int bluewake_chassis_return(int dispatched) {
 }
 
 typedef int (*BluewakeCompositeDispatchFn)(CPUState* ctx, u32 address);
+
+#if defined(BLUEWAKE_DIRECT_CALLS)
+/* Called only after this address has missed bw_edge_watch_table. Handshake
+ * validation proves that set contains every static host intercept. Quiet is
+ * checked here at the same point as the original complete ready query. */
+static inline bool bw_chassis_ready_after_unwatched(const CPUState* cpu, u32 address) {
+    if (bw_host_observation_facts == NULL)
+        return bw_direct_call_ready(cpu, address);
+    if (!bw_direct_enabled || cpu == NULL || bw_host_can_skip == NULL ||
+        bw_direct_depth >= BW_DIRECT_DEPTH_MAX)
+        return false;
+    if (cpu->exception != 0u || (cpu->cycle_budget > 0 && cpu->downcount <= -cpu->cycle_budget))
+        return false;
+    return bw_host_quiet(cpu) && bw_host_observation_facts(
+        bw_host_observation_facts_user, cpu, address, BW_OBSERVATION_FACTS_ALL);
+}
+#endif
 
 /* The boundary loop, in the header and always inlined.
  *
@@ -60,7 +78,7 @@ static inline int bluewake_chassis_dispatch_loop(
         bool skip_edge = false;
 #if defined(BLUEWAKE_DIRECT_CALLS)
         skip_edge = bw_edge_filter_enabled && bw_edge_watch_ready &&
-                    bw_edge_unwatched(address) && bw_direct_call_ready(ctx, address);
+                    bw_edge_unwatched(address) && bw_chassis_ready_after_unwatched(ctx, address);
 #endif
         if (!skip_edge) {
 #if defined(BLUEWAKE_GATHER_PIPE)

@@ -336,6 +336,8 @@ static const bool clean=false;static const u32 zero=0;
 const bool* bw_host_sources_dirty=&clean;const bool* bw_host_decrementer_pending=&clean;
 const u32* bw_host_pi_cause=&zero;const u32* bw_host_pi_mask=&zero;
 BwHostCanSkipFn bw_host_can_skip;void* bw_host_can_skip_user;
+/* Historical optimized-call fixtures use the complete legacy host predicate. */
+BwHostObservationFactsFn bw_host_observation_facts;void* bw_host_observation_facts_user;
 u32 bw_edge_watch_table[BW_EDGE_WATCH_SLOTS];
 static BwChunkFn chunks[68];BwChunkFn* const bw_chunk_fns=chunks;
 static unsigned native_calls,entry_edges,return_edges,route;

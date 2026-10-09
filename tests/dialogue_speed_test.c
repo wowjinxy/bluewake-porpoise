@@ -707,6 +707,8 @@ const u32* bw_host_pi_cause = &zero;
 const u32* bw_host_pi_mask = &zero;
 BwHostCanSkipFn bw_host_can_skip;
 void* bw_host_can_skip_user;
+BwHostObservationFactsFn bw_host_observation_facts;
+void* bw_host_observation_facts_user;
 u32 bw_edge_watch_table[BW_EDGE_WATCH_SLOTS];
 static unsigned direct_guest_calls, edge_entries, edge_returns;
 #ifdef BLUEWAKE_DIALOGUE_LEGACY_OPTIMIZED_CALL_FIXTURE

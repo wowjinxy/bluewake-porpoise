@@ -1,7 +1,7 @@
 # Source-only health fixtures. No game/native UI/device/video initialization.
 if(BUILD_TESTING AND NOT TARGET bluewake_health_host_test)
   include("${CMAKE_CURRENT_LIST_DIR}/BlueWakeHealthRulesPrototype.cmake")
-  set(_health_root "${CMAKE_CURRENT_LIST_DIR}/..")
+  get_filename_component(_health_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
   file(READ "${_health_root}/runtime/host/src/health_host.c" _health_adapter)
   string(REPLACE [[#include "health_module_contract.h"]] [[#include "health_synthetic_contract.h"]] _health_synthetic "${_health_adapter}")
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/health_host_synthetic.c" "${_health_synthetic}")
@@ -37,12 +37,19 @@ if(BUILD_TESTING AND NOT TARGET bluewake_health_host_test)
   if("BLUEWAKE_HEALTH_OPTIMIZED_CALL_FIXTURE=1" IN_LIST _health_core_defs)
     # Actual public main predicate is extracted without game bytes. Unrelated
     # policies are fixture stand-ins; supplied-CPU health observation is real.
-    file(READ "${_health_root}/runtime/host/src/main.c" _health_main)
-    string(FIND "${_health_main}" "static bool host_can_skip_observation(" _health_begin)
-    string(SUBSTRING "${_health_main}" ${_health_begin} -1 _health_tail)
-    string(FIND "${_health_tail}" "\n}\n" _health_end)
-    math(EXPR _health_end "${_health_end}+3")
-    string(SUBSTRING "${_health_tail}" 0 ${_health_end} _health_skip)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B -S
+      "${_health_root}/tests/observation_facts/prepare.py" --repo "${_health_root}"
+      --legacy-observation-output "${CMAKE_CURRENT_BINARY_DIR}/health_main_skip_under_test.inc"
+      RESULT_VARIABLE _health_skip_prepare_result ERROR_VARIABLE _health_skip_prepare_error)
+    if(NOT _health_skip_prepare_result EQUAL 0)
+      message(FATAL_ERROR "Health main facts0 skip seam: ${_health_skip_prepare_error}")
+    endif()
+    file(READ "${CMAKE_CURRENT_BINARY_DIR}/health_main_skip_under_test.inc" _health_skip)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+      "${_health_root}/runtime/host/src/main.c"
+      "${_health_root}/tests/observation_facts/prepare.py"
+      "${_health_root}/tests/observation_facts/reference.inc")
     string(FIND "${_health_skip}" "!bw_health_host_observes(cpu,address)" _health_guard)
     if(_health_guard LESS 0)
       message(FATAL_ERROR "Health main supplied-CPU skip seam is missing")

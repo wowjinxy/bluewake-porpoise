@@ -3,6 +3,15 @@ from pathlib import Path
 import argparse
 import hashlib
 import re
+import importlib.util
+
+
+def legacy_chassis(text):
+    path = Path(__file__).resolve().parents[1] / 'observation_facts/prepare.py'
+    spec = importlib.util.spec_from_file_location('observation_facts_prepare', path)
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper.legacy_chassis_predicate(text)
 
 
 def function(text, name):
@@ -23,7 +32,7 @@ def function(text, name):
 def prepare(repo_root, output_dir):
     main = (repo_root / 'runtime/host/src/main.c').read_text(encoding='utf-8')
     reference = Path(__file__).with_name('predicates.inc').read_text(encoding='utf-8')
-    actual = function(main, 'host_chassis_requires_full').replace(
+    actual = legacy_chassis(main).replace(
         'host_chassis_requires_full', 'new_requires_full', 1)
     if actual != function(reference, 'new_requires_full'):
         raise RuntimeError('Actual chassis predicate changed: review and refresh the oracle')
