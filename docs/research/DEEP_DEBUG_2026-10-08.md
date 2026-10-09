@@ -1566,8 +1566,8 @@ The first emission attempt passes with four normal, drained tool jobs and 493
 discovered dependencies. It emits one production function, sixty-one separate
 test functions (forty-seven frontiers plus fourteen access microfunctions),
 and four separate one-function semantic mutants. This is compilation evidence
-only: no emitted game operation, fixture, linked module or game has executed
-for this candidate. Complete-state parity and runtime costs remain unqualified.
+only; at that stage no emitted operation, fixture, linked module or game had
+executed for this candidate. Runtime costs remain unqualified.
 Before interpreting later timing, a separate diagnostic
 must establish successful runtime admissions on the matched intro route; the
 timed object must remain free of its counters and exports. No speedup is claimed.
@@ -1587,7 +1587,56 @@ original and candidate main functions retain the same three saved registers
 and 128 local stack bytes. Caller text grows 2,128 bytes and the separate helper
 adds 5,874 bytes; these static totals include cold alternatives and establish
 neither an executed-path reduction nor a speedup. A local eligible-path cost
-check is planned before committing to an expensive game timing experiment.
+check was required before committing to an expensive game timing experiment.
+
+The real-runtime differential fixture subsequently passes all four generic/
+fixed optimized/ASan profiles, each with 3,155 complete CPU/32 MiB comparisons.
+Each profile contains 2,478 whole-region cases, 474 actually reached direct
+frontiers, 112 actual-access micro continuations, 70 read-only range rejects,
+14 admission rejects and seven detected behavioral mutants. Required direct
+and continued reach counts pass at all 47 frontiers on nine feasible baseline
+paths; all 14 leaders have additional paid-state checks. This does not claim
+that all 165 syntactic correlated states are feasible. Incoming sticky host
+FP status, every float exponent boundary, signed zeros, NaNs/infinities, short
+deadlines and callback/alias mutation are included. Callback case counts are
+50 in generic profiles and 48 in fixed profiles.
+
+All 100 owned rows exit normally and drain, with 44 fresh and 24 retained C
+translation units and 174 discovered dependencies. ASan instruments the C
+harness and providers; the emitted LLVM object remains uninstrumented.
+The conservative binary64-subnormal compare fallback has source evidence but
+cannot be reached through the entry-only region's LFS-dominated operands.
+No integrated game, concurrency or performance claim follows from this fixture.
+
+The subsequent local cost experiment closes this GroundCross46 version with a
+negative result. It executes only the qualified production helper and its
+canonical continuation, with no forced selector or mutant object in the timed
+arm. All nine known-admitted paths pass full CPU/RAM/alias/fenv endpoints before
+and after timing. The fixed eight balanced batches per path contain 72 million
+measured calls and 18,432 warmups. All seven owned tool/native rows exit normally
+and drain. Identical 3,552-byte CPU restoration remains inside both arms; no
+overhead is subtracted. The standalone oracle frame is not the original giant
+chunk frame, and this experiment does not measure game FPS or route-weighted
+cost.
+
+| Local path | Mean thread-cycle change | Mean elapsed change |
+|---|---:|---:|
+| 0 | +15.23% | +15.21% |
+| 1 | -0.50% | -0.29% |
+| 2 | +5.76% | +5.80% |
+| 3 | +3.29% | +3.03% |
+| 4 | +12.53% | +12.65% |
+| 5 | +16.32% | +16.19% |
+| 6 | +31.25% | +31.23% |
+| 7 | +22.03% | +21.96% |
+| 8 | +21.50% | +21.70% |
+
+Eight of nine means regress; the small favorable path has mixed pair signs.
+The coarse GetThreadTimes readings remain retained; thread-cycle and elapsed
+results agree descriptively. There is no basis for an integrated module or game
+timing attempt. This version is closed without a retry, altered batch or game
+promotion. The correct emitted primitives and complete fixtures remain useful
+research artifacts; they do not establish that a broader SSA rewrite will help.
 
 ## Validation boundary and retained evidence
 
@@ -1898,6 +1947,14 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `llvm-bounded-prefix1/fp-cfg-extension1/cost-attempt1/{result,codegen1}.json`
 - `llvm-bounded-prefix1/fp-cfg-extension1/RUNTIME_ADMISSION_DESIGN1.md`
 - `llvm-bounded-prefix1/groundcross-continuations1/{source-review1,emitter-source-review1}.json`
+- `llvm-bounded-prefix1/fp-cfg-fixture1/fixture-source3/{fixture-preparation3,peer-source-review1}.json`
+- `llvm-bounded-prefix1/fp-cfg-fixture1/{fixture-recipe1,peer-runner-source1,canonical-qualification1}.json`
+- `llvm-bounded-prefix1/fp-cfg-fixture1/attempt1/result.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-source1/preparation1.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-recipe1.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-quiescence1.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-attempt1/{result,summary1}.json`
+- `llvm-bounded-prefix1/fp-cfg-fixture1/independent-actual-audit2.json`
 - `integer-lane-feasibility1/{eight-owner-handoff1,eight-owner-result1,eight-owner-frontiers1,next-region1}.json`
 - `integer-lane-feasibility1/EIGHT_OWNER_REPORT1.md`
 - `v3-entry-frames1/result1.json`
