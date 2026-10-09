@@ -227,9 +227,44 @@ A separate direct-call census finds 16,958 literal readiness queries in 8,479
 paired static-call blocks across the 35 original chunks. Actual watch-table
 membership and code-domain checks can prove these miss at preparation time.
 These are static counts, not runtime coverage. A distinct optional capability
-is being prepared so this proof can remove the repeated host lookup without
-silently changing the chassis-only contract. Protected equipment/health/native
-boundaries, unknown indirects and interpreter continuations retain full checks.
+has been qualified in a private 37-TU rebuild: 35 translated chunks, the
+direct-call support TU and one new literal-certificate support TU. It retains
+the other 797 original objects, two exact observation-facts support objects,
+and the matrix archive. All 5,283 immutable literal keys miss the actual module
+watch table; registration also verifies all 56 host static keys. Protected
+equipment/health/native boundaries, unknown indirects and interpreter
+continuations retain full checks. This does not broaden the original
+chassis-only contract.
+
+Production fixtures pass 24,284 existing contract checks plus 7,046 literal
+checks each under optimization and AddressSanitizer; tracing and census builds
+each pass 24,284 plus 7,044 checks. Removed-watch-key and broken-quiet mutants
+fail. Actual M/MD closures pass for all 37 rebuilt TUs, and the module import
+surface is unchanged with one new optional export.
+
+Both native variants use the same new host and the same capability inputs;
+the older observation-facts module lacks the literal export and takes the
+original fallback. Ordinary runs have identical pixels but match only one of
+six complete states. Matched GPU-readback inputs reproduce all six CPU, MEM1,
+MEM2 and ordered-alias checkpoints and pixels. All 1,134 inputs are consumed
+with exact context; six physical readbacks differ in the control and twelve in
+the candidate before substitution. Ordinary differences remain preserved.
+
+The subsequent independent ABBA matches all terminal GX counters, clock fields,
+dispatch counts and replay inputs, but regresses in both pairs:
+
+| Literal-call metric | Observation-facts control mean | Candidate mean | Change |
+| --- | ---: | ---: | ---: |
+| Process CPU seconds | 44.266 | 44.922 | +1.48% |
+| Process wall seconds | 31.704 | 32.290 | +1.85% |
+| Process cycles | 159.132 billion | 161.012 billion | +1.18% |
+
+The CPU/wall pairs regress +1.97%/+2.21% and +0.99%/+1.48%. **Reject this
+candidate as a speed improvement; keep it private and inactive.** Static
+lookup elimination is insufficient evidence of a cheaper executed path. A
+registration-lifetime and dynamic-coverage audit is pending. This is a loaded
+fixed-input title result with owned compiler jobs held, not general gameplay
+or displayed-FPS evidence.
 
 A compiler-vectorization pilot enables SLP for one vector-heavy profiled chunk,
 with every source byte and other compiler flag unchanged. Its emitted code
@@ -300,6 +335,11 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `native/alias-complete-parity1.json`
 - `alias-envelope1/controlled-input1/alias-controlled-abba1.json`
 - `literal-facts1/{DESIGN.md,site-census1.json}`
+- `literal-facts1/fixture-attempt3/result.json`
+- `literal-facts1/module-attempt4/result.json`
+- `literal-facts1/native1/literal-ordinary-parity1.json`
+- `literal-facts1/native-efb1/literal-input-parity1.json`
+- `literal-facts1/controlled-input1/literal-controlled-abba1.json`
 - `slp1/attempt2/`
 
 Translated game source, compiled game modules and private player data are not
