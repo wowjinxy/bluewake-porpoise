@@ -688,16 +688,29 @@ rounded single after rereading its widened FPR can change subnormal behavior
 under host DAZ. The failed draft is retained; its successor must retain and
 classify the final rounded single directly. Whole-TU differential fixtures,
 including rounding/FTZ/DAZ and an explicit reread-FPR mutant, remain required.
-A separate native_math include experiment targets its existing ps_sum0 calls;
-arbitrary carried-lane NaN/Inf semantics require independent qualification.
-Neither source draft is a speed or gameplay result.
+A separate native_math include experiment targets its existing ps_sum0 calls.
+Its complete original/candidate translation units passed 5,776 whole-CPU/64 KiB
+comparisons in each generic O2 and ASan profile, and 2,192 whole-CPU/32 MiB
+comparisons in each fixed O2 and ASan profile. These cover host rounding,
+FTZ/DAZ, NI, arbitrary carried-lane NaN/Inf values and rejection paths. Three
+deliberately incorrect carried-lane implementations fail with CPU-byte
+mismatches. Actual dependency closures and frozen inputs remain unchanged.
+This qualifies those fixtures; module, gameplay and speed are still untested.
 
-Before fixture execution, root review also exposed a fixed-memory mismatch:
-the canonical fixed resolver can access the global MEM1 while a draft fixture
-compares separate private buffers. That can make two versions agree on the
-wrong inputs. The unexecuted draft is retained; generic and fixed profiles
-must compare the memory each actually uses and bind their canonical runtime,
-compiler and archive to the recorded authorities before compilation.
+The fixed fixtures now explicitly own and compare the canonical runtime's
+complete 32 MiB global MEM1. The earlier quaternion-specific explanation for
+that requirement was incorrect: its native word/load/store helpers access
+cpu->ram directly, and its native wrapper disables the generated hardware-load
+helper. Separate buffers therefore do supply those native quaternion inputs;
+there is no established wrong-input or zero-input failure. The stronger fixed
+fixture coverage and input assertions remain useful. The source correction
+is retained separately from the frozen drafts.
+
+The quaternion generic O2 fixture crashed before completing qualification.
+A separate ASan-only diagnostic localizes a read fault to the fixture's input
+assertion. Its address expression and faulting instruction are being checked;
+the production candidate has not been repaired, qualified or run in the game.
+Both failed executions remain preserved, with no speed claim.
 
 A bounded audit of the local LLVM backend found real SSA register promotion,
 but also compatibility gaps: ordered external aliases, the host's native-region
@@ -863,6 +876,9 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `h-clean-per-vi1/native-efb1/h-clean-per-vi-input-parity1.json`
 - `llvm-backend-feasibility1.md`
 - `quaternion-local1/{DESIGN2.md,existing-caller1.json}`
+- `quaternion-local1/{SOURCE_CORRECTION1.md,fixture-attempt1/result.json,diagnostic-asan1/result.json}`
+- `native-math-inline1/{fixture-preparation3.json,fixture-attempt1/result.json,cpu-qualification1.json}`
+- `qps-clean-per-vi1/{preparation1.json,source-validation1.json,pe-surface3.json,ldexp-closure1.json}`
 - `pipeline-origin1/{untraced-profile-source-review1,untraced-host-attribution1}.json`
 - `pipeline-origin1/TRACE_FASTPATH_SOURCE_AUDIT.md`
 - `slp1/attempt2/`
