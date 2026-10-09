@@ -75,6 +75,14 @@ all 485 immutable stack snapshots. C2 has no qualified module MAP/PDB, so its
 frame labels retain raw RVAs; only the exact host PDB supplies function names.
 No original-A module symbols or leaf rules are borrowed for C2.
 
+The 4,852 RIP observations cover VI784 through VI1495 (18.323 seconds), not the
+entire intro. Their individual timestamps and order were discarded. The 485
+sparse stack snapshots retain relative and absolute performance-counter times,
+but there is no paired wall/QPC anchor for exact VI alignment. Session log times
+are asynchronous pipe receipt times. The lowest sustained logged interval is
+VI939 through VI974 at 34.5 retraces per second; this is not displayed FPS.
+Exact peak-window RIP attribution cannot be recovered from this capture.
+
 A later passive relink qualifies a C2 MAP: all 835 object inputs and their order,
 15 physical library providers and 852 reproduction members match the accepted
 five-TU C2 build. The entire DLL matches C2 except four COFF timestamp bytes.
@@ -1608,6 +1616,15 @@ The conservative binary64-subnormal compare fallback has source evidence but
 cannot be reached through the entry-only region's LFS-dominated operands.
 No integrated game, concurrency or performance claim follows from this fixture.
 
+A later header-closure review found that the extracted oracle omitted the
+production `inline_fp.h` override. The copied guest instruction bodies match,
+but production scalar loads use hardware float widening while the fixture's
+canonical fallback uses an integer conversion helper. The four-profile result
+therefore qualifies this extracted canonical oracle, not the exact production
+FP macro path. Direct production-cost equivalence is withdrawn. Future FP
+fixtures must compare the preprocessed operation and complete header closure,
+in addition to guest bodies. No candidate module was integrated or launched.
+
 The subsequent local cost experiment closes this GroundCross46 version with a
 negative result. It executes only the qualified production helper and its
 canonical continuation, with no forced selector or mutant object in the timed
@@ -1616,8 +1633,9 @@ and after timing. The fixed eight balanced batches per path contain 72 million
 measured calls and 18,432 warmups. All seven owned tool/native rows exit normally
 and drain. Identical 3,552-byte CPU restoration remains inside both arms; no
 overhead is subtracted. The standalone oracle frame is not the original giant
-chunk frame, and this experiment does not measure game FPS or route-weighted
-cost.
+chunk frame, and the oracle header mismatch described above also applies.
+This experiment does not measure exact production cost, game FPS or
+route-weighted cost.
 
 | Local path | Mean thread-cycle change | Mean elapsed change |
 |---|---:|---:|
@@ -1637,6 +1655,10 @@ results agree descriptively. There is no basis for an integrated module or game
 timing attempt. This version is closed without a retry, altered batch or game
 promotion. The correct emitted primitives and complete fixtures remain useful
 research artifacts; they do not establish that a broader SSA rewrite will help.
+Passive production code inspection also finds hardware scalar widening,
+whereas the candidate uses integer conversion/classification, generic-target
+instruction choices and a new 184-byte helper frame. These are cost mechanisms,
+not measurements assigning cycles to individual instructions.
 
 ## Validation boundary and retained evidence
 
@@ -1843,6 +1865,7 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `visible-c2-profile1/title-visible-c2-native1/offline-unwind1/{result,unwind}.json`
 - `visible-c2-profile1/c2-map1/{source-preparation1,verification-source2,verification2/result}.json`
 - `visible-c2-profile1/ranking-map-preparation2.json`
+- `visible-c2-profile1/peak-window-feasibility1/result1.json`
 - `line-map1/attempt1/{native-identity1,sampled-lines2,sampled-instructions1}.json`
 - `line-map2011/attempt2/{native-identity1,sampled-lines2,sampled-instructions1}.json`
 - `cursor-fprf1/source3/source-receipt.json`
@@ -1954,6 +1977,8 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-recipe1.json`
 - `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-quiescence1.json`
 - `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-attempt1/{result,summary1}.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/microbenchmark-attempt1/independent-audit1.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/{extra-cost-mechanisms4,extra-cost-conclusion1}.json`
 - `llvm-bounded-prefix1/fp-cfg-fixture1/independent-actual-audit2.json`
 - `integer-lane-feasibility1/{eight-owner-handoff1,eight-owner-result1,eight-owner-frontiers1,next-region1}.json`
 - `integer-lane-feasibility1/EIGHT_OWNER_REPORT1.md`
