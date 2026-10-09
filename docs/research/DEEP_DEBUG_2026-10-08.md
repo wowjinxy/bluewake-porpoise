@@ -1029,6 +1029,85 @@ Normals, lighting and TEV evaluation already run in GPU shaders. The repeated
 CPU dispatch and observation checks above cannot be fixed by changing those
 shaders.
 
+## Local integer state and compact observer qualification, October 9
+
+Two independent candidates are being prepared over the existing C2 paired-single
+module. Neither has a new game performance result as of 10:56 UTC. The ordinary
+crowded-intro slowdown remains unresolved.
+
+The integer candidate admits 384 first prefixes in the two sampled chunks,
+covering 3,106 guest instructions and 1,372 memory operations at widths 8, 16
+and 32. It keeps admitted scalar state in native locals, publishes completed
+dirty fields at an exit, and resumes the original current-instruction body
+with its original charge/refund boundary. Opaque calls, floating-point work,
+control transfers, uncertain labels and unsupported state remain excluded.
+Actual 64-bit guest memory operations are absent from this admitted corpus.
+
+The optimized fixture passed 18,568 cases and 18,571 comparisons of all 3,552
+CPU bytes and all 32 MiB of MEM1, plus callbacks, alias/other-memory state and
+FP environment. These include all 3,106 direct continuation seams and 6,212
+actual-body RAM/MMIO microcases. Three semantic mutants were rejected. The
+whole-corpus ASan child reached its frozen 300-second timeout without reporting
+a semantic or sanitizer diagnostic, and drained. That timeout is retained.
+A reviewed ASan-only successor reused ten qualified objects, replaced only
+the range-selection main, and passed the identical corpus in four disjoint
+bounded runs. Their complete reached/completion masks equal the optimized
+run. Normal inputs complete 276 prefixes; the remaining 108 completion gaps
+are explicit. Direct-seam tests and microcases do not prove normal activation
+or admission frequency. Rounding and FTZ/DAZ combinations are cycled, rather
+than a full cross-product for every prefix.
+
+The compact observer candidate rewrites 16,939 certified literal query sites
+in 35 chunks, covering 5,273 distinct keys. A compile-time token set admits
+only those keys; it performs no key-table scan at each query. Existing main
+and event globals move into compact typed storage while their writers,
+readers, address-taking and host state table retain their original behavior.
+The helper reads current owner, deadline, event, alias and lifecycle state;
+it does not cache a prior skip answer. Registration validates the complete
+certificate and storage identities. Missing/revoked registration and other
+calls retain the original fallback. The option defaults off.
+
+Its production-consumer fixture passed optimized, ASan, developer and census
+profiles: 154 complete CPU/MEM1 cases, 12 lifecycle cases, 17 admission cases,
+32 storage mutations, and 16,684 additional query comparisons per profile.
+The broad query corpus includes every certified key in three modes, pending
+bucket collisions/noncollisions and the excluded union. CPU/counter checks
+occur per query; full-RAM checks are grouped. Three hot-consumer mutants,
+three corrupt-certificate cases and three invalid-token compile cases were
+rejected. This is behavior qualification, not an observed game speedup.
+
+The compact common host retains the existing per-VI timer and physical EFB
+read diagnostic, replacing only main and game-events objects: 170 physical
+link inputs, 168 retained, 64 direct objects and two substitutions. Its actual
+compiler closures, imports, normalized resources, stack, manifest and MAP
+passed. Report serialization and receipt-reference errors were preserved and
+repaired by verification-only successors; successful compiler/linker outputs
+were reused without rebuilding. The game module builds remain separate:
+the observer variant preserves C2 ancestry with 36 existing substitutions
+and one new support object; the integer variant substitutes only two objects
+and retains the other 833, including all five C2 replacements.
+
+A separate read-only baseline diagnostic ran the unchanged b21e/C2 game for
+1,800 VI using copied player data, the original 1,134-entry EFB replay and no
+input. All six complete logical state checkpoints and the full captured P6
+matched the earlier C2 correctness run. Its 128 asynchronous guard samples
+contained 123 samples after initialization. All 123 had the expected fixed
+32 MiB RAM owner, no MEM1 alias overlap, no write journal and no reservation;
+the double-read global values were stable in every sample. Deadline budgets
+were at least 1,000 in 116 samples, 100–999 in one, and 1–99 in six. These
+necessary guard values rule out an always-on sampled RAM guard obstruction;
+they are not atomic snapshots, fast-path hit counts or admission frequencies.
+Concurrent build/fixture work was allowed for this correctness-only run.
+Its durations and reported frame rates are excluded from performance claims.
+
+The next comparison uses C2 as control on the same compact host, preserves
+all five paired-single changes, and measures the candidates independently.
+Fresh six-state/P6 parity precedes timing. The fixed eight-run order,
+750–1,500 VI window, five 150-VI segments, exact work, all four CPU/wall pair
+signs, one-percent mean gate, zero terminal pipeline creation, no rescue and
+ordinary visible confirmation remain required. Tracing, checkpoints, captures
+and the read-only guard sampler are absent from timing runs.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
@@ -1247,6 +1326,15 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `native-adjacent-stack1/expanded2/handoff1.json`
 - `observation-live-view1/source3/source-receipt.json`
 - `observation-live-view1/source5/source-receipt.json`
+- `cursor-integer-general1/{source1/source-receipt,source-validation1}.json`
+- `cursor-integer-general1/fixture-attempt2/{optimized-result,result,row-47}.json`
+- `cursor-integer-general1/{range-preparation1,fixture-ranges-attempt1/result}.json`
+- `observation-live-view1/certified-v3-source1/source-preparation1.json`
+- `observation-live-view1/v3-fixture1/{qualification2,attempt2/result}.json`
+- `observation-live-view1/certified-v3-host1/verification6/result.json`
+- `compact-c2-runtime1/{control-validation1,guard-c2-result1,plan1}.json`
+- `compact-c2-runtime1/guard-efb1/{preparation1,launch1}.json`
+- `compact-c2-runtime1/guard-efb1/c2-guard-baseline1/{result,guard-samples1}.json`
 - `native-stacks1/game-admission1/{leaf-source-preparation3,leaf-pure-tests3,leaf-coverage-audit1}.json`
 - `native-stacks1/game-admission1/leaf-request1/{preparation,stack-ranking1}.json`
 - `native-stacks1/game-admission1/leaf-request1/offline-unwind1/{result,unwind}.json`
