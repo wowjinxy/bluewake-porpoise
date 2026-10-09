@@ -1554,6 +1554,41 @@ than deadline, so deadline8 is sufficient. A pure integer boundary model checks
 19,542 states and all cumulative totals0-47 for 4,779 admitted states. This is
 static model evidence, not emitted-code, full-CFG, game or performance proof.
 
+The GroundCross46 source is now frozen and independently reviewed against the
+original bodies and complete source inverse. It covers fourteen leaders and
+forty-seven current-instruction frontiers. The implementation uses path-local
+dirty state and exact reached charges; it preserves the paid E8 continuation
+and unpaid external exits. Its mandatory positive-deadline minimum is eight.
+The source review also checks signed-zero equality, reversed negative ordering,
+infinities, NaN fallback and the original FPSCR OR behavior.
+
+The first emission attempt passes with four normal, drained tool jobs and 493
+discovered dependencies. It emits one production function, sixty-one separate
+test functions (forty-seven frontiers plus fourteen access microfunctions),
+and four separate one-function semantic mutants. This is compilation evidence
+only: no emitted game operation, fixture, linked module or game has executed
+for this candidate. Complete-state parity and runtime costs remain unqualified.
+Before interpreting later timing, a separate diagnostic
+must establish successful runtime admissions on the matched intro route; the
+timed object must remain free of its counters and exports. No speedup is claimed.
+
+Passive inspection now admits all six objects and sixty-six functions with
+complete Windows unwind and stack/CFG checks. All are framed; the production
+helper saves eight registers and has 120 local stack bytes (184 bytes including
+saves). It contains no native CALL and imports only the three admitted globals.
+The initial verifier failures are preserved: valid executable cold tails after
+the final RET and a legitimate stack-local instruction required narrow parser
+successors. All twelve original tool logs were reused; no emitted operation
+executed during these repairs.
+
+The exact full0145 caller probe also compiles and drains with equal actual
+48-file M/MD sets. Its sole new undefined reference is the SSA helper. The
+original and candidate main functions retain the same three saved registers
+and 128 local stack bytes. Caller text grows 2,128 bytes and the separate helper
+adds 5,874 bytes; these static totals include cold alternatives and establish
+neither an executed-path reduction nor a speedup. A local eligible-path cost
+check is planned before committing to an expensive game timing experiment.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
@@ -1857,6 +1892,12 @@ Private diagnostic evidence remains under `build/deep-debug-20261008/`:
 - `ssa113-c2-runtime1/independent-timing-audit1.json`
 - `llvm-bounded-prefix1/fp-cfg-extension1/{source-assessment1,entry-bounds-model1}.json`
 - `llvm-bounded-prefix1/fp-cfg-extension1/DESIGN1.md`
+- `llvm-bounded-prefix1/fp-cfg-extension1/{plan-preparation1,source-preparation1,emission-recipe1}.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/emission-attempt1/result.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/passive-attempt{1,2,3}/admission.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/cost-attempt1/{result,codegen1}.json`
+- `llvm-bounded-prefix1/fp-cfg-extension1/RUNTIME_ADMISSION_DESIGN1.md`
+- `llvm-bounded-prefix1/groundcross-continuations1/{source-review1,emitter-source-review1}.json`
 - `integer-lane-feasibility1/{eight-owner-handoff1,eight-owner-result1,eight-owner-frontiers1,next-region1}.json`
 - `integer-lane-feasibility1/EIGHT_OWNER_REPORT1.md`
 - `v3-entry-frames1/result1.json`
