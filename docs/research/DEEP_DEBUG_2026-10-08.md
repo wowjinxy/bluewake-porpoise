@@ -3395,6 +3395,74 @@ Private receipts under `build/deep-debug-20261008/gcc-c2-source-feasibility1/scr
 - `chunk1/attempt1/passive-raw-output-provenance2.json`: `61525049f594ea60edd1491e73c1520462327a4cab19646dfd6a42c469dfcef6`
 - `chunk1/attempt1/codegen2.json`: `36e6a00c4146be40729746075050edc8b43a5eaf2c97c1edfd93c6045af23124`
 
+### Complete translated ownership review, October 10
+
+The existing ordinary capture now has all 2,194 translated native samples
+examined: 1,896 have unique guest associations, 245 remain shared and 53 remain
+unknown. The unique associations retain separate confidence: 708 CodeView,
+1,049 original-DOL CFG, 66 modified-body CFG, 54 REL CFG and 19 outlined-loop
+source-body associations. The last category is not native CFG or CodeView.
+Modified-body names identify original public address ranges inside the actual
+modified code; they do not establish unchanged semantics or mod feature cost.
+
+The additional mappings bind actual retained C2 source/COFF to linked code,
+with independent relocation inverses and PC-table checks where applicable.
+REL section mappings also match the actual retained section metadata. All
+sample sequence/RVA joins match the complete instruction census; no sample is
+dropped or duplicated. An initial mod batch hit its fixed PE-read cap and was
+preserved, then subdivided without increasing the per-pass caps. The final
+merge itself reads no PE bytes and launches no native processes.
+
+The highest unique counts remain GroundCrossGrp (29), recursiveCalc (20) and
+diffLight (18), each below one percent of all 4,455 samples. This supports
+continued investigation of shared CPU mechanisms; it does not assign exclusive
+cost, executed frequency or removable time to those routines. Public-name
+family groupings are also associations, not complete semantic cost categories.
+
+The earlier 965 outside-C2 samples are not a 965-sample unknown-library gap:
+772 already have current-host attribution and 193 are in foreign libraries.
+Some foreign snapshots provisionally match wait exports in current system
+DLLs, whose historical image identity is not pinned. The sampler's positive
+cycle delta covers a preceding interval, so it does not prove that a sampled
+thread was running or quantify blocked time. No new wait bottleneck is claimed.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `current-expanded-ranking1/result2.json`: `b9c9bc27b4ae7219d6abe033a421c7ee2d573ce961031177a6c53f73436b87e7`
+- `current-remaining-owner-plan1/mod1/final-manifest1.json`: `162d3035a9f74390b0476ca7b981ac38513dd2864e610a83f2514dc38c9037d2`
+- `current-remaining-owner-plan1/rel1/passive-result1.json`: `89738f47289617303e286f6e963ae9e71a44e60ab537f024c2f5882f78e1cca5`
+- `current-remaining-owner-plan1/loop-plan1/result1.json`: `6a4747b1efef4c29dc1d02ea89b3688e1d7aac2d55e5d523b9863fd36f394ede`
+- `ordinary-outside-module1/assessment1.json`: `1e56ca8af03192075338bdaf1abb52a08721d325ed3cea6b0a17821a6f2ea868`
+
+### Flat immutable bitmap: structural qualification, October 10
+
+A distinct host-only candidate replaces the compressed page-directory/mask
+representation with 13,200 flat 64-bit words. The original raw main, live guards,
+fallback and compiler settings remain unchanged. The normal product certificate
+checks the new generator/header and the same address domains; it is not manually
+enabled. All 844,800 aligned table slots agree, including 841,008 code members
+and 5,262 exclusions. An executed C fixture also compares all 3,379,200 byte
+addresses in range, boundaries, mirrors and one million seeded random queries.
+Two fixture link failures caused by incomplete CRT setup remain preserved;
+the successful attempt changes only the fixture's Windows runtime setup.
+
+The actual ordinary O3 object removes the dependent page-directory load and
+reduces the lookup from 17 to 10 instruction sites. The aligned leaf shrinks
+from 496 to 464 bytes, retaining no frame, calls, stack operands or saves. The
+fresh suffix, named relocation semantics and branch targets agree. All 122
+unrelated helpers preserve executable semantics and unwind information; one
+readonly constant moves with table layout but its referenced 16 bytes agree.
+The immutable payload grows from 12,530 to 105,600 bytes, which may offset the
+saved dependent work. No runtime or FPS gain is established by these checks;
+the linked comparison is still pending and the accepted tester remains intact.
+
+Private receipts under `build/deep-debug-20261008/host-flat-bitmap1/`:
+
+- `compile1/attempt1/result.json`: `ab174e542e4df9fa0fbfe782ffda98b332ab03767c971cb881a0a10fb5680264`
+- `fixture1/attempt3/result.json`: `dfd1bf363c3df7b46cc3a30c60216cbcaefebd01b69e43d85d869340e8798ad9`
+- `compile1/actual-codegen-e2.json`: `f5ac3b1511ffd38f56b761c2f84eeedf7c3fea8d74d6ac48246ce55f934cd668`
+- `compile1/independent-other-helpers-summary1.json`: `cb6c7538a0845500a4d92b58e6cfd500aebaffa9105b0af8e6802fb94906ac6b`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
