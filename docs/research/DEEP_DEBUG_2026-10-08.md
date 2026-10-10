@@ -3252,6 +3252,49 @@ Private receipts under `build/deep-debug-20261008/`:
 - `oz-size1/independent-codegen-audit1.json`: `0eda2354a3f8e9341b74e55c89f032a87ac9b53e626674611781b5dd76f8b729`
 - `feature-ablation-feasibility1/assessment1.json`: `b0fd6676023aedc7ab74055a6a46f4b42eca9282fb2ea75362c0003afe143f06`
 
+### Complete current module instruction census, October 10
+
+A passive decoder now examines all 3,490 module samples in the existing ordinary
+4,455-sample capture, at their actual interrupted instruction starts. These
+cover 3,110 distinct RIPs and comprise 2,194 translated-body samples and 1,296
+other module samples; 965 outside-module samples remain unclassified by this pass. Direct
+RIP-relative CPU operands use the exact accepted C2 MAP and the qualified
+3,552-byte CPU layout. Register-derived addresses remain unresolved.
+
+Among translated samples, 712 access cycle/PC metadata, 409 access other CPU
+state, 689 have arithmetic/move/control classifications, 216 are branches,
+106 are address-only LEAs, 48 have other memory operands and 14 are calls or
+returns. Across the whole module, exact field associations include suffix 266,
+PC 197 and downcount 211. Field associations overlap for wide operands. There
+are also 228 sampled PUSH/POP instructions, including 68 in translated bodies;
+the arithmetic/move/control category includes these implicit stack accesses.
+These describe interrupted locations, not exclusive time, executed frequency,
+removable work or an attainable speedup.
+
+The earlier 1,219-row partial census agrees in opcode/operand shape and its
+resolved CPU-offset subset, with zero class changes. This is not raw-byte or
+branch-target equivalence: 499 old COFF listings have relocated operands in
+the linked PE. Four failed or superseded analysis drafts remain preserved.
+The final pass checks relocation spans from the preceding page as well as the
+sampled instruction pages; no sampled instruction overlaps a base relocation.
+All five passes read at most 490,500 PE bytes in total. No game or compiler ran.
+
+Renderer review finds no clean additional flag-only isolation: headless rejects
+the controlled EFB replay and drops token/audio behavior. The existing
+Aurora-noninteractive route already suppresses surface presentation while
+retaining rendering and readback. Discarding GPU submissions would require
+preserving guest-visible EFB/token effects explicitly. Existing ordinary
+synchronous wait measurements remain small, so that diagnostic is not selected.
+The accepted build and private tester remain unchanged; the reported 19 FPS
+still has no qualified fix.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `current-full-rip-opcodes1/result5.json`: `0292d4ad21ef4807c024d3bd23bd76f2fbc0316187d4f763706bbc701b811153`
+- `current-full-rip-opcodes1/peer-b-source-and-actual1.json`: `0b11e48b5334c2374c7d568e98fe48c4d08937c15fffac02e9bbd44bfa20a8d1`
+- `null-render-replay-feasibility1/assessment1.json`: `30f12f830a3b99f57116b674feb7392d91ab2e5af089c250ec2a1dc7a14b92fe`
+- `discard-render-feasibility1/assessment1.json`: `2aba02caf4fe7f9e1f4ed241fbe7f215479fecad68a9808e9950b147531c62f3`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
