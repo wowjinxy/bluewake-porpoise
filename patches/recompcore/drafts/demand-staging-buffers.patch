@@ -1,0 +1,36 @@
+--- a/lib/gfx/common.cpp
++++ b/lib/gfx/common.cpp
+@@ -1171,16 +1171,8 @@
+                "Shared Index Buffer");
+   createBuffer(g_storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst, StorageBufferSize,
+                "Shared Storage Buffer");
+-  for (size_t i = 0; i < g_stagingBuffers.size(); ++i) {
+-    const auto label = fmt::format("Staging Buffer {}", i);
+-    createBuffer(g_stagingBuffers[i], wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc, StagingBufferSize,
+-                 label.c_str());
+-  }
+   for (auto& state : s_mappingStates) {
+     state.store(BufferMapState::Unmapped, std::memory_order_release);
+-  }
+-  for (size_t slot = 0; slot < g_stagingBuffers.size(); ++slot) {
+-    map_staging_buffer(slot);
+   }
+ 
+   {
+@@ -1354,6 +1346,16 @@
+ 
+ static bool wait_for_staging_buffer(size_t slot) {
+   ZoneScopedN("Wait for buffer map");
++  // The recording thread already owns this slot until its GPU remap completes.
++  if (!g_stagingBuffers[slot]) {
++    const auto label = fmt::format("Staging Buffer {}", slot);
++    const wgpu::BufferDescriptor descriptor{
++        .label = label.c_str(),
++        .usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc,
++        .size = StagingBufferSize,
++    };
++    g_stagingBuffers[slot] = g_device.CreateBuffer(&descriptor);
++  }
+   map_staging_buffer(slot);
+   while (true) {
+     const auto mappingState = s_mappingStates[slot].load(std::memory_order_acquire);

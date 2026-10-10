@@ -3604,6 +3604,44 @@ Private receipts under `build/deep-debug-20261008/private-abi-dispatch1/`:
 - `runtime1/controlled-batch1.json`: `b001eeb0196721293fb853192431cc3591ffd2ba7143b307302685877ae5f9db`
 - `runtime1/TERMINAL1.json`: `c9b7b800ebab96bc971fc5b9dd319a0d44bf5fd7d2bdc8c85c2e903306bbde9c`
 
+### Demand-created staging buffers, October 10
+
+System commit headroom later recovered to 8,412,839,936 bytes in a fresh
+read-only snapshot. A separate private memory-reliability candidate defers
+each staging buffer until its slot is acquired. All five identities and
+88-MiB capacities remain. The recording owner follows the original
+MapAsync/wait path; the existing post-GPU remap callback releases the slot.
+The mapping, acquisition, frame and shutdown bodies remain unchanged. Slots
+that are never used retain null handles. This avoids the five eager staging
+allocations at initialization, but eventual use may still allocate all five;
+the first required slot needs 152 MiB including the shared buffers, before
+other game/driver allocations. No peak-memory saving or FPS gain is claimed.
+
+The actual five-row dependency/compile/archive/index/link build passes.
+It qualifies the original 516-token/513-unique dependency closure, replaces
+only the common archive member, retains the pipeline diagnostic member and
+all 169 other host providers, and preserves all 64 direct objects and the
+original main, certificate, PE surface and resources. The existing unrelated
+Rml switch warning remains, with its source-derived two-line shift. The
+portable draft applies cleanly to the exact saved baseline and is not enabled
+in the production build: `patches/recompcore/drafts/demand-staging-buffers.patch`.
+
+One fresh accepted-C2 intro with the new host passes all 32 runtime route and
+input checks, six complete logical state checkpoints and full P6 equality
+against the retained original diagnostic-host/C2 reference. Complete phase and
+activity records are retained; the whole-process terminal creation counter is
+diagnostic only. This qualifies the exercised intro, not all five slots under
+pressure, map cancellation, arbitrary shutdown races, peak memory reduction
+or an FPS improvement. The accepted playable tester remains unchanged.
+
+Private receipts under `build/deep-debug-20261008/staging-demand1/`:
+
+- `source-preparation1.json`: `a6003f3c3c232f802468672bda7a659c0ab9d6bf64d6ceb5015c047ecf8aa814`
+- `peer-g-source1.json`: `ed769fc5d9d155bafd603a307ba9664bb2521b23bce84cfa3b45844ac921fba5`
+- `build1/attempt1/result.json`: `8a66b7e2404c6bdd09291a4d5f6d99a950c09b9ee04b3da6dac92378ca20058b`
+- `runtime1/preparation1.json`: `3382d30f6160ec84552189509563bc76cde62839a852029cb6cdc08069735299`
+- `runtime1/diagnostic-result1.json`: `48308d44f613689b905e312a83eee592f37ffd5e7363b4d66923ffeb0623c692`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
