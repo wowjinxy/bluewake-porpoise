@@ -3222,6 +3222,36 @@ Private receipts under `build/deep-debug-20261008/pipeline-phase-diagnostic1/`:
 - `runtime1/peer-g-actual-trace1.json`: `b459f6a10b9bc464849d4d84d6ed8ecda6e3607675df8b6c674d2aaa7d109904`
 - `runtime1/root-work-parity1.json`: `73cdb1d264e703547bb7e2985dc1fff3711ea7b3f11551b430ba3215d6a53e38`
 
+### Code-size screening and feature comparison limits, October 10
+
+A separate exact C2 chunk 0145 screening changes only its final `-O2` flag to
+`-Oz`. The actual M query and compile both exit zero and drain with the original
+48 dependency tokens. Executable section bytes fall from 709,841 to 656,767
+(-7.4769%), below the predeclared 10% screening requirement. The main entry frame
+grows from 152 to 200 bytes, and the original 72-byte loop has no corresponding
+unwind entry. External function definitions and undefined references match.
+Static call sites fall from 9,136 to 9,105; these are not executed cost.
+The candidate fails the frozen early criteria and is closed inactive. No hot
+path follow-up, module link or game trial is performed, and no speed conclusion
+is drawn. The older synthetic `-Os` null result remains separate and closed.
+
+Feature review also establishes a comparison limit. The current ordinary
+4,455-sample capture uses eleven active BetterWW options, whereas the controlled
+state/replay route uses `BLUEWAKE_OPTIONS=none`. Disabling widescreen changes
+camera culling and rendering; disabling BetterWW changes guest intro, text and
+animation behavior. Such an on/off trial would compare different workloads,
+not isolate hook overhead. The ordinary log records one instant-text scan
+patching 4,411 plus 15 messages; source subsequently validates the cached BMG
+every 60 retraces rather than repatching all messages every retrace. The saved
+samples establish no material cost attributable solely to those hooks.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `oz-size1/attempt1/result.json`: `39fc6e07233e4f638e3eb21b4f7c3e3c2d2e02204dddf718bc92aa3f9cdcf48d`
+- `oz-size1/attempt1/codegen1.json`: `8564f6100a13b10a966684ea8c10f03f3ab3b95891031c60076310581aee0d53`
+- `oz-size1/independent-codegen-audit1.json`: `0eda2354a3f8e9341b74e55c89f032a87ac9b53e626674611781b5dd76f8b729`
+- `feature-ablation-feasibility1/assessment1.json`: `b0fd6676023aedc7ab74055a6a46f4b42eca9282fb2ea75362c0003afe143f06`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
