@@ -2937,7 +2937,11 @@ pairs disagree in CPU/wall signs: -4.4510%/-5.1700%, then +3.2164%/+2.8289%.
 These are invalid-experiment diagnostics, not speedup evidence. No run is
 discounted, no replacement run is made, and the candidate remains inactive.
 
-All six final pipeline databases equal the same 242-row seed byte-for-byte.
+All six final pipeline databases are byte-identical to each other and contain
+the same complete 242 logical rows as the seed. The seed differs physically
+at six SQLite header bytes. The primary audit recorded this distinction;
+the earlier statement here that finals equaled the seed byte-for-byte was
+incorrect. Its recorded seed hash still matches the current seed.
 Source inspection shows that cached background pipeline preparation increments
 the same terminal counter, so startup completion crossing its first-retrace
 baseline is possible. The retained logs do not establish the cause or timing
@@ -3124,6 +3128,60 @@ Private receipts under `build/deep-debug-20261008/base-span-ram1/`:
 - `module-pair1/control-versus-C2-binary1.json`: `4857bc8e641885fb2a3cbd698f8804d739fda7316c6c1a47bbdb17fd96ac82d8`
 - `module-pair1/independent-actual-pair-audit1.json`: `0c4642cf1dbc4f94ba158dcf721a930b033f8d15ee9d1627315df441dbd2de1b`
 - `materiality1/result1.json`: `30aeded6d62672c3127992ac3b83a8d3bccc53f8daea81a75bacfda0601c88be`
+
+### Base-span runtime result and pipeline diagnosis, October 10
+
+The fresh pair passes the complete intro correctness comparison. CPU, MEM1,
+MEM2 and ordered aliases match at VI 300, 600, 900, 1200, 1500 and 1800.
+All 1,228,335 P6 bytes, 1,801 work rows and 1,134 EFB input entries match;
+clock, dispatch, GX, replay and terminal pipeline checks pass. Both owned
+games exit zero and drain. A raw-output audit confirms these
+results. This qualifies this recorded route, not every gameplay state.
+
+The fixed eight-run timing batch stops at its third game, candidate C2.
+The three native processes exit zero and drain, but terminal pipeline counts
+are 0, 0 and 4. The third wrapper fails only its unchanged no-compilation
+requirement. The remaining five games and final analyser are not run. No
+replacement run is made. The sole completed pair has candidate CPU time
+0.1759% higher and elapsed time 0.7328% higher. These partial diagnostic
+numbers establish no qualified gain or ordinary displayed-FPS result.
+The original compiler text-size failure remains; the candidate is closed
+and inactive, with the installed build and tester unchanged.
+
+All three final pipeline databases are physically identical to each other
+and contain the seed's same complete 242 logical rows, configs and first-frame
+values. They differ from the unchanged seed only at six SQLite header bytes.
+Neither database equality nor the cached-pipeline completion log identifies
+the origin or measured-window timing of the four reported creations.
+
+Source inspection establishes a diagnostic limitation: restored and newly
+requested pipelines increment the same completion counter, and a background
+restore can be promoted into a foreground queue. The FPS watch begins counting
+after its first baseline; existing VI records have no pipeline snapshots.
+The retained outputs cannot retrospectively distinguish restoration from
+new creation or locate the four completions within VI 750..1500. The failed
+gate remains authoritative and does not explain the reported 19 FPS.
+
+The next diagnostic will retain immutable pipeline origin and bounded QPC
+request/start/completion events, joined offline to the existing VI timestamps.
+Its source assessment proposes no startup barrier or change to earlier timing
+criteria. A final asset check confirms all 417 inputs (including 415 RELs)
+and routing unchanged. Tingle rescue wait-skip remains disabled.
+
+Private receipts under `build/deep-debug-20261008/base-span-ram1/runtime1/`:
+
+- `correctness-batch1.json`: `c1505a5d89d0e60f586078018bf16ea35024269dc878fda19946fda4b57ea036`
+- `actual-correctness-audit1.json`: `f9e019aa2945728c16a907e4fec6925ef7b5e2eaacd94f00fe1dca6398e798d8`
+- `controlled-batch1.json`: `86358b237c6159bd466546ccad27a188dcfa1fb8c1b0488baa8dd24329f9ab7a`
+- `actual-timing-audit2.json`: `d7accdfe0c5e950bc6858cba6f0761a8f40c546016ec4b7f7d7a723564ea8a9a`
+- `independent-incomplete-timing-audit1.json`: `035746bad3578c294b14933ebcc32f759381089fb6595ea57172cd7de8f1f790`
+- `pipeline-failure-audit1.json`: `de5ee3ddc5cc3f664f65d20ff8982dcb5802987df98a62bee33f4786652e8a62`
+
+The source feasibility receipt is
+`build/deep-debug-20261008/pipeline-phase-feasibility1/assessment1.json`
+(`ee1e13c0…`). The post-run asset receipt is
+`build/k7-uniforms-20261008/native1/asset-inputs-after-base-span-20261010-1.json`
+(`64e920fec03e3c0a489d06b6d3cc3069e234a1191cb0b741ed87196a4cdba736`).
 
 ## Validation boundary and retained evidence
 
