@@ -2629,6 +2629,95 @@ Private receipts under `build/deep-debug-20261008/`:
 - `paid-twin-ram-next10-runtime1/controlled-input1/paid-twin-ram-next10-c2-per-vi-eight-run1.json`: `671bd3cbe4965c0d15abc273e267d31716e00b365d32553e517f43aba2166657`
 - `paid-twin-ram-next10-runtime1/independent-timing-audit1.json`: `0542dc050f064665023d344c3aae1654e6279fadc68229273ab11a2090f8e1e6`
 
+## Follow-up feasibility checks, October 9
+
+The current 4,455-sample capture was also inspected for a distinct optimization
+after closing the ten-owner timing block. No further implementation is justified
+by these source and machine-code checks alone.
+
+Of the module's 3,490 samples, 2,194 belong to translated unwind ranges. The
+remaining 1,296 split into 1,021 unwind-bounded owners and 275 tentative nearest
+MAP labels. The largest confirmed individual helpers are chassis dispatch
+(82), alias resolution (78), scalar multiply (70), original-call dispatch (65)
+and GPR readiness (65). These are disjoint sampled RIP counts, not call counts
+or exclusive time. Published guest PCs were not used to assign these costs.
+
+Static dispatch descriptors would repeat the existing literal-domain,
+compact-v3 and PC-to-function caches. Exception, budget, interrupt, pending
+event, alias, lifecycle and hook selection remain live inputs. GPR readiness
+additionally depends on current frame addresses and per-word memory ownership;
+a target descriptor cannot replace that proof. Existing adjacent approval reuse
+and whole-frame preflight results remain closed.
+
+The cold memory tails already share the original precise code. The current
+799 qualified native rows contain 62 direct guest-register-store samples,
+59 in fast copies. Only 18 have a later write to the same register before the
+conservative integer/memory boundary. That association is 0.404% of the whole
+capture, before necessary exit publications. Existing codegen already retains
+dependent values in native registers. There is no demonstrated material budget
+for another local-register rewrite or evidence of a cache-stall gain from
+moving the shared cold tails.
+
+The ten original owners contain 3,284 scalar FP memory operations and 265
+paired-single memory operations. Only 76 qualified current rows associate with
+these instructions: 72 scalar and four paired-single. Nineteen are metadata
+stores, including the 18 scalar rows already considered in the earlier closed
+FP-only subset; none is an actual CALL instruction. The 55 unwind-bounded PSQ
+helper samples include necessary memory and conversion work. This does not
+establish a material callback-barrier cost for an FP-memory extension.
+
+Finite scalar helpers do not save or change the host FP environment for each
+operation. The core MXCSR updater is reached by FPSCR control changes; ordinary
+exception/status updates modify guest bits. No environment-control instruction
+appears in the 790 qualified rows checked for this question, and no named
+setup-function sample appears in the helper census. These scoped absences do
+not prove global absence, but offer no basis for an FP-environment cache.
+
+Private source-only receipts under `build/deep-debug-20261008/`:
+
+- `ordinary-public-guest-pc-profile1/ordinary-public-published-pc-intro1/nontranslated-native-census1.json`: `1089c302b4a6bda3e6b31e96629a98f97222b94c5da70a333e345305db07223c`
+- `cold-twin-memory1/tail-local-feasibility1/result1.json`: `1f867d97b8e1f7b03ecfa30782a734d096eb8c65891befdbe80eacb2f292ed8d`
+- `cold-twin-memory1/FP_MEMORY_COLDTAIL_FEASIBILITY1.json`: `c399ee3103790a313da2ba666ba115a98966e22e0d1bc31455338cf664a3d089`
+
+No production code, tester, game data or existing experiment result changed
+during these checks. No native job or timing run was required.
+
+### Ryzen tuning pilot
+
+A separate one-file compiler pilot added only `-mtune=znver2` to the exact
+original C2 0145 source and command. It retained `-march=x86-64-v3`, the effective
+O2 policy, FP contraction disabled and all original defines/includes. Both
+owned M/compile children exited normally and drained; the actual M and MD
+records match the same 48 original dependencies. An independent audit verifies
+the ordered argument inverse, original inputs and public function/import sets.
+
+Executable text grows 709,841 to 710,753 bytes (+0.128%). The main frame stays
+152 bytes and the loop frame 72 bytes. Whole-object instruction sites fall
+134,822 to 133,866 while static calls rise 9,136 to 9,138. These aggregate counts
+include cold code and padding; they do not establish executed savings.
+
+The inspected successful RAM path in block 851 remains 76 instructions and
+435 bytes, with the same normalized instruction multiset and CPU/alias/MEM1
+references. Block 220 falls from 61 to 60 instructions, 299 to 297 bytes,
+because two integer CR-construction operations become one LEA. Its memory
+references and emulation checks remain. This is a local instruction-selection
+difference without a demonstrated material hot-path benefit. The pilot stops
+before linking or game execution, as declared before compilation; production
+and the tester retain their original tuning.
+
+Private receipts under `build/deep-debug-20261008/zen2-tune1/`:
+
+- `compile-preparation1.json`: `ccb5751c65b2ad27f94cfcba51fda580bc5c1a1d7400ade76d8f90ef1341fcee`
+- `attempt1/result.json`: `97c1e19c490b019b0306ec6862adf9f5529b2e901ec512b44a853cb97d972ea6`
+- `attempt1/independent-actual-audit1.json`: `6c5dbaf584a456ed08faadd499dcc4eea008046159784cbc33e53464cf9cd8ed`
+- `attempt1/codegen1.json`: `eaa594cd878989f62b23186546fa67809af161dcaf53504ccc78bb611be1b7d0`
+- `attempt1/path-comparison1.json`: `f48e1034b3c073eca3c2fff5aaa36e5929f05e8397632f2af0b161adada081a8`
+
+The initial passive path parser's relocation-addend error is preserved. A
+duplicate passive comparison writer was refused by exclusive output creation;
+the successful comparison output remains unchanged. Neither event changed a
+compiler input or required a native retry.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
