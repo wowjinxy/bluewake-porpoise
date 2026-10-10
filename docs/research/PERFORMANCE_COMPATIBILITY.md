@@ -38,9 +38,16 @@ Primary frozen sources:
 
 The implementation records for 19/23/24 are separate from this backend review.
 Finite fmod and oscillator calc now have exact optimized/ASan candidate proofs.
-Plane has optional builder wiring, but its original-stage certificate needed
-correction and permanent watched interior PC 80328F40 still prevents admission.
-Oscillator's permanent save/restore interior watches also prevent admission.
+Plane has optional builder wiring, and its original-stage certificate has been
+corrected. An October 9 source refresh found that the public host no longer
+permanently refuses interior save PC 80328F40. The accepted C2 module still has
+its static watch barriers and no enabled plane hook/define; complete current
+preparation, admission and compiled integration remain unqualified. The inactive
+GX fog adapter separately still declines at C2's static F40 check and is absent
+from its provider/router bank. A helper-specific certificate and a fresh host
+query could support a narrow future integration; neither justifies globally
+relaxing module watches. Oscillator's earlier save/restore refusal evidence was
+not requalified by this refresh.
 These results do not authorize removing observers or substituting a later-stage
 source certificate. Ordinary tester builds retain those translated paths;
 none of this backend review enables them.

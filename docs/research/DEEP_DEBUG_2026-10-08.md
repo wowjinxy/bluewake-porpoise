@@ -2718,6 +2718,54 @@ duplicate passive comparison writer was refused by exclusive output creation;
 the successful comparison output remains unchanged. Neither event changed a
 compiler input or required a native retry.
 
+### Deferred result classification and native-helper admission refresh
+
+A source-only proposal to defer the FPSCR result-class field across C calls
+was closed without implementation. The current 4,455-sample capture identifies
+16 confirmed classification instruction samples and five publication samples
+(0.471% combined). Only one of those five is an actual FPRF store. This subset
+is incomplete, not an upper bound: 61 nearest-symbol samples remain excluded,
+and no dynamic overwritten-result frequency is known. Existing combined
+FI/FR updates cannot be discarded with the class field.
+
+A module-local pending descriptor would add raw-value/type stores and require
+a new observer contract. Native skin can read the incoming field; callbacks,
+checkpoints, autosave, relevant FPSCR operations and interrupted exits must
+receive materialized state. The exact rounded f32 bits must be retained before
+DAZ-sensitive widening. Rc/CR1 alone copies different FPSCR bits and is not a
+class-field barrier. No material savings or inexpensive observer closure was
+established; no candidate was built.
+
+The same source review corrects an older blanket admission explanation.
+Frozen public host `13c83a6a` no longer permanently refuses `80328F40`; its
+remaining mentions are disabled runqueue tracing. Accepted module C2 still
+lists F40 in its static watches, and the inactive GX adapter's
+`gx_silent_probe` requires that static check to pass. Existing matrix/search
+helper adapters instead use the full fresh host callback. This distinction
+does not qualify a whole replacement or prove useful actual admissions.
+
+The current mod table does not replace the helper owner or patch the inspected
+F40/F84 helper bodies. A narrow future helper route would still need exact
+provider, selected-original, call-site and return-target certification, the
+full live host predicate, scheduling/memory order and callback continuity.
+The LR-sensitive F84 refusal for `80246A04` must remain. No global module watch
+was removed.
+
+Current integration review matches all 49 GX raw fragments in six base/mod
+forms (294 comparisons), and the plane draft's eight required fragments in
+those forms (48 comparisons). C2 nevertheless lacks the GX provider/router
+and its required FIFO writer setup. It also lacks the plane hook/define.
+Neither candidate is ready to enable through a host flag. Their old oracle
+proofs and the initial plane preparation failure remain preserved; there is
+no new gameplay, GPU, throughput or displayed-FPS qualification.
+
+Private source receipts under `build/deep-debug-20261008/`:
+
+- `lazy-fprf-current1/result1.json`: `639d77aaae2b477aa5cc3f03a8de7a7fbd82284fd9ff545dc49b9b8c05c466b1`
+- `lazy-fprf-feasibility1/OBSERVER_CLOSURE1.md`: `4ddaf402c4f31551fdcb65abde7a4dda3574e0c355767d4ee090d2cf6df258e9`
+- `f40-admission-refresh1/result2.json`: `024a8dd6134fc21bbecf1052d39c978941fbe291e1ff9e38e13acb7ced9479e2`
+- `inactive-native-current1/integration-audit1.json`: `3053cc9c74e63b4df8da53e76f4a1f365117f0f711f28b9e250b7cee385e022d`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
