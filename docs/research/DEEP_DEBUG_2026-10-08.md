@@ -2895,6 +2895,102 @@ Private evidence under `build/deep-debug-20261008/`:
 - `current-host-attribution1/leaf-guard-partition1.json`: `d62f2bad49d46d6c6a90863104f5cc55136c5eb8352273a20ec11df9ffe7d611`
 - `current-host-attribution1/static-lookup-detail1.json`: `1cf2cf84abcd37008ab53352344df5e53b65e65a746f9312a224d06f605606af`
 
+### Immutable word-offset lookup: correct, timing experiment invalid
+
+The current static directory selects one of 85 mask rows. A private variant
+stores each row's word offset directly and indexes the same 1,360 mask words.
+Independent source and actual-object checks compare all 844,800 aligned table
+slots, including the 841,008 valid members and all 5,262 exclusions. Both use
+12,530 bytes. The live query, membership bounds, mutable guards and fallback
+are preserved; no answers or mutable state are cached.
+
+The actual ordinary O3 compiler pilot uses the original main source and ordered
+flags, a fresh product-CMake certificate and the exact 342-entry dependency
+closure. Four serial owned children exit zero. The emitted lookup removes
+SHL EAX,7: directory load now feeds one integer addition followed by the scaled
+mask load, rather than shift plus addition. The static block shrinks from
+63 to 59 bytes. Alignment absorbs those four bytes, so neither its 496-byte
+function slot nor total text shrinks. All other 122 functions, their named
+relocations, 98 unwind records and xdata remain identical. The selected query
+has no calls, stack frame, spills or saved registers in either object.
+
+This establishes a compiler effect, not speed or ordinary gameplay improvement.
+The 65 sample locations do not forecast saved cycles. A separately recorded
+linked protocol requires fresh six-state/full-P6 correctness and exactly eight
+paired timing runs against the current public host, with the same C2 module.
+It retains the one-percent CPU/wall mean and all-four-pair sign requirements.
+The installed build and private tester remain unchanged.
+
+The subsequent instrumented host links with exactly one replaced main object,
+169 retained providers and the original 64 direct inputs. Its fresh product
+certificate and actual 425-entry dependency closure pass independent checks.
+The six complete CPU/MEM1/MEM2/ordered-alias checkpoints, all 1,228,335 P6 bytes,
+all 1,801 work cursors and all 1,134 replayed EFB inputs match the control.
+Both games exit zero with the complete route and input checks passing.
+
+The fixed eight-run timing experiment stops at its sixth run, control A3.
+All six games exit zero and drain, with matching work and EFB consumption,
+but A3 reports 50 terminal pipeline creations against zero for the first five.
+Its wrapper rejects the unchanged no-compilation requirement. The remaining
+two runs and final analyser are not executed. Even the first two incomplete
+pairs disagree in CPU/wall signs: -4.4510%/-5.1700%, then +3.2164%/+2.8289%.
+These are invalid-experiment diagnostics, not speedup evidence. No run is
+discounted, no replacement run is made, and the candidate remains inactive.
+
+All six final pipeline databases equal the same 242-row seed byte-for-byte.
+Source inspection shows that cached background pipeline preparation increments
+the same terminal counter, so startup completion crossing its first-retrace
+baseline is possible. The retained logs do not establish the cause or timing
+of these 50 creations. The original failure remains authoritative; this
+possibility does not rescue the comparison or explain the ordinary 19 FPS.
+
+Private receipts under `build/deep-debug-20261008/host-static-offset1/`:
+
+- `peer-b-source1.json`: `13137549b98be166ad5192fe0729f59119e79507758275a48d3cb00c27589bdf`
+- `compile2/attempt1/result.json`: `2a67b3090131ca5f2a3598c6afb0bebd33fac2b4270a2a09978fcf8976761e97`
+- `compile2/independent-build-audit1.json`: `9e0399923264558b9a6c78191398f7bd8ff9f2530c579c63f6d04817499bf6a1`
+- `compile2/actual-codegen1.json`: `17da205a6bde80ef3296616ff556b54c445d07b6547ce2a861a4dfe61f44579a`
+- `compile2/peer-g-actual-summary1.json`: `23f6b16cfbd386771f61b513e340cb02eef72f45d942732835dd65d7851c707d`
+- `linked1/attempt1/result.json`: `fd76d9152a11ac0d3a68e91b1b7fb7cb6267c5917d0df5d0845315faf7c47163`
+- `linked1/independent-build-audit1.json`: `131701b6e6ef20ee71146dfdf7e5769abeba7557449ed8e01dbce2dbe81c3a8e`
+- `runtime1/independent-correctness-audit1.json`: `ac9b686e2432d779acece57c53c6b13c7eb23be75174c63ec0ccb8bf8594da70`
+- `runtime1/controlled-batch1.json`: `34f2615e7176928e27d1c0b55a5667667371eaa74a1c94423862842023e8b01d`
+- `runtime1/independent-timing-audit1.json`: `b45101599f8fe88e7b697b1a6d862a46527b014e277227c7cccbb8c53485ceba`
+- `runtime1/pipeline-failure-audit1.json`: `588bd1462243e61381654ea76148833443f624b549e22d6c8b3b475f5601280b`
+
+### Further source checks, October 10
+
+Three bounded follow-ups do not establish a substantial new candidate. The
+ordinary CPU pointer parameter is unused beneath the fixed-global ctx macro,
+and normal MEM1 already uses a separate declared global. Adding restrict to
+that parameter supplies no missing separation; callback and alias paths still
+retain their complete mutation contracts.
+
+Current paired-arithmetic helpers have 47 pdata-bounded samples out of 4,455,
+with one additional tentative location. This excludes 102 PSQ-related
+locations and does not bound inlined arithmetic. Twelve sampled helper copies
+use scalar lanes, but exact multiplier rounding, NI/fenv, classification and
+fallback semantics remain necessary. No sizeable eligible SIMD target is
+established. An initial source assessment incorrectly inferred disabled SLP
+from the early flag spelling; the preserved successor binds the exact existing
+frontend query, which enables both loop and SLP vectorization at effective O2.
+The earlier 0181 flag-only SLP pilot already produced identical machine code.
+
+Wider private calling-convention propagation remains distinct and unexecuted,
+rather than a closed runtime failure. The two selected chunks contain nine
+sampled PUSH/POP locations; the full 1,219-row qualified subset contains 28.
+These are incomplete observed locations, not removable time or an upper bound.
+No frequently traversed private call cluster is established, while the known
+216-byte wrappers and 248-byte shared dispatcher remain costs. No implementation
+or native pilot is selected from these source assessments.
+
+Private evidence under `build/deep-debug-20261008/`:
+
+- `cpu-ram-alias-feasibility1/assessment1.json`: `56498b74676c00f2ab751e058c6a6dcf2423945a77b97da220f6721c6a5b6f7c`
+- `paired-single-simd-feasibility1/assessment2.json`: `637e73ee467a9d270e3e2d63c598d66ffbd69d77add080c49aa29ac9d08cf9bc`
+- `paired-single-simd-feasibility1/slp-correction1.json`: `e565e8dff9a3d8d92a68c80e75b32f723061bfc54f05c54c3bdb5a39a9d7241c`
+- `private-abi-propagation-feasibility1/assessment1.json`: `18b85a012d2eb282c4d306589898cb0b4b3035dd64b5edd10ffabd58b44cf922`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
