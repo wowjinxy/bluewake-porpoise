@@ -3332,6 +3332,61 @@ Private receipts under `build/deep-debug-20261008/alias-callee-prune1/`:
 - `compile1/attempt1/codegen3.json`: `2e11fd9298f4b528d12b7a661a9760b6793a5946801829898ad0bc5910caeb39`
 - `compile1/attempt1/unrelated-change-review1.json`: `d0cf23aab577da75ad78a1aeed4a622bce045dfa2c08de2ba7d6186179b6c17e`
 
+### Separate GCC backend feasibility, October 10
+
+A separate compiler-backend screen uses the unchanged accepted chunk 0145,
+its original repository headers and the installed x64 MinGW GCC 15.2.0.
+The explicit mapping retains effective O2, x86-64-v3, SLP disabled and
+FP contraction off; it removes the Clang-only backend/autolink options.
+No previously closed Clang candidate is restored by this screen.
+
+Three owned dependency queries passed, with 41 Clang-witness, 35 GCC-witness
+and 34 GCC-chunk tokens. GCC uses its own package headers, and its chunk keeps
+the same twelve repository inputs. Two separately owned small witness
+compilations then passed with exactly matching M/MD dependency Counters.
+Every Job reported zero active processes before normal completion. Process
+totals do not identify each transient executable; configured target and
+frontend/assembler paths are checked against the fixed verbose commands.
+
+The actual COFF constant arrays match byte-for-byte across compilers: all
+53 CPU-field offset/size/type-alignment triples, all 16 module-descriptor
+triples and the scalar/floating evaluation properties. Both report CPU size
+3,552/alignment 8, LLP64 scalars and FLT_EVAL_METHOD zero. Six small callback
+probes also passed a finite static ordinary Win64 argument/return and leaf
+unwind review. This is compatibility evidence, not executed interoperability,
+FP/fenv correctness, gameplay or speed evidence.
+
+One unchanged original chunk was compiled once with GCC. Its driver exited
+zero in 119.094 seconds and the owned Job drained. The diagnostic gate failed:
+besides the anticipated `dolrecomp_charge_precise` inline/noinline warning,
+the unchanged header emits the same warning for `dolrecomp_call_slow`.
+That failed receipt remains unchanged. A separate passive provenance audit
+qualified the completed raw object for inspection only, with exact M/MD
+34-token Counters, unchanged inputs and both complete diagnostics retained.
+No recompile, warning suppression or source/flag rescue was performed.
+
+The actual object is unpromising: executable section bytes rise from 709,841
+to 829,248 (+16.82%), and static instruction/call sites also rise. The main
+frame remains 152 bytes with five additional nonvolatile XMM saves. The
+surviving loop's compiler clone grows from 1,481 to 1,508 bytes, 299 to 314
+instruction sites and 17 to 18 calls, with its 72-byte frame unchanged.
+Public function ownership and the two extern guest globals are preserved;
+there are no new undefined runtime/compiler/math helpers. The 18 new read-only
+`.refptr` COMDATs hold addresses of existing externs. These are static codegen
+observations, not a measured slowdown. The screen stops before fixtures,
+module linking, gameplay or tester changes; the accepted build stays active.
+
+Private receipts under `build/deep-debug-20261008/gcc-c2-source-feasibility1/screen1/`:
+
+- `discovery1/attempt1/result.json`: `717afea6bfb20d815494e661c91d1d33a33db2a56ac66780881135e19077f9f7`
+- `discovery1/attempt1/independent-e-actual-audit1.json`: `ad488fc0a23df88d89baff36e61244a9c68e793c50cf1ae621586163a2ebd1e4`
+- `compile1/attempt1/result.json`: `6059605217d3d1b570120917f01b40c2a057218f1599c76208e5ebf9464b5eeb`
+- `compile1/attempt1/static-witness2.json`: `fa94623f963ff7b32c370528256a8ae6f479e1f95049e738948722db33568319`
+- `compile1/attempt1/peer-g-static-witness1.json`: `076ea5034777203d19755ec8d7428b5196f9027175944d659d7ca3ffe8fb644c`
+- `chunk1/attempt1/result.json`: `902f0d18aeac9fdd460dcd5a396764a1fec40eafdd9d4cd61fea88c3294ac2ea`
+- `chunk1/attempt1/passive-raw-output-provenance2.json`: `61525049f594ea60edd1491e73c1520462327a4cab19646dfd6a42c469dfcef6`
+- `chunk1/attempt1/codegen2.json`: `36e6a00c4146be40729746075050edc8b43a5eaf2c97c1edfd93c6045af23124`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
