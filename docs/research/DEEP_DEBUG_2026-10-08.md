@@ -8,6 +8,100 @@ The fresh capture with observation tracing disabled still identifies observation
 checks and translated game code as CPU optimization candidates. No repeatable
 ordinary-play speedup is qualified yet.
 
+### Wider private calling convention: no qualified gain, October 10
+
+A new private candidate changes twenty original DOL chunk providers and the
+module dispatcher to use typed internal `preserve_none` calls. It preserves
+ordinary public wrappers, function-pointer identities, native/mod precedence,
+the original shared lookup-cache behavior and every guest instruction body.
+The selected mains and loops account for 1,189 of the clean capture's 2,194
+translated samples (54.19%); this is coverage, not removable CPU time. This is
+a separate implementation from the closed two-chunk study: 2,439 constant call
+occurrences now target selected chunks, and indirect lookup transports a typed
+ordinary/private pair without a linear pointer search or convention casts.
+
+All 21 providers compile with their original ordered C2 flags and exact actual
+`-M`/`-MD` closures. The link retains 814 other direct objects and all 15 physical
+library providers; all 835 direct inputs retain their original ordering. Two
+of the five accepted C2 CPU/PSQ/REL objects remain byte-identical; three selected
+PSQ chunks are rebuilt from their actual accepted C2 sources and headers.
+Their ancestry is preserved, rather than claiming that all five objects survive
+unchanged. Public PE exports, imports, resources and ABI fields pass comparison.
+
+Actual code/unwind review covers all 20 private mains, 88 emitted loops and 22
+ordinary entry boundaries. Private frames shrink, while the public wrappers
+use 216-byte frames, the chassis grows from 88 to 312 bytes and the ordinary
+indirect entry grows from 56 to 280 bytes. The private indirect helper uses a
+40-byte frame. The pair/slot helpers are inlined, with no outlined aggregate
+return boundary. Aggregate selected text falls 6,880 bytes, but static call
+sites increase from 187,507 to 188,757. A 32 KiB private lookup-cache column is
+also added. These are recorded costs and mechanisms, not a predicted speedup
+or an attribution of the timing result to any one change. Unwind validation is
+static save/restore/metadata correspondence, not an executed exception test.
+
+The actual selector fixture passes 8,746 lookups, 6,782 lookup invocations,
+1,576 direct-slot invocations, 1,596 mutations and 1,678 cache-collision cases.
+It uses all 748 actual slots and typed noinline stubs. An initial harness failure
+compared a `Counter` of names with a `Counter` initialized from a pin mapping;
+the latter treats the pin dictionaries as counts. That failure is preserved.
+The successor verifies the same exact seven link providers using mapping keys,
+reuses the three successful compiler/linker rows, and executes the retained
+fixture once. No game source or provider criterion changes for that repair.
+
+A fresh hidden intro run then matches all six complete guest-state checkpoints
+and the complete raw P6 image against the retained C2 control on the same
+demand-staging diagnostic host. Eight fresh timed runs follow in
+`A1,G1,G2,A2,G3,A3,A4,G4` order. All route, exact primary/five-segment work,
+cursor, GX, terminal clock/dispatch and coherent pipeline-idle gates pass.
+Every run retains 1,801 VI rows and 1,025 calibration readings. The primary
+window remains VI750..1500; no screenshot, state hashing or sampler is active
+during timing. Background load ranges from 29.59% to 78.32%; no overhead or
+background estimate is subtracted.
+
+| Paired metric, candidate relative to C2 | Pair 1 | Pair 2 | Pair 3 | Pair 4 | Mean | 95% paired-t interval |
+|---|---:|---:|---:|---:|---:|---:|
+| Dispatch-thread CPU time | -8.86% | +8.46% | +7.89% | -3.98% | +0.88% | [-12.91%, +14.66%] |
+| Elapsed time | -9.35% | +7.97% | +8.38% | -7.02% | -0.007% | [-15.11%, +15.10%] |
+| Dispatch-thread cycles | -8.91% | +8.39% | +8.13% | -4.33% | +0.82% | [-13.17%, +14.81%] |
+
+All four pairs are retained. Both primary confidence intervals span zero and
+the predeclared gain threshold is unmet. Calibration does not explain a claimed
+gain because no gain qualifies. Whole-process terminal pipeline counts are
+41, 53, 0, 0, 0, 0, 19, 0; these remain diagnostic, with no covered creation in
+the widened primary window. The candidate is closed as timing-inconclusive
+with no demonstrated benefit. No unchanged retry, default enablement or tester
+replacement follows. This study does not explain the player's 19 versus
+23–24 FPS observations or establish ordinary-play FPS. Tingle wait-skip remains
+disabled.
+
+All new large artifacts are private under
+`D:/Projects/BlueWake-private-abi-wide-20261010/`. The accepted C2 image is copied
+there once with a full hash before immutable per-case hardlinks. Every native
+child has fresh UTC/process/available-commit admission and an owned hidden
+launch; other agents are idle during timing. Original binaries, writable player
+data, prior studies and failed authoring/harness attempts are preserved.
+
+Key private evidence and SHA-256 identities:
+
+- `source-preparation1.json`: `4013fd72988baabdfd4bf4e72948b697624b11b76a85a648c5244acf55f672d5`.
+- `compile1/attempt1/result.json`: `26632844b33226a4766e06946e3c0f9c20d734d023713d2244fa7a206426e41d`.
+- `module1/attempt1/result.json`: `249c6ea244686c43b693da5c5708f10124ef34a0c52e4e15b768e9c4f394fb3c`.
+- Candidate DLL: `2faf09784f3e12b19b3f27708bbc85562fcfb7ea41b7aaa5cf2894445db59705`.
+- `codegen1/actual-codegen1.json`: `b1b8c2686a03a5cd57796cc6c26ba76d7404d3f10e5e0959fac54c662bdf155f`.
+- `codegen1/independent-admission1.json`: `062348afcfbc44c548d3fac02bb1729ebac57412e2c33f96562c1d42c74de881`.
+- `fixture1/attempt1/result.json` (preserved failure): `c274ca6ba637ba929997dde5725079ab2c9577f2bccee9878881a67b3b48dd42`.
+- `fixture1/attempt2/result.json`: `e7a4495ea1111e5d14ca2d03e449666287e0174fdd32c192a39eab3f08025717`.
+- `runtime1/preparation1.json`: `b5baddf170d9d928c1f5ce2ac1e5b3009b5f15d3413e18a59c948b6a2e77e6af`.
+- `runtime1/correctness-batch1.json`: `a3282319e262b5f992cb1e1228eb90c80c61fe55f8f3499eea4a7a15c081f40a`.
+- `runtime1/controlled-batch1.json`: `284f61ff237cd23d986f52337073105e537d4ae5be15b2def8c1c9f445db418a`.
+- `runtime1/controlled-input1/private-abi-wide-per-vi-eight-run1.json`: `cbc2fed97703bad54f9cc1bf4f044fd39cdfd7ff9c3ef2c332cb0104519d1250`.
+- `runtime1/peer-e-actual-timing1.json`: `fd9401d1f9e8bb43b8f947bf6529e3d21a8ecf35a2f2d4c287c37007dd43b4bf`.
+- `runtime1/independent-g-correctness-audit1.json`: `1c41b3dd2159e22a7a267740538cb31a94486c8fee49e2b38c400c931b0d56fa`.
+- `after-study-cost-assessment1.json`: `e70471e40519b2caaaff44704665d2a20fd4eaf21613bc015221968785ef8d17`.
+- `closure1.json`: `5249bd0024f5aca45864614f0775beeda9c559085ab9d8bd22377cd31f97dc78`;
+  rehashes confirm the accepted public host, C2 module and existing tester ZIP
+  retain their original bytes.
+
 **Benchmark environment correction (October 9):** actual command records show
 that the main/worker sampling template and the chassis, observer-domain,
 paired-single and per-VI timing families inherited

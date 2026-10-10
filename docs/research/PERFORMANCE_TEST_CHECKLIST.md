@@ -17,6 +17,15 @@ needs source or hit evidence; do not infer it from a loader message or assume
 these runtime trace flags disable every fast path. See
 [the corrected investigation](DEEP_DEBUG_2026-10-08.md).
 
+October 10: the wider private calling-convention candidate replaces twenty
+translated chunks and the dispatcher while preserving the accepted C2 PSQ
+ancestry. Actual selector tests, code/unwind checks and six complete intro
+checkpoints/full pixels pass. The eight-run comparison establishes no gain:
+paired CPU +0.88%, elapsed -0.007%, both 95% intervals spanning zero. It remains
+inactive and closed to unchanged retries; no tester replacement follows. See
+the October 10 section of [the investigation](DEEP_DEBUG_2026-10-08.md) for all
+four pairs, tradeoffs, private receipt hashes and the preserved harness failure.
+
 ## Implementation progress
 
 All 38 numbered candidates remain in scope. Implement dependency groups in
