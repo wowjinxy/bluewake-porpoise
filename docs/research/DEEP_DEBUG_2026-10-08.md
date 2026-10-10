@@ -2991,6 +2991,75 @@ Private evidence under `build/deep-debug-20261008/`:
 - `paired-single-simd-feasibility1/slp-correction1.json`: `e565e8dff9a3d8d92a68c80e75b32f723061bfc54f05c54c3bdb5a39a9d7241c`
 - `private-abi-propagation-feasibility1/assessment1.json`: `18b85a012d2eb282c4d306589898cb0b4b3035dd64b5edd10ffabd58b44cf922`
 
+### Fresh donor review and additional current attribution, October 10
+
+A bounded freshness check revisits six recorded repositories and 25 branches.
+Five repositories retain their recorded heads. AceSpectre's DolRecomp
+`fn-codegen` advances from `83398f1` to `483bb3f` with three October 9 commits.
+The later October 8 inventory also records the old head; a preserved correction
+replaces the initial freshness receipt's October 6-only baseline description.
+This is a check of these recorded repositories, not a complete new fork census.
+
+The locked-cache change requires a CPU/storage contract absent from current C2;
+its donor Wii measurements are not local performance evidence. The new dense
+PC-to-function lookup does not preserve current dynamic observers, native and
+mod selection as a drop-in replacement. Neither is imported.
+
+The [per-block base-proof change](https://github.com/AceSpectre/DolRecomp/commit/2b71262ef331ae10ff26c8139c95660d6c9b92f1)
+offers a distinct source mechanism: reuse a proved address span for an unchanged
+stack or global base. Its original RAM/MEM2 predicate and callback behavior
+cannot be copied directly. A local subset needs the exact fixed-MEM1 ownership,
+alias, journal and reservation guards, original paid precise continuation, and
+unchanged PC/suffix/deadline/refund behavior. This is separate from the already
+closed per-access cold-tail metadata deferral and save-GPR special handling.
+
+Ten exact original C2 sources contain 610 conservatively repeated base epochs
+covering 1,496 accesses. These source counts do not establish executed cost.
+Only 31 current source-associated locations fall in repeated clusters, and
+their branch/arithmetic instructions do not prove a removable guard budget.
+A private compiler pilot therefore starts with two original chunks and a
+stricter consecutive-access grammar. It covers 91 clusters and 224 accesses,
+preserving every original metadata and refund line. Independent source review
+checks both whole inverses, exact paid continuations and 819 modular boundary
+cases. Native output, runtime correctness and speed require separate evidence.
+
+The subsequent compiler-only pilot completes four fresh object builds and
+their four dependency queries. Original ordered flags and actual M/MD closures
+(48/49 and 47/48 entries) pass an independent audit. Fresh controls reproduce
+every retained C2 function's raw code, named relocations and unwind metadata.
+Only the two main translated functions change; the other 24/26 functions remain
+exact. Their selected frames stay 152/200 bytes. Executable text nevertheless
+grows by 4,512 bytes (0.635635%) and 11,104 bytes (1.556294%). The latter fails
+the pilot's preregistered one-percent text criterion. That compiler pilot is
+failed and is not relabeled as a pass. No module or game is run in that pilot.
+
+This size criterion is a conservative selection rule, not a measured
+performance regression. Actual successful-path work removal could motivate a
+separately specified correctness and timing study of the same frozen variant;
+it would not erase this failure, change flags/grammar, or establish ordinary
+FPS from static instruction counts. The accepted tester remains unchanged.
+
+An additional passive mapping pass examines 185 disjoint current samples in
+eight retained original C2 owners: 146 unique, 36 shared and three unknown.
+Exact code-to-COFF inversion and all 32,768 PC-table entries pass within a
+13,220,328-byte PE-read bound. Cumulative translated coverage reaches
+1,404/2,194 examined, with 1,217 unique associations (708 CodeView, 509 CFG),
+154 shared, 33 unknown and 790 unexamined. The largest new guest association
+has eleven samples. These are instruction locations, not exclusive routine
+time, and establish neither a dominant new routine nor a speed improvement.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `fork-freshness-20261010-1/result1.json`: `22521433d31f58433866a0f9d1be7be0a28bdad293638ee3c89cf7ecc354fbd1`
+- `fork-freshness-20261010-1/adapted-base-proof-feasibility1.json`: `d78dcb346717775c78894426cd3d8d81ec54f8fd4288db87c27ad8b0c6cffcab`
+- `base-span-applicability1/assessment2.json`: `83dd0b6339336a7287617f6dfdb8f1241425a51b8aa9275a6ea48c6392c92555`
+- `base-span-ram1/source-preparation1.json`: `afa8c9668eba04429debf1efde5ea2bf649b499be64b67615da12947f190b72f`
+- `base-span-ram1/compile1/attempt1/result.json`: `be06910e6d47e39d2ad3de9014e73f9a31a41e5220039345797054bc49a8b2c6`
+- `base-span-ram1/compile1/independent-build-audit1.json`: `eae4cd3a872169c2e843c6606c9a326b1dd646e35632c83a1c964eb4de341a87`
+- `base-span-ram1/compile1/attempt1/codegen-g1.json`: `436d6a3f404b0ee54cf9e66d6255dfc8621d2e32f0d59e8c0a1d9604c2d0e24f`
+- `targeted-current-native-cfg-next8-2/result1.json`: `b8f4cbd0f6f033f8260ca7e27e0c0aa1409589eed9572c688278c5ed830e7a0c`
+- `targeted-current-native-cfg-next8-2/summary1.json`: `cbbf079dad747339462c1b8b94cf3149489698dad94f6130119a6f46d1b455fc`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
