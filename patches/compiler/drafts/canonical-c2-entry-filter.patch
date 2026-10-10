@@ -1,0 +1,142 @@
+diff --git a/src/backend/llvm/emitter.cpp b/src/backend/llvm/emitter.cpp
+index 4c99d91..0c94013 100644
+--- a/src/backend/llvm/emitter.cpp
++++ b/src/backend/llvm/emitter.cpp
+@@ -23,6 +23,37 @@ static_assert(sizeof(CPUState) == 3552, "canonical C2 CPU ABI size");
+ static_assert(offsetof(CPUState, pc) == 640, "canonical C2 PC offset");
+ #endif
+ 
++bool selectCanonicalInitialEntries(const DolIRFunction &source,
++                                   const DolLLVMOptions &options,
++                                   std::vector<bool> &selected) {
++  selected.assign(source.block_count, true);
++  if (!options.canonical_c2_filter_initial_entries)
++    return true;
++  selected.assign(source.block_count, false);
++  if (!options.canonical_c2 || !source.blocks || !options.entry_points ||
++      !options.entry_point_count || options.entry_point_count > source.block_count)
++    return false;
++  for (u32 requested = 0; requested < options.entry_point_count; requested++) {
++    const u32 pc = options.entry_points[requested];
++    if ((pc & 3u) || pc < source.guest_start || pc >= source.guest_end)
++      return false;
++    bool found = false;
++    for (u32 index = 0; index < source.block_count; index++) {
++      const DolIRBlock &block = source.blocks[index];
++      if (block.guest_address != pc)
++        continue;
++      if (selected[index] || block.terminator.kind == DOLIR_TERM_FALLBACK)
++        return false;
++      selected[index] = true;
++      found = true;
++      break;
++    }
++    if (!found)
++      return false;
++  }
++  return true;
++}
++
+ FunctionEmitter::FunctionEmitter(LLVMContext &context, Module &module,
+                                  const DolIRFunction &source,
+                                  const DolLLVMOptions &options)
+@@ -53,6 +84,8 @@ FunctionEmitter::FunctionEmitter(LLVMContext &context, Module &module,
+       canonical_schedule_count_(options.canonical_schedule_count),
+       expected_ram_size_(options.ram_size),
+       expected_mem2_size_(options.mem2_size) {
++  canonical_initial_entries_valid_ =
++      selectCanonicalInitialEntries(source_, options, canonical_initial_entries_);
+   const Triple triple(module_.getTargetTriple());
+   intrinsic_escapes_ = triple.isX86() && !modern_runtime_;
+   cold_escapes_ = modern_runtime_ || intrinsic_escapes_ ||
+@@ -80,6 +113,10 @@ const DolLLVMPatch *FunctionEmitter::patchFor(u32 address) const {
+ }
+ 
+ bool FunctionEmitter::emit(raw_ostream &diagnostics) {
++  if (!canonical_initial_entries_valid_) {
++    diagnostics << "dolllvm: invalid canonical initial-entry subset\n";
++    return false;
++  }
+   if (canonical_fixed_mem1_ &&
+       (!canonical_c2_ || canonical_mem1_symbol_ != "bw_guest_mem1" ||
+        canonical_mem1_size_ != 0x02000000u || state_in_memory_ || modern_runtime_ || native_abi_)) {
+diff --git a/src/backend/llvm/emitter.h b/src/backend/llvm/emitter.h
+index 166e3b6..e4d6d5c 100644
+--- a/src/backend/llvm/emitter.h
++++ b/src/backend/llvm/emitter.h
+@@ -25,6 +25,10 @@ class Value;
+ class raw_ostream;
+ } // namespace llvm
+ namespace dolllvm {
++// Shared admission for reported native entries and the actual entry switch.
++bool selectCanonicalInitialEntries(const DolIRFunction &source,
++                                   const DolLLVMOptions &options,
++                                   std::vector<bool> &selected);
+ class FunctionEmitter final {
+ public:
+   FunctionEmitter(llvm::LLVMContext &context, llvm::Module &module,
+@@ -300,6 +304,8 @@ private:
+   bool intrinsic_escapes_ = false;
+   const u32 *entry_points_ = nullptr;
+   u32 entry_point_count_ = 0;
++  bool canonical_initial_entries_valid_ = false;
++  std::vector<bool> canonical_initial_entries_;
+   bool write_journal_ = false;
+   DolLLVMSemantics semantics_ = DOLLLVM_SEMANTICS_EXACT;
+   std::string symbol_suffix_;
+diff --git a/src/backend/llvm/exits.cpp b/src/backend/llvm/exits.cpp
+index 151a24b..34e4055 100644
+--- a/src/backend/llvm/exits.cpp
++++ b/src/backend/llvm/exits.cpp
+@@ -180,11 +180,11 @@ void FunctionEmitter::emitEntry() {
+   BasicBlock *bad = BasicBlock::Create(context_, "entry_miss", function_);
+   u32 nativeEntries = 0;
+   for (u32 i = 0; i < source_.block_count; i++)
+-    nativeEntries += region_leaders_[i] &&
++    nativeEntries += region_leaders_[i] && canonical_initial_entries_[i] &&
+                      source_.blocks[i].terminator.kind != DOLIR_TERM_FALLBACK;
+   auto *dispatch = builder_.CreateSwitch(entry_pc_, bad, nativeEntries);
+   for (u32 i = 0; i < source_.block_count; i++) {
+-    if (!region_leaders_[i] ||
++    if (!region_leaders_[i] || !canonical_initial_entries_[i] ||
+         source_.blocks[i].terminator.kind == DOLIR_TERM_FALLBACK)
+       continue;
+     dispatch->addCase(ConstantInt::get(Type::getInt32Ty(context_),
+diff --git a/src/backend/llvm/llvm_backend.cpp b/src/backend/llvm/llvm_backend.cpp
+index 5b92a1c..d1df09a 100644
+--- a/src/backend/llvm/llvm_backend.cpp
++++ b/src/backend/llvm/llvm_backend.cpp
+@@ -260,6 +260,9 @@ extern "C" u32 dolllvm_collect_native_entries(const DolIRFunction *function,
+   }
+   if (options->runtime == DOLLLVM_RUNTIME_MODERNGEKKO && !nativeABI)
+     return 0;
++  std::vector<bool> initialEntries;
++  if (!dolllvm::selectCanonicalInitialEntries(*function, *options, initialEntries))
++    return 0;
+   std::vector<bool> leaders;
+   if (options->canonical_c2)
+     leaders.assign(function->block_count, true);
+@@ -269,7 +272,7 @@ extern "C" u32 dolllvm_collect_native_entries(const DolIRFunction *function,
+         options->entry_points, options->entry_point_count, leaders);
+   u32 count = 0;
+   for (u32 index = 0; index < function->block_count; index++) {
+-    if (!leaders[index] ||
++    if (!leaders[index] || !initialEntries[index] ||
+         function->blocks[index].terminator.kind == DOLIR_TERM_FALLBACK)
+       continue;
+     if (entries && count < capacity)
+diff --git a/src/backend/llvm/llvm_backend.h b/src/backend/llvm/llvm_backend.h
+index f699ed0..cf802c5 100644
+--- a/src/backend/llvm/llvm_backend.h
++++ b/src/backend/llvm/llvm_backend.h
+@@ -151,6 +151,10 @@ typedef struct {
+   bool canonical_c2_fixed_mem1;
+   const char *canonical_c2_mem1_symbol;
+   u32 canonical_c2_mem1_size;
++  // Opt-in external entry subset; internal canonical regions remain complete.
++  // entry_points/count must name unique, aligned, non-fallback blocks.
++  // Zero-init preserves the existing all-instruction-entry behavior.
++  bool canonical_c2_filter_initial_entries;
+ } DolLLVMOptions;
+ 
+ bool dolllvm_emit_object(const DolIRModule *module, const char *object_path,

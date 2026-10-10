@@ -2324,6 +2324,96 @@ been established for this candidate, and the playable build stays unchanged.
 | `native-efb1/moderngekko-c2-per-vi-g-coverage1/native-coverage.json` | `61f82c6926f599b2fd95f999d16d0b19b3d465f72bcfc67789e996b6529b5756` |
 | `native-efb1/moderngekko-c2-per-vi-coverage-input-parity1.json` | `cdbb1fa9dee129dea89dae932fef033ed292855672727417392ba4367a034d91` |
 
+### Initial-entry filtering: correct, controlled timing gate fails
+
+The optional generic compiler patch
+`patches/compiler/drafts/canonical-c2-entry-filter.patch` selects only the
+normal F4 entry for the private 93-instruction function. All instruction
+regions, scheduling rows and local continuations remain; other external
+resumes and the five old central continuations retain original C2 execution.
+Default compiler behavior still reports every canonical instruction entry.
+The five-file patch has SHA-256
+`e30baa9013838ab05cc272ed46d124bf52d8f1d6ffb271734fbffbd5a6d5008d`.
+
+Actual fresh compilation passes all 49 generator translation units and the
+paired routed-C translation unit. The emitted COFF is 32,709 bytes; passive
+inspection binds its sole F4 external entry, 21 load/two store fast/service
+pairs, imports and every native return to valid Win64 unwind data. Three
+memory arms removed by optimization are proven unreachable from F4 in the
+prior LLVM CFG; their original C2 tail remains available. The private native
+body shrinks from 57,536 to 30,569 bytes, instructions 11,869 to 6,681, frame
+328 to 264 bytes and optimized IR PHIs 4,401 to 1,130. None is a timing result.
+
+The isolated module `5a4bdb02...` links with the original C2 dispatcher, CPU,
+REL and mod-hook providers. Its exact PE import/export/resource surface
+matches the accepted C2 module. Fresh correctness runs on the same `2b9bc61e...`
+host pass all 32 checks and compare equal at all six complete logical
+CPU/MEM1/MEM2/ordered-alias checkpoints and all 1,228,335 P6 bytes. An independent
+raw audit also matches all 1,801 work cursors, primary/five-segment work and
+terminal GX/clock/dispatch records. All 1,134 EFB contexts are replayed while
+physical reads remain; physical differences of 96/9 are retained.
+
+A separate candidate run passes all 33 checks, matches the six checkpoints
+and P6 again, and records 49 hits at 48 native RIPs inside the exact new
+30,569-byte private body. The unchanged owned sampler and pinned MAP/unwind
+range establish actual execution. This does not establish every path,
+instruction or resume, an access count, or a performance gain.
+
+The subsequent eight-run comparison uses the frozen order A-G-G-A, G-A-A-G,
+same host/data/cache/1,134-context replay and original 750-1,500 VI primary
+window. Sampling, state hashing, capture and source/build jobs are stopped.
+All eight native runs pass. Exact primary/five-segment work and start/end
+cursors, terminal GX/clock/dispatch and zero terminal pipeline creations
+match. The analysis fails only the preregistered CPU/wall gain gate:
+
+| Pair | Dispatch CPU change | Wall change |
+| --- | ---: | ---: |
+| A1 to G1 | -3.277% | -4.603% |
+| A2 to G2 | +1.303% | +1.873% |
+| A3 to G3 | -1.969% | -2.414% |
+| A4 to G4 | +17.774% | +18.637% |
+| Four-run means | +3.320% | +3.253% |
+
+Original/candidate mean dispatch CPU seconds are 18.121094/18.722656 and wall
+seconds 18.376241/18.973945. Mean thread cycles rise 3.148%; secondary whole
+process CPU/wall rise 3.985%/4.201%. No overhead is subtracted. The timer
+calibration's CPU step remains unresolved, and the one-second pre-run system
+busy samples range from 33.301% to 50.865%. They are not continuous background
+load measurements. Mixed pairs under that load establish neither a repeatable
+gain nor a causal regression. G4 is retained; no retry or dropped sample
+rescues the failed gate. The candidate remains inactive, with no ordinary
+visible FPS or whole-game qualification. It does not resolve the player's
+23/24 versus 19 FPS observations.
+
+An independent audit reparses every raw per-VI log and all 1,025 calibration
+readings per run, recomputes the primary/five-segment intervals and four pairs,
+and reproduces the strict gain failure. All 34 runtime checks per timing run,
+normal owned exits, exact work and retained slow G4 are confirmed.
+
+Two additional narrow findings remain separate from speed claims. Bootstrap
+REL aliases (1,900) and all nonempty REL sections (2,316) are outside MEM1;
+the 3,800 checkpoint spans repeat the same aliases in two metadata walks.
+Those tables therefore do not by themselves disable the direct-RAM guard.
+Actual arbitrary state-load aliases and other admission guards still matter.
+An offline decode of the prior complete-entry run binds every sampled byte
+to its linked body and finds five weighted samples in exclusive post-load
+fast arms after three actual MEM1 loads. It sampled no load opcode itself;
+this is evidence of those fast-arm executions, not a hit-rate or timing census.
+
+| Private successor evidence under `build/deep-debug-20261008/` | SHA-256 |
+| --- | --- |
+| `moderngekko-whole-function1/build-attempt6/result.json` | `1727db2baa5d77c95726dd3f85facda0e59ffbacadf2510bf49ada8dd1e1eeb2` |
+| `moderngekko-whole-function1/build-attempt6/passive-entry-filter1.json` | `07b939435ca22602710b4f1a1b9bcd7a396c45d7bb69869118c124f057da87ca` |
+| `moderngekko-whole-function1/module-plan2/attempt1/result.json` | `d47d89854df02def1779ebd384e81b1c814b87ebb95b14cd8f909363fa37f8a7` |
+| `moderngekko-entry-runtime1/correctness-batch1.json` | `63d538e708e39f86bda91efeb14036901c8f57f7e2501be912393002251d4443` |
+| `moderngekko-entry-runtime1/independent-correctness-raw-audit1.json` | `0a50d7dd9b5777192eb31d3cdaebab5d0c8b0f46ced026119b0f1f15e760bdc3` |
+| `moderngekko-entry-runtime1/native-efb1/moderngekko-entry-per-vi-coverage-input-parity1.json` | `33cad9ac91125886b6d497f3e919d889be4cdeac1f0ec03020683b4acfc71b03` |
+| `moderngekko-entry-runtime1/controlled-batch1.json` | `c367a18b19473e782e741fc2333006f5aa153eab587ed74dabe046b2cb581902` |
+| `moderngekko-entry-runtime1/controlled-input1/moderngekko-entry-per-vi-eight-run1.json` | `ad863b1894590e53e80ba8a0e40e45a52d40e6f88e78da0fcfbf2b1c1ce8ceba` |
+| `moderngekko-entry-runtime1/independent-eight-raw-audit1.json` | `258c105622d9d9a4d237b5b8011aa95c445346815f73140d07b2a719dd792c81` |
+| `moderngekko-whole-function1/alias-domain-proof1.json` | `631000fe3923ee43e761a114d87803626ce5227d0dad656d0ba50ffd5e08c770` |
+| `moderngekko-whole-function1/coverage-native1/result1.json` | `ecb2227157130020b09cc143f75e6ef5682d3ecdd48a95a3900eee16a33a1e27` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
