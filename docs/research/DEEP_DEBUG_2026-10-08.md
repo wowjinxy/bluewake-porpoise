@@ -3295,6 +3295,43 @@ Private receipts under `build/deep-debug-20261008/`:
 - `null-render-replay-feasibility1/assessment1.json`: `30f12f830a3b99f57116b674feb7392d91ab2e5af089c250ec2a1dc7a14b92fe`
 - `discard-render-feasibility1/assessment1.json`: `2aba02caf4fe7f9e1f4ed241fbe7f215479fecad68a9808e9950b147531c62f3`
 
+### Alias resolver callee split: codegen gate failed, October 10
+
+A distinct CPU.c-only pilot tried to keep the common bounds rejection in a
+small ordinary-ABI wrapper. It retained the canonical traced resolver for
+unknown/enabled diagnostic modes and used an untraced search helper only after
+cached mode zero and the original fresh 64-bit bounds check. The accepted C2
+PSQ source, translated callers, headers and CPU ABI were preserved in source.
+This does not reopen the inactive caller/header alias-envelope experiment.
+
+The one-file compile passed with the accepted compiler settings and all 149
+actual M/MD dependencies. Its exported resolver shrank from 664 to 62 bytes;
+the cached-mode-zero lower/upper rejection paths have no register saves,
+stack adjustment, calls or output writes. Total CPU.c executable sections
+grew from 8,883 to 10,595 bytes, within the frozen 2,048-byte allowance.
+
+However, three unrelated emitted functions changed, failing the preregistered
+exact-body/relocation/unwind isolation gate. The compiler inlined the new
+wrapper into local callers: `ppc_dcbz_l` grew from 676 to 820 bytes,
+`psq_load_value` from 1,904 to 2,467, and `psq_store_value` from 1,602 to 2,329.
+Their static call-site counts rose from 5/15/10 to 7/25/20. These counts do not
+establish dynamic cost, but the isolation failure closes this pilot without
+changing thresholds, running fixtures, linking a module or launching the game.
+The functional/lazy-diagnostic fixture plans remain dormant.
+
+Two passive-inspector drafts stopped on reader limitations: uninitialized COFF
+storage has no file payload, and a conditional branch may be a relocated tail
+transfer to a helper. The final reader retains both branch outcomes and exact
+named relocations. These repairs change the analysis, not candidate code or
+the gate. The accepted module, host and private tester remain unchanged.
+
+Private receipts under `build/deep-debug-20261008/alias-callee-prune1/`:
+
+- `PROTOCOL1.md`: `dfb007ce666b7853eda77dbee3ec9535b7cdce95e6e7760f9685ad1496fe1cb6`
+- `compile1/attempt1/result.json`: `30561ffd9d1a654abdd6843f704919bdb504caf4df939dd8fa5c6ff2592170ac`
+- `compile1/attempt1/codegen3.json`: `2e11fd9298f4b528d12b7a661a9760b6793a5946801829898ad0bc5910caeb39`
+- `compile1/attempt1/unrelated-change-review1.json`: `d0cf23aab577da75ad78a1aeed4a622bce045dfa2c08de2ba7d6186179b6c17e`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
