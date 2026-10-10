@@ -1,0 +1,535 @@
+diff --git a/experiments/gd-packet-burst/native_gd.c b/experiments/gd-packet-burst/native_gd.c
+new file mode 100644
+index 0000000..68c4153
+--- /dev/null
++++ b/experiments/gd-packet-burst/native_gd.c
+@@ -0,0 +1,87 @@
++/* Experimental RAM display-list packet coalescing, GZLE01.
++ * The original function retains its prologue, color packing, overflow check
++ * and optional overflow callback. This replaces only its unpaid 64-cycle
++ * suffix at 802D82C8. All failure paths leave CPU and guest memory unchanged.
++ * A versioned native-entry observer predicate must approve the suffix first.
++ *
++ * Whole-span raw MEM1 and pairwise disjoint controls/output/frame make the
++ * ten original cursor publications unobservable inside this callback-free
++ * block. Aliases, mirrors, journal callbacks and reservations retain the
++ * original translation. No guest cycle, final register or packet is omitted.
++ */
++#include "native_gd.h"
++#include "gather_pipe.h"
++#include <stdio.h>
++#include <stdint.h>
++
++static unsigned long long s_runs, s_declined;
++
++static int gd_packet(CPUState* cpu) {
++#if defined(BW_GUEST_MEM1)
++    const s64 cycles = 64;
++    if (cpu->exception != 0u || g_ppc_guest_aliases_overlap_mem1 ||
++        g_mem_write_journal != NULL || cpu->reserve_valid ||
++        cpu->cycle_budget <= 0 || cpu->downcount > 0 ||
++        cpu->downcount <= -cpu->cycle_budget ||
++        cpu->downcount < INT64_MIN + cycles ||
++        (cpu->cycle_deadline_budget > 0 &&
++         (cpu->cycle_deadline_budget < cycles ||
++          cpu->downcount < cycles - cpu->cycle_deadline_budget)))
++        return 0;
++
++    const u32 sda = cpu->gpr[13] - 25656u;
++    const u32 frame = cpu->gpr[1] + 8u;
++    if (!BW_RAM_FAST(cpu, sda, 4u) || !BW_RAM_FAST(cpu, frame, 16u))
++        return 0;
++    u8* const ram = BW_RAM_BYTES;
++    const u32 object = read_be32(ram + (sda - GC_RAM_BASE));
++    if (!BW_RAM_FAST(cpu, object, 16u)) return 0;
++    const u32 cursor = read_be32(ram + (object - GC_RAM_BASE) + 8u);
++    if (!BW_RAM_FAST(cpu, cursor, 10u)) return 0;
++
++    const u32 starts[4] = {sda, frame, object, cursor};
++    const u32 sizes[4] = {4u, 16u, 16u, 10u};
++    for (unsigned i = 0; i < 4; ++i)
++        for (unsigned j = i + 1; j < 4; ++j)
++            if (starts[i] < starts[j] + sizes[j] && starts[j] < starts[i] + sizes[i])
++                return 0;
++
++    const u32 color0 = cpu->gpr[31], color1 = cpu->gpr[30];
++    u8* const out = ram + (cursor - GC_RAM_BASE);
++    out[0] = 0x61u;
++    write_be32(out + 1u, color0);
++    out[5] = 0x61u;
++    write_be32(out + 6u, color1);
++    write_be32(ram + (object - GC_RAM_BASE) + 8u, cursor + 10u);
++
++    cpu->gpr[0] = read_be32(ram + (frame - GC_RAM_BASE) + 12u);
++    cpu->gpr[1] += 16u;
++    cpu->gpr[3] = cursor + 9u;
++    cpu->gpr[4] = object;
++    cpu->gpr[5] = (color1 >> 8u) & 255u;
++    cpu->gpr[6] = 0x61u;
++    cpu->gpr[30] = read_be32(ram + (frame - GC_RAM_BASE));
++    cpu->gpr[31] = read_be32(ram + (frame - GC_RAM_BASE) + 4u);
++    cpu->lr = cpu->gpr[0];
++    cpu->pc = cpu->lr & ~3u;
++    cpu->downcount -= cycles;
++    cpu->cycle_observation_suffix = 2u;
++    return 1;
++#else
++    /* Only the fixed MEM1 ownership policy has been qualified. */
++    (void)cpu;
++    return 0;
++#endif
++}
++
++int bluewake_native_gd(CPUState* cpu, u32 address) {
++    if (cpu == NULL || address != BLUEWAKE_GD_TEV_KCOLOR_RESUME) return 0;
++    const int done = gd_packet(cpu);
++    if (done) ++s_runs;
++    else ++s_declined;
++    return done;
++}
++
++void bluewake_native_gd_report(void) {
++    fprintf(stderr, "[native-gd] tev-kcolor=%llu/%llu (native/declined)\n", s_runs, s_declined);
++}
+diff --git a/experiments/gd-packet-burst/native_gd.h b/experiments/gd-packet-burst/native_gd.h
+new file mode 100644
+index 0000000..1605a63
+--- /dev/null
++++ b/experiments/gd-packet-burst/native_gd.h
+@@ -0,0 +1,8 @@
++#ifndef BLUEWAKE_NATIVE_GD_H
++#define BLUEWAKE_NATIVE_GD_H
++#include "core/cpu.h"
++#define BLUEWAKE_GD_TEV_KCOLOR_RESUME 0x802D82C8u
++/* Caller must approve observation skipping at this certified unpaid leader. */
++int bluewake_native_gd(CPUState* cpu, u32 address);
++void bluewake_native_gd_report(void);
++#endif
+diff --git a/experiments/gd-packet-burst/native_gd_test.c b/experiments/gd-packet-burst/native_gd_test.c
+new file mode 100644
+index 0000000..e9fa382
+--- /dev/null
++++ b/experiments/gd-packet-burst/native_gd_test.c
+@@ -0,0 +1,422 @@
++/* Source-only differential fixture for the unpaid GZLE01 802D82C8 suffix.
++ * Root-owned execution must pin the original C2 DLL SHA-256
++ * 541191... at build/quantized-psq-20261008/inline-module/isolation1/attempt1/output/.
++ * This test does not time either implementation. It requires ABI-5 fixed MEM1,
++ * ABI-6 CPU storage, and compares against the actual module dispatcher.
++ * Every writable test byte is compared after every case. All remaining MEM1
++ * pages are read-only in both images; an unexpected write there faults. Initial
++ * and final complete 32-MiB comparisons supplement those per-case checks.
++ */
++#ifndef BW_GUEST_MEM1
++#define BW_GUEST_MEM1 bw_guest_mem1
++#endif
++#ifndef BW_GUEST_MEM1_SIZE
++#define BW_GUEST_MEM1_SIZE 0x02000000u
++#endif
++#include "native_gd.h"
++#include "gather_pipe.h"
++#include "StaticRecompABI.h"
++#include "module_cpu_contract.h"
++#include <fenv.h>
++#include <limits.h>
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#include <xmmintrin.h>
++
++#define MEM1_SIZE 0x02000000u
++#define AREA 0x80100000u
++#define PAGE_BYTES 4096u
++#define WRITABLE_BYTES (7u * PAGE_BYTES)
++#define FIXED_SCENARIOS 70u
++
++_Static_assert(sizeof(CPUState) == 3552u, "Exact accepted C2 CPU layout required");
++_Static_assert(BW_GUEST_MEM1_SIZE == MEM1_SIZE, "Fixture needs 32 MiB, not 24 MiB");
++__attribute__((aligned(4096))) u8 bw_guest_mem1[MEM1_SIZE];
++extern void ppc_set_mem_write_journal(PPCMemWriteJournal, void*);
++
++typedef struct Window { u32 offset, bytes; } Window;
++static const Window windows[] = {
++    {0u, PAGE_BYTES}, {AREA - GC_RAM_BASE, 5u * PAGE_BYTES},
++    {MEM1_SIZE - PAGE_BYTES, PAGE_BYTES}
++};
++static u8 before_ram[WRITABLE_BYTES];
++static u8 alias_bytes[128], before_alias[128], other_ram[128], before_other[128];
++static u8 mem2[128], before_mem2[128];
++static u32 random_state = 0x8D82C864u;
++static unsigned current_case, current_scenario, callback_count, journal_count;
++
++static u32 random32(void) {
++    random_state ^= random_state << 13;
++    random_state ^= random_state >> 17;
++    random_state ^= random_state << 5;
++    return random_state;
++}
++static void require(int ok, const char* what) {
++    if (!ok) {
++        fprintf(stderr, "GD_PACKET_DIFFERENTIAL_FAIL case=%u scenario=%u check=%s seed=%08X\n",
++                current_case, current_scenario, what, random_state);
++        exit(1);
++    }
++}
++static void report_cpu(const CPUState* got, const CPUState* expected) {
++    unsigned printed = 0;
++    for (unsigned i = 0; i < sizeof(*got) && printed < 16u; ++i)
++        if (((const u8*)got)[i] != ((const u8*)expected)[i]) {
++            fprintf(stderr, "CPU byte %u got=%02X expected=%02X\n", i,
++                    ((const u8*)got)[i], ((const u8*)expected)[i]);
++            ++printed;
++        }
++}
++static u64 unexpected_read(CPUState* cpu, u32 address, u8 size) {
++    (void)address; (void)size;
++    ++callback_count;
++    cpu->exception ^= 0x40000000u;
++    return 0;
++}
++static void unexpected_write(CPUState* cpu, u32 address, u64 value, u8 size) {
++    (void)address; (void)value; (void)size;
++    ++callback_count;
++    cpu->exception ^= 0x20000000u;
++}
++static void unexpected_journal(u32 offset, u32 size, void* user) {
++    (void)offset; (void)size; (void)user;
++    ++journal_count;
++}
++static void capture_windows(const u8* ram, u8* out) {
++    u32 at = 0;
++    for (unsigned i = 0; i < sizeof(windows) / sizeof(windows[0]); ++i) {
++        memcpy(out + at, ram + windows[i].offset, windows[i].bytes);
++        at += windows[i].bytes;
++    }
++    require(at == WRITABLE_BYTES, "writable-window accounting");
++}
++static void restore_windows(u8* ram, const u8* in) {
++    u32 at = 0;
++    for (unsigned i = 0; i < sizeof(windows) / sizeof(windows[0]); ++i) {
++        memcpy(ram + windows[i].offset, in + at, windows[i].bytes);
++        at += windows[i].bytes;
++    }
++}
++static int same_windows(const u8* a, const u8* b) {
++    for (unsigned i = 0; i < sizeof(windows) / sizeof(windows[0]); ++i)
++        if (memcmp(a + windows[i].offset, b + windows[i].offset, windows[i].bytes) != 0)
++            return 0;
++    return 1;
++}
++static void protect_image(u8* ram) {
++    DWORD old;
++    require(ram != NULL && ((uintptr_t)ram & (PAGE_BYTES - 1u)) == 0u,
++            "page-aligned fixed MEM1");
++    require(VirtualProtect(ram, MEM1_SIZE, PAGE_READONLY, &old) != 0,
++            "protect complete MEM1 read-only");
++    for (unsigned i = 0; i < sizeof(windows) / sizeof(windows[0]); ++i)
++        require(VirtualProtect(ram + windows[i].offset, windows[i].bytes,
++                               PAGE_READWRITE, &old) != 0,
++                "enable exact writable test pages");
++}
++static int writable_guest(u32 address, u32 bytes) {
++    const u32 offset = address - GC_RAM_BASE;
++    for (unsigned i = 0; i < sizeof(windows) / sizeof(windows[0]); ++i)
++        if (bytes <= windows[i].bytes && offset >= windows[i].offset &&
++            offset - windows[i].offset <= windows[i].bytes - bytes)
++            return 1;
++    return 0;
++}
++/* Initialize mirrors' backing bytes without making a rejected guest access. */
++static void setup32(u32 address, u32 value) {
++    address &= ~0x40000000u;
++    if (writable_guest(address, 4u))
++        write_be32(bw_guest_mem1 + (address - GC_RAM_BASE), value);
++}
++typedef struct TestCase {
++    CPUState cpu;
++    u32 argument, sda, object, payload, frame, saved_lr, saved30, saved31;
++    int expect_accept, null_cpu, alias, outside_alias, journal;
++    u32 host_daz_ftz;
++} TestCase;
++
++static TestCase build_case(unsigned scenario) {
++    TestCase k;
++    memset(&k, 0, sizeof(k));
++    CPUState* c = &k.cpu;
++    for (unsigned w = 0; w < sizeof(windows) / sizeof(windows[0]); ++w)
++        for (u32 i = 0; i < windows[w].bytes; i += 4u)
++            write_be32(bw_guest_mem1 + windows[w].offset + i, random32());
++    for (unsigned i = 0; i < 128u; ++i) {
++        alias_bytes[i] = (u8)random32(); other_ram[i] = (u8)random32(); mem2[i] = (u8)random32();
++    }
++    for (unsigned r = 0; r < 32u; ++r) {
++        c->gpr[r] = random32();
++        u64 bits = ((u64)random32() << 32) | random32();
++        memcpy(&c->fpr[r], &bits, sizeof(bits));
++        bits = ((u64)random32() << 32) | random32();
++        memcpy(&c->ps1[r], &bits, sizeof(bits));
++    }
++    c->pc = BLUEWAKE_GD_TEV_KCOLOR_RESUME;
++    c->lr = random32(); c->ctr = random32(); c->cr = random32(); c->xer = random32();
++    c->fpscr = random32(); c->msr = random32(); c->hid2 = random32();
++    c->srr0 = random32(); c->srr1 = random32(); c->dar = random32();
++    c->dsisr = random32(); c->ear = random32();
++    c->timebase = ((u64)random32() << 32) | random32();
++    for (unsigned i = 0; i < 16u; ++i) c->sr[i] = random32();
++    for (unsigned i = 0; i < 8u; ++i) c->gqr[i] = random32();
++    for (unsigned i = 0; i < 512u; ++i) {
++        c->locked_cache_tag[i] = random32(); c->locked_cache_valid[i] = (random32() & 1u) != 0;
++    }
++    c->program_exception = random32(); c->tlb_last_vps = random32();
++    c->tlb_last_index = random32(); c->tlb_invalidate_count = random32();
++    c->external_addr = random32(); c->external_value = random32();
++    c->external_rid = (u8)random32(); c->external_read_count = (u8)random32();
++    c->external_write_count = (u8)random32();
++    c->external_read = unexpected_read; c->external_write = unexpected_write;
++    c->external_user_data = &callback_count;
++    c->ram = bw_guest_mem1; c->ram_size = MEM1_SIZE;
++    c->exram = mem2; c->exram_size = sizeof(mem2);
++    c->reserve_addr = random32(); c->reserve_valid = false;
++    c->downcount = -(s64)(random32() % 256u); c->cycle_budget = 16384;
++    c->cycle_observation_suffix = random32(); c->cycle_deadline_active = random32();
++    c->cycle_deadline_budget = (scenario & 1u) ? 0 : 100000;
++    k.sda = AREA + 0x100u; k.object = AREA + 0x1000u;
++    k.payload = AREA + 0x2000u + (random32() & 127u); k.frame = AREA + 0x3000u;
++    k.saved_lr = 0xFFFFFFFCu | (random32() & 3u);
++    k.saved30 = random32(); k.saved31 = random32();
++    k.argument = BLUEWAKE_GD_TEV_KCOLOR_RESUME;
++    k.expect_accept = scenario < 32u;
++    k.host_daz_ftz = (scenario & 3u) == 0u ? 0u :
++        ((scenario & 1u) ? (1u << 6) : 0u) | ((scenario & 2u) ? (1u << 15) : 0u);
++    switch (scenario) {
++    case 0: k.payload &= ~3u; break;
++    case 1: case 2: case 3: k.payload = (k.payload & ~3u) + scenario; break;
++    case 4: k.payload = GC_RAM_BASE; break;
++    case 5: k.payload = GC_RAM_BASE + MEM1_SIZE - 10u; break;
++    case 6: k.sda = GC_RAM_BASE; break;
++    case 7: k.sda = GC_RAM_BASE + MEM1_SIZE - 4u; break;
++    case 8: k.object = GC_RAM_BASE; break;
++    case 9: k.object = GC_RAM_BASE + MEM1_SIZE - 16u; break;
++    case 10: k.frame = GC_RAM_BASE; break;
++    case 11: k.frame = GC_RAM_BASE + MEM1_SIZE - 16u; break;
++    case 12: c->downcount = 0; c->cycle_deadline_budget = 64; break;
++    case 13: c->downcount = -1; c->cycle_deadline_budget = 65; break;
++    case 14: c->downcount = -127; c->cycle_deadline_budget = 191; break;
++    case 15: c->cycle_deadline_budget = -(s64)(random32() % 1000u) - 1; break;
++    case 16: c->downcount = 0; c->cycle_budget = 1; c->cycle_deadline_budget = 0; break;
++    case 17: c->downcount = -63; c->cycle_budget = 64; c->cycle_deadline_budget = 0; break;
++    case 18: c->downcount = INT64_MIN + 64; c->cycle_budget = INT64_MAX; c->cycle_deadline_budget = 0; break;
++    case 19: c->ram = NULL; break;
++    case 20: c->ram = other_ram; c->ram_size = sizeof(other_ram); break;
++    case 21: c->ram_size = 0; break;
++    case 22: c->downcount = 0; c->cycle_deadline_budget = INT64_MAX; break;
++    case 23: k.saved_lr = 0xFFFFFFFCu | (random32() & 3u); break;
++    case 24: k.outside_alias = 1; break;
++    case 25: c->gpr[31] = 0xFFFFFFFFu; c->gpr[30] = 0u; break;
++    case 26: c->gpr[31] = 0x80000000u; c->gpr[30] = 0x7FFFFFFFu; break;
++    case 27: c->gpr[31] = 0x01020304u; c->gpr[30] = 0xAABBCCDDu; break;
++    case 28: case 29: break; /* top is deliberately irrelevant at this suffix */
++    case 30: k.object += 1u; break;
++    case 31: k.sda += 1u; k.frame += 3u; break;
++    case 32: k.alias = 1; break;
++    case 33: k.journal = 1; break;
++    case 34: c->reserve_valid = true; c->reserve_addr = k.payload & ~31u; break;
++    case 35: c->reserve_valid = true; c->reserve_addr = AREA + 0x4000u; break;
++    case 36: c->reserve_valid = true; c->reserve_addr = (k.payload & ~31u) | 0x40000000u; break;
++    case 37: k.sda |= 0x40000000u; break;
++    case 38: k.object |= 0x40000000u; break;
++    case 39: k.payload |= 0x40000000u; break;
++    case 40: k.frame |= 0x40000000u; break;
++    case 41: k.sda = 0x90000004u; break;
++    case 42: k.object = 0x90000004u; break;
++    case 43: k.payload = 0x90000004u; break;
++    case 44: k.frame = 0x90000004u; break;
++    case 45: k.payload = GC_RAM_BASE + MEM1_SIZE - 9u; break;
++    case 46: k.sda = GC_RAM_BASE + MEM1_SIZE - 3u; break;
++    case 47: k.object = GC_RAM_BASE + MEM1_SIZE - 15u; break;
++    case 48: k.frame = GC_RAM_BASE + MEM1_SIZE - 15u; break;
++    case 49: k.payload = k.sda; break;
++    case 50: k.payload = k.object + 8u; break;
++    case 51: k.payload = k.frame + 4u; break;
++    case 52: k.sda = k.object + 4u; break;
++    case 53: k.sda = k.frame + 8u; break;
++    case 54: k.object = k.frame + 8u; break;
++    case 55: c->exception = PPC_EXC_DSI; break;
++    case 56: c->cycle_budget = 0; break;
++    case 57: c->cycle_budget = -1; break;
++    case 58: c->downcount = 1; break;
++    case 59: c->downcount = -c->cycle_budget; break;
++    case 60: c->downcount = 0; c->cycle_deadline_budget = 63; break;
++    case 61: c->downcount = -1; c->cycle_deadline_budget = 64; break;
++    case 62: c->downcount = INT64_MIN + 2; c->cycle_budget = INT64_MAX; c->cycle_deadline_budget = 0; break;
++    case 63: c->downcount = INT64_MIN + 63; c->cycle_budget = INT64_MAX; c->cycle_deadline_budget = 0; break;
++    case 64: k.argument -= 4u; break;
++    case 65: k.null_cpu = 1; break;
++    case 66: k.payload = 0xFFFFFFF8u; break;
++    case 67: k.object = 0u; break;
++    case 68: c->downcount = INT64_MIN; c->cycle_budget = INT64_MAX; c->cycle_deadline_budget = 0; break;
++    case 69: c->cycle_budget = INT64_MIN; break;
++    default: require(0, "scenario domain");
++    }
++    c->gpr[13] = k.sda + 25656u;
++    c->gpr[1] = k.frame - 8u;
++    setup32(k.sda, k.object);
++    setup32(k.object + 8u, k.payload);
++    setup32(k.object + 12u, scenario == 28u ? 0u : scenario == 29u ? k.payload : k.payload + 10u);
++    setup32(k.frame, k.saved30);
++    setup32(k.frame + 4u, k.saved31);
++    setup32(k.frame + 12u, k.saved_lr);
++    if (k.alias)
++        require(ppc_guest_alias_add_shared(AREA + 0x2000u, sizeof(alias_bytes), alias_bytes), "real MEM1 alias add");
++    if (k.outside_alias)
++        require(ppc_guest_alias_add_shared(0x90008000u, sizeof(alias_bytes), alias_bytes), "unused non-MEM1 alias add");
++    require(g_ppc_guest_aliases_overlap_mem1 == (k.alias != 0), "real alias overlap flag");
++    ppc_set_mem_write_journal(k.journal ? unexpected_journal : NULL, &journal_count);
++    return k;
++}
++
++static void arm_fenv(const CPUState* c, u32 daz_ftz) {
++    ppc_fpscr_updated((CPUState*)c);
++    require(feclearexcept(FE_ALL_EXCEPT) == 0, "clear host exceptions");
++    _mm_setcsr((_mm_getcsr() & ~((1u << 6) | (1u << 15))) | daz_ftz);
++}
++static void check_packet(const TestCase* k, const CPUState* result, const u8* ram) {
++    u8 expected[10];
++    expected[0] = expected[5] = 0x61u;
++    write_be32(expected + 1u, k->cpu.gpr[31]);
++    write_be32(expected + 6u, k->cpu.gpr[30]);
++    require(memcmp(ram + (k->payload - GC_RAM_BASE), expected, sizeof(expected)) == 0,
++            "literal command and two BE32 payloads");
++    require(read_be32(ram + (k->object - GC_RAM_BASE) + 8u) == k->payload + 10u,
++            "exact final GD cursor");
++    require(result->pc == (k->saved_lr & ~3u) && result->lr == k->saved_lr &&
++            result->gpr[0] == k->saved_lr && result->gpr[1] == k->cpu.gpr[1] + 16u &&
++            result->gpr[30] == k->saved30 && result->gpr[31] == k->saved31,
++            "original epilogue and return");
++    require(result->downcount == k->cpu.downcount - 64 && result->cycle_observation_suffix == 2u,
++            "original 64-cycle charge and suffix2");
++}
++
++int main(int argc, char** argv) {
++    if (argc < 2 || argc > 3) {
++        fprintf(stderr, "usage: native_gd_test EXACT_C2_MODULE.dll [CASES=60000]\n");
++        return 2;
++    }
++    char* end = NULL;
++    const unsigned long parsed = argc == 3 ? strtoul(argv[2], &end, 10) : 60000ul;
++    if (parsed < FIXED_SCENARIOS || parsed > 1000000ul || (argc == 3 && (end == argv[2] || *end != '\0')))
++        return 2;
++    const unsigned cases = (unsigned)parsed;
++    _putenv_s("BLUEWAKE_NATIVE_MATH", "0");
++    _putenv_s("BLUEWAKE_NATIVE_ENTRIES", "0");
++    HMODULE lib = LoadLibraryA(argv[1]);
++    require(lib != NULL, "load root-pinned original C2 DLL");
++    StaticRecompGetModuleFn getter = (StaticRecompGetModuleFn)(void*)GetProcAddress(lib, STATICRECOMP_GET_MODULE_SYMBOL);
++    BlueWakeModuleCPUFn cpu_getter = (BlueWakeModuleCPUFn)(void*)GetProcAddress(lib, "bluewake_composite_guest_cpu");
++    BlueWakeModuleMEM1Fn mem_getter = (BlueWakeModuleMEM1Fn)(void*)GetProcAddress(lib, "bluewake_composite_guest_mem1");
++    require(getter && cpu_getter && mem_getter, "mandatory descriptor/CPU/MEM1 exports");
++    const StaticRecompModuleDesc* mod = getter();
++    BlueWakeModuleStorage storage;
++    const char* storage_error = bw_module_select_storage(mod, cpu_getter, mem_getter, NULL, &storage);
++    require(storage_error == NULL, storage_error != NULL ? storage_error : "module storage");
++    require(mod->abi_version == BLUEWAKE_FIXED_MEM1_ABI_VERSION &&
++            mod->cpu_abi_version == GXRUNTIME_CPU_ABI_VERSION && mod->cpu_state_size == 3552u &&
++            mod->on_state_loaded != NULL && storage.mem1_size == MEM1_SIZE,
++            "exact fixed-owner ABI and state-loaded hook");
++    SYSTEM_INFO si;
++    GetSystemInfo(&si);
++    require(si.dwPageSize == PAGE_BYTES, "4-KiB page protection model");
++    u8* const reference_ram = storage.mem1;
++    memset(reference_ram, 0, MEM1_SIZE);
++    require(memcmp(reference_ram, bw_guest_mem1, MEM1_SIZE) == 0, "initial complete MEM1 equality");
++    protect_image(reference_ram);
++    protect_image(bw_guest_mem1);
++    const fenv_t original_environment = {0};
++    fenv_t saved_environment = original_environment;
++    require(fegetenv(&saved_environment) == 0, "save host fenv");
++    const u32 saved_mxcsr = _mm_getcsr();
++    unsigned accepted = 0, declined = 0;
++    unsigned scenario_seen[FIXED_SCENARIOS] = {0};
++    for (current_case = 0; current_case < cases; ++current_case) {
++        current_scenario = current_case < FIXED_SCENARIOS ? current_case :
++            (current_case - FIXED_SCENARIOS) % 64u;
++        ++scenario_seen[current_scenario];
++        ppc_guest_alias_clear();
++        ppc_set_mem_write_journal(NULL, NULL);
++        callback_count = journal_count = 0;
++        TestCase k = build_case(current_scenario);
++        capture_windows(bw_guest_mem1, before_ram);
++        memcpy(before_alias, alias_bytes, sizeof(alias_bytes));
++        memcpy(before_other, other_ram, sizeof(other_ram));
++        memcpy(before_mem2, mem2, sizeof(mem2));
++        const u32 alias_generation = g_ppc_guest_alias_generation;
++        const bool alias_overlap = g_ppc_guest_aliases_overlap_mem1;
++        const PPCMemWriteJournal journal_before = g_mem_write_journal;
++        void* const journal_user_before = g_mem_write_journal_user;
++        CPUState native = k.cpu;
++        arm_fenv(&native, k.host_daz_ftz);
++        const CPUState untouched = native;
++        const int input_flags = fetestexcept(FE_ALL_EXCEPT);
++        const u32 input_mxcsr = _mm_getcsr();
++        const int done = bluewake_native_gd(k.null_cpu ? NULL : &native, k.argument);
++        const int native_flags = fetestexcept(FE_ALL_EXCEPT);
++        const u32 native_mxcsr = _mm_getcsr();
++        require(done == k.expect_accept, "declared per-scenario acceptance");
++        require(callback_count == 0u && journal_count == 0u, "no callback/journal execution");
++        require(g_ppc_guest_alias_generation == alias_generation &&
++                g_ppc_guest_aliases_overlap_mem1 == alias_overlap &&
++                g_mem_write_journal == journal_before && g_mem_write_journal_user == journal_user_before,
++                "registry and journal controls unchanged");
++        require(memcmp(alias_bytes, before_alias, sizeof(alias_bytes)) == 0 &&
++                memcmp(other_ram, before_other, sizeof(other_ram)) == 0 &&
++                memcmp(mem2, before_mem2, sizeof(mem2)) == 0, "alias/alternate-owner/MEM2 storage unchanged");
++        if (!done) {
++            ++declined;
++            u8 after[WRITABLE_BYTES];
++            capture_windows(bw_guest_mem1, after);
++            require(memcmp(&native, &untouched, sizeof(native)) == 0 &&
++                    memcmp(after, before_ram, sizeof(after)) == 0 &&
++                    native_flags == input_flags && native_mxcsr == input_mxcsr,
++                    "rejected CPU/full writable RAM/fenv unchanged");
++            /* Keep the two full images equal even on a rejected scenario. */
++            restore_windows(reference_ram, before_ram);
++            continue;
++        }
++        ++accepted;
++        require(native_flags == input_flags && native_mxcsr == input_mxcsr,
++                "integer burst preserves incoming host fenv");
++        restore_windows(reference_ram, before_ram);
++        CPUState* const reference = storage.cpu;
++        *reference = k.cpu;
++        if (reference->ram == bw_guest_mem1) reference->ram = reference_ram;
++        mod->on_state_loaded(reference);
++        arm_fenv(reference, k.host_daz_ftz);
++        require(mod->dispatch(reference, BLUEWAKE_GD_TEV_KCOLOR_RESUME) != 0,
++                "actual original suffix dispatch");
++        const int reference_flags = fetestexcept(FE_ALL_EXCEPT);
++        const u32 reference_mxcsr = _mm_getcsr();
++        CPUState expected = *reference;
++        expected.ram = native.ram; /* The only state normalization: distinct image owners. */
++        if (memcmp(&native, &expected, sizeof(native)) != 0) {
++            report_cpu(&native, &expected);
++            require(0, "all3552 CPU bytes versus actual C2");
++        }
++        require(same_windows(bw_guest_mem1, reference_ram), "all writable MEM1 bytes versus actual C2");
++        require(native_flags == reference_flags && native_mxcsr == reference_mxcsr,
++                "actual C2 host fenv/MXCSR equality");
++        require(callback_count == 0u && journal_count == 0u, "original callback-free suffix");
++        check_packet(&k, &native, bw_guest_mem1);
++    }
++    for (unsigned i = 0; i < FIXED_SCENARIOS; ++i)
++        require(scenario_seen[i] != 0u, "every declared scenario exercised");
++    require(accepted != 0u && declined != 0u && accepted + declined == cases,
++            "complete accepted/declined accounting");
++    require(memcmp(reference_ram, bw_guest_mem1, MEM1_SIZE) == 0, "final complete MEM1 equality");
++    ppc_guest_alias_clear();
++    ppc_set_mem_write_journal(NULL, NULL);
++    require(fesetenv(&saved_environment) == 0, "restore host fenv");
++    _mm_setcsr(saved_mxcsr);
++    printf("GD_PACKET_DIFFERENTIAL_PASS cases=%u accepted=%u declined=%u full_cpu_bytes=3552 "
++           "mem1_bytes=33554432 writable_bytes=28672 readonly_outside=1 full_image_checks=2 timing_eligible=0\n",
++           cases, accepted, declined);
++    return 0;
++}

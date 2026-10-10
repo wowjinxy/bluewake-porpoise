@@ -2414,6 +2414,43 @@ this is evidence of those fast-arm executions, not a hit-rate or timing census.
 | `moderngekko-whole-function1/alias-domain-proof1.json` | `631000fe3923ee43e761a114d87803626ce5227d0dad656d0ba50ffd5e08c770` |
 | `moderngekko-whole-function1/coverage-native1/result1.json` | `ecb2227157130020b09cc143f75e6ef5682d3ecdd48a95a3900eee16a33a1e27` |
 
+## Guarded display-list packet burst, October 9
+
+A separate inactive experiment replaces only the unpaid 64-cycle TevKColor suffix at `0x802D82C8`. The original prologue, four color-byte loads, packing, overflow test and optional overflow callback run before the hook. Existing native-entry observer approval remains required. Declines retain the original precise/prepaid bodies; accepted execution rejoins the original central return dispatcher.
+
+The helper constructs the ten-byte `61/BE32/61/BE32` packet while removing repeated cursor publication and per-byte memory predicates. Fresh fixed-MEM1/alias/journal/reservation/exception/budget/deadline guards and complete disjoint source/control/frame/output spans bound that reordering. Success charges exactly 64 guest cycles and reconstructs all modified GPR/LR/PC/suffix state; FP state and host fenv remain unchanged. This does not broaden alias or callback assumptions.
+
+The actual original-C2 differential fixture passed 60,000 cases: 30,010 accepted full-state matches and 29,990 unchanged declines. It compared 3,552 CPU bytes with only the distinct RAM-owner pointer normalized, all 28,672 writable bytes per case, read-only protection elsewhere in MEM1 and initial/final complete 32 MiB image equality. Its eleven owned child rows exited zero and drained. Fixture success is separate from game evidence.
+
+The private module (`e2cb244cc97c207dc099378726b9e5cef040406626fe967773214f4e5b4430f3`, 410,186,240 bytes) replaces two existing C2 objects and appends one provider, retaining 833 existing objects including all five C2 changes. Its actual source dependencies, 836 direct objects, 15 physical providers, 853 reproduction members and PE surface passed. The controlled title comparison then matched all six complete logical CPU/MEM1/MEM2/ordered-alias checkpoint hashes and the full captured P6. These logs retain complete logical hashes, not RAM dump blobs. Candidate admission was exercised: 367,052 accepted and 2,044 declined TevKColor calls.
+
+The completed fixed-eight comparison **FAILS** the unchanged consistency requirement. In the primary VI 750-1500 window, mean main-thread CPU changes from 17.87890625 to 17.59375000 seconds (-1.594931%); elapsed mean changes from 18.070748800 to 17.857096575 seconds (-1.182310%); thread cycles change -1.685515%.
+
+| Pair (control / candidate) | CPU change | Wall change | Thread-cycle change |
+| --- | ---: | ---: | ---: |
+| a1 / g1 | +11.881188% | +13.599754% | +11.404126% |
+| a2 / g2 | -7.778738% | -7.753242% | -7.564392% |
+| a3 / g3 | -2.510460% | -2.208340% | -2.503055% |
+| a4 / g4 | -7.630162% | -8.023300% | -7.771786% |
+
+Both means meet the one-percent reduction threshold; all-pairs CPU/wall improvement does not. Every native case completed and drained with all 34 runtime checks passing. The independent raw audit checked all 1,801 VI records and 1,025 calibration records per case, retaining route/input/zero-pipeline gates. Exact primary/five-segment work and endpoint cursors matched, as did complete terminal GX/clock/dispatch. Primary work remained 547,802 blocks, 6,075,000,001 guest cycles and 99 EFB entries. All eight raw cases and 1,801 per-VI records per case are retained.
+
+The mixed pairs and current background load do not establish a reliable gain or a causal regression. CPU timer/calibration materiality remains unresolved; no overhead is subtracted. Per-VI rows are correlated, not independent trials. This is an unpaced EFB-replayed title experiment, not ordinary displayed-FPS or whole-game evidence. The experiment is closed/inactive with no retry, rescue, pair omission or promotion. The separate negative GroundCross LLVM experiment also remains inactive.
+
+| Private evidence under `build/deep-debug-20261008/` | SHA-256 |
+| --- | --- |
+| `gd-packet-burst1/attempt1/result.json` | `1b87e65a3b8213cfdae5e0b0175506aad8776d23311a3d00d3b8c92feeef2c4f` |
+| `gd-packet-burst1/module-plan1/attempt2/result.json` | `88867b8ae8cb52ecd77360a5c2465387dc93cb5c1b7c9d3b30e4f5b81acb98a4` |
+| `gd-packet-burst1/module-plan1/link-attempt1/result.json` | `b1cef2d6f2758e2b5f23249a88b1f2abbe730b5d100c4560ce7e978b67d2209b` |
+| `gd-packet-runtime1/correctness-batch1.json` | `05fd476b6813c3c6c9c311f9c97ea7c3961a05dfbd8105624fd4907589366e94` |
+| `gd-packet-runtime1/native-efb1/gd-packet-per-vi-input-parity1.json` | `6e3befccbe46e991d9098483fbab51a94db065116dd40d4071b738cf8f177473` |
+| `gd-packet-runtime1/controlled-input1/gd-packet-per-vi-eight-run1.json` | `61794021bfef10cbc96922bab27d8ae3ad9b9ba935d818c701c5da4ce1ecf187` |
+| `gd-packet-runtime1/controlled-batch1.json` | `77b61d1b21ae0e27e00e5c82da306b583af204df9528490b9c73447cf5545bc4` |
+| `gd-packet-runtime1/independent-correctness-audit1.json` | `54cbf54e2f01d159361e00e2608687fe6af1f4bc7e75a7ad33c74d56bc610fc1` |
+| `gd-packet-runtime1/independent-timing-audit1.json` | `7a991939ba5e1bc6de9c529d2e1c113a8976a8690545cc22873a83f0b49e254c` |
+
+The public archive preserves three inactive handwritten experiment/fixture files. Generated game source, module routing and player data remain private. The archive has no production build target or automatic installation.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
