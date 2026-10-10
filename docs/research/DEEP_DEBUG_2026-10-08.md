@@ -3478,6 +3478,28 @@ Private receipts under `build/deep-debug-20261008/host-flat-bitmap1/`:
 - `runtime1/correctness-batch1.json`: `a00641413b2449ccb4137475daae2e52c819d56851ba13ad4061daa30dfa1d85`
 - `runtime1/controlled-batch1.json`: `ce28e87c893f17890b345de51d3ac8fc91ce304c0e520d2b7786315e00de8f8f`
 
+### Packed mode flags: compiler screen, October 10
+
+A separate private candidate groups seven startup-only mode bools into an
+asserted eight-byte object while retaining a fresh, separate jump read. The
+normal source certificate passes. Its executed C fixture passes 4,387 queries
+covering all 128 mode combinations, jump states, fresh toggles, canonical bool
+conversions and the reserved zero byte.
+
+Actual O3 compilation produces one eight-byte mode access with no added query
+frame, calls or saves; executable text shrinks by 48 bytes. The frozen unrelated
+opcode check nevertheless fails: two turn-census byte tests in another helper
+change from TEST/1 to CMP/0. The zero condition agrees for canonical bools, but
+the original failed screen remains preserved without relaxation. This pilot is
+closed without a host link, game run or timing claim. The accepted tester is
+unchanged, and the reported roughly 19 FPS remains unresolved.
+
+Private receipts under `build/deep-debug-20261008/host-packed-modes1/`:
+
+- `compile1/attempt1/result.json`: `4f402e0a360deb8279e0616ba46f17b69067c05cb8a41ce5bd8b65d68f1f1300`
+- `fixture1/attempt1/result.json`: `36323a7893b2edd565252e992debc90e7c2db456e845b26a3cd8ef02e9e24ac2`
+- `compile1/codegen2.json`: frozen unrelated-opcode screen failed; full report retained.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
