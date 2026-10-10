@@ -76,6 +76,20 @@ has no automatic finite file-size bound. See
 [ETW sessions](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/sessions)
 and [WPR start options](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options).
 
+The next external step is the separate
+`D:/Projects/BlueWake-pmu-feasibility-20261010/filemode1/Launch2.cmd`, run as
+administrator. It records only two seconds of Icache activity without starting
+the game, using `BlueWakePmuFileProbe` and a private D temporary directory.
+The installed recorder accepts its File profile in one actual owned read-only
+query. Two independent source reviews pass, including seven ownership/error
+cases and seven file-watchdog cases. The recorder and decoder are included in
+its busy-process admission. File growth is polled, not OS-bounded; inherited
+resource guards can still veto an owned stop, leaving an explicit manual named
+cleanup receipt. Neither recording success nor start-metadata retention has
+been established. A fresh root token query at 18:04 UTC remains limited, with
+both profiling privileges absent. All root native children have drained;
+Capture5 and the new file-mode recording remain unrun.
+
 Evidence under the private diagnostic root:
 
 - `capture1/peer-b-failed-capture1.json`: `fc12a8dea0200839e3cec6b4837ede0713351f0c79f6cf5eada983c8456af95a`.
@@ -90,6 +104,11 @@ Evidence under the private diagnostic root:
 - `decoder1/failed-capture1/attempt2/result.json`: `621ae864eb2a7ea36cbdd2fa89ac7482a1221b468fe7249f6ec7f232895191df`.
 - `decoder1/failed-capture1/peer-b-actual-export2.json`: `cc605dc85b4ec677a52060ad88e3f6a1647f91ef1fbdc5a0f592955588f01099`.
 - `decoder1/failed-capture1/peer-g-metadata2.json`: `3b1b14f121343ca77054be3491aa69a467aa0679f7db16cc8e5b2e49c5d6e9d4`.
+- `fileprofile1/attempt1/result.json`: `6ef3dfa4bddb2c8d32df65a0ff731c4b0ebd6f4606b9b6aa857ba10945365ec3`.
+- `filemode1/recipe2.json`: `552667b8fd17430cd0d60b358d156e9781ad8392e2eddcb47861cab6d2ccbf12`.
+- `filemode1/peer-b-source2.json`: `cecd3b7f88f1856a5410fc3eac83c6b8d4fa920d302d7e9bfe5dad86170208ea`.
+- `filemode1/peer-g-source2.json`: `1ec6577724515355f2a559dea3953ca08514b915e0418ecf07dc47b2560f6910`.
+- `filemode1/root-token-result1.json`: `6d159dd5a63392a5abfc8ee6696c1d6af8ced03704fca9dd8a1517efcda29994`.
 
 ### Hardware-counter capture feasibility before the first recording, October 10
 

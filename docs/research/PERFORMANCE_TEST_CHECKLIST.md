@@ -43,7 +43,9 @@ partial files are preserved. The corrected capture launcher passes 59 pure
 checks and independent source review. A separate reader with a 2 GiB output
 cap builds and passes 34 pure checks, with its other parsing/time limits intact.
 It exports all 393,155 events from the failed recording; missing CollectionStart
-metadata still prevents interval qualification. A complete game recording and metadata,
+metadata still prevents interval qualification. A separate two-second no-game
+File-mode probe is prepared, parser-validated and independently source-reviewed;
+its administrator recording remains unrun. A complete game recording and metadata,
 loss and ownership checks remain required before interpreting counters. Source
 and exact build/audit receipts are preserved in the investigation.
 
