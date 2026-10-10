@@ -3692,6 +3692,209 @@ Private receipts under `build/deep-debug-20261008/private-abi-dispatch1/runtime-
 - `controlled-input1/private-abi-staging-per-vi-eight-run1.json`: `747f34e86bf7350aa8759c115257cc6d645f419a5540075cf80f0120f477a857`
 - `TERMINAL1.json`: `615fbe03afb909c0f8f03fca2aeef507c9de35c3059a9e2ca3b2388358aea2de`
 
+### Fault-mapped load mechanism, October 10
+
+A distinct memory architecture is now under investigation: reserve a 4-GiB
+guest-address arena, map authoritative cached MEM1 through a shared section,
+and redirect registered load faults into compiler-visible cold continuations.
+This replaces repeated software range checks on qualified accesses. It needs
+a new memory owner and generated recovery edges; the accepted module's fixed
+PE image RAM array cannot simply become an alias of a pagefile section.
+
+An isolated Clang 19 Windows fixture now passes 20 cases, including 12 actual
+read-fault recoveries. The corpus compares all 432 bytes of a toy CPU, all
+32 MiB of RAM and callback snapshots. It covers low/high cached RAM and
+unmapped device, physical-zero and MEM2 addresses. Callbacks change registers,
+FP bits, deadlines, suffixes and exceptions; a preceding write detects replay.
+The handler rejects synthetic foreign RIP, address, direction and thread
+records. Handler removal and all view/reservation cleanup pass.
+
+Actual optimized code keeps a pending guest value in EAX across the MOVBE
+load, publishes it on the advertised cold edge, and tail-calls the canonical
+toy continuation. The normal load has no range branch or helper call. This
+proves this one compiler/recovery mechanism, not arbitrary register recovery,
+the real CPUState ABI, scheduling parity, stores or gameplay performance. The
+20 initial states have no pending exception and a zero deadline; the normal
+success path must not be generalized beyond that corpus. The real three-load
+851 block requires its original post-operation deadline/refund checks.
+
+The first link attempt's unqualified library name failure and the first
+execution's cleanup failure are retained. The latter passed the comparison
+loop but failed `UnmapViewOfFile2(NULL, ...)`; the immutable second source uses
+`GetCurrentProcess()` and passes cleanup. Neither failure is reclassified as
+a complete pass. No accepted host, game module or tester is replaced.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `fault-fastmem-feasibility1/assessment2.json`: `d3012fbaf7aac8cb0cf997f836ff3eec0d07cc85ec587a23c8d354576717ded0`
+- `fault-mapped-ram-feasibility1/bwfast851-recovery1.json`: `11a31d5c5ce7dce82a37f3193ffed2c3753d97199b0c480ddf368fb1025302f8`
+- `fault-fastmem-fixture1/fixture2.c`: `30ae3327115141007cda957d3c9b5b47f7142f97e5ea916e0a8b3df69a7574a9`
+- `fault-fastmem-fixture1/native3/compile/result.json`: `3088912cfd108e9d72974611890bc20fd7e8fbdc6bbbd37df2e9fa835c903534`
+- `fault-fastmem-fixture1/native3/execute/result.json`: `9b0a436e8acb5c34602cce322e658b1f7ad23f1a549713a993241711a98db7ac`
+
+### Real CPU three-load recovery, October 10
+
+The next standalone fixture uses the accepted 3,552-byte CPUState and copied
+original fast/precise fragments around guest PCs 8024921C/20/24. It passes
+640 comparisons: ten address profiles, eight callback-mutation modes and
+eight scheduling states. There are 304 actual recovered read faults, split
+240/32/32 across the three registered sites. Full CPU/RAM, auxiliary arrays,
+ordered callback snapshots, FP environment and cleanup match the canonical
+control. This includes deadline/refund boundaries, changed RAM ownership and
+callbacks, aliases, wrapped addresses and the three precise continuations.
+
+The seam ends before 80249228. Its budget is the CPU field, rather than the
+production module's compile-time constant, to exercise scheduling boundaries.
+It does not qualify the whole translated function, whole-module entry ABI,
+new production memory ownership, stores or gameplay. The first compile's
+CRT deprecation error is retained; the successor adds the explicit CRT define
+and then passes. No unchanged failed receipt is relabeled.
+
+A second immutable source adds only the Clang separate-storage fact for the
+stack CPU versus the separately reserved arena. It also passes all 640 cases
+and 304 faults. This does not claim owner/view nonaliasing: those views share
+RAM intentionally. Both emitted candidates still publish CPU PC/suffix/GPR
+state; the second only hoists the arena pointer. This allocation fact alone
+has not delivered the intended state-store elimination or a speedup.
+
+Exact optimized LLVM IR shows all three volatile asm-goto loads as sideeffect
+callbrs with only nounwind call-site attributes, without a read-only memory
+effect. That is a concrete remaining compiler-contract issue to investigate;
+source-only reasoning does not qualify a replacement. Clang's allocation
+contract requires separate outer allocations, not separate fields of one
+allocation: https://clang.llvm.org/docs/LanguageExtensions.html#builtin-assume-separate-storage
+
+Private receipts under `build/deep-debug-20261008/fault-fastmem-fixture1/actual8511/`:
+
+- `source-preparation1.json`: `157d15165a2575c7ab24b5dfe9320de710f4f7f33d4bd2e41ed2c2b65eef52e7`
+- `native2/compile/result.json`: `4681e3d334d9e8d43ac43af36ed81e1f2d08fbd4a6ff8c8d0a4c10f01dd868ff`
+- `native2/execute/result.json`: `855bc48396176396e2c3e78bb76807c32288fbcdb778059353e48040efe310cf`
+- `source-preparation3.json`: `d57c3892c49cf6c0cdf6429d8a5aaa8dff6d5c58b41a6e53d74f45143c52f8da`
+- `native3/compile/result.json`: `2bcfb4411da224a0ae0c2de06feb7e4b3b0cdd55038513e333ad8b241b5d4cc2`
+- `native3/execute/result.json`: `50a3dd153d4a891d7ab3578939dd90dd5a0470d6b9230f895de2093eae04b62e`
+- `native-ir1/compile/result.json`: `e07b12ecf6e6be09ac25f21bc56731a180c493c86c8b356daddbb5a92dd5d9e6`
+
+A third immutable source keeps seven dirty guest GPR values, downcount and
+the admitted deadline as unescaped scalar locals. On each registered fault,
+the compiler-owned cold label publishes only the completed prefix and enters
+the original current precise label. It never republishes cached values after
+a canonical callback. Deadline exits publish the prefix/refund and enter the
+original next precise label. Normal success publishes once at the seam end.
+
+This source also passes all 640 cases and the same 304 faults. Actual code
+has no CPU publication before the first mapped MOVBE; the second and third
+mapped loads retain register values, followed by one final state flush. The
+56-byte ordinary ABI frame remains. This is a concrete mechanism improvement,
+not whole-function correctness or a measured production speedup. A read-only
+IR annotation was not adopted: the fixture handler also updates diagnostic
+globals, so the current handler cannot claim solely read-only argument memory.
+
+Additional private receipts in the same `actual8511/` directory:
+
+- `source-preparation4.json`: `9ef9e96cc8cd0b013185075e9e493273004999c4225b72d8b0051ee6372b0c98`
+- `native4/compile/result.json`: `384715d32a56f467276d88b829976a5bb3f7a7f8190681b2e0e9c154d34fee3a`
+- `native4/execute/result.json`: `05104bbade799a8b063fcd9bb5ae6541005207f178c7e6623c8768a23b86f62d`
+
+The next immutable fixture retains those exact original/candidate bodies and
+all 640 cases, then measures both arms in one binary using a shared noinline
+indirect-call loop. Eight runs use ABBA followed by BAAB, eight million calls
+per run. CPU/RAM/FP comparisons and the no-callback/no-fault checks happen
+outside timing. Actual disassembly confirms one shared loop and indirect call,
+with identical input-register/downcount/deadline resets for both arms.
+
+Both correctness and benchmark checks pass, but this is a negative performance
+result. Across 32 million calls per arm, original/candidate thread cycles are
+972,317,448/1,271,110,572, an increase of 30.73 percent. QPC totals are
+0.271856/0.355094 seconds, an increase of 30.62 percent. Coarser thread CPU
+totals are 0.265625/0.375 seconds. Every raw row remains preserved; no resampling
+or unchanged rerun is used to select a favorable result. This tiny pointer-RAM
+seam does not measure the production fixed-RAM module or displayed FPS.
+Fewer intermediate state stores did not make this candidate faster. Production
+memory-owner migration is therefore not justified by this measurement.
+
+- `source-preparation5.json`: `c97e8a9ce297af5a81e284aa3911c64dcfc0378e26ed0b7cb0bf666966889064`
+- `native5/compile/result.json`: `0b2e31c04383c625798d26db2a0c6641d4c1f937f25950fa562b25e928808b49`
+- `native5/execute/result.json`: `d80995502b6a9e858b6f4aa444dcc42e860a79ca2aae2160db66a537efd64a30`
+
+### Current graphics-worker samples, October 10
+
+A new hidden accepted13c/C2 title capture targets the exact registered GX
+worker handle, verifies its thread/process ownership and requires unchanged
+registration before shutdown. There is no busiest-thread substitution or
+shared published guest-PC interpretation. The child exits 0 after 1,800 VI;
+4,032 saved worker RIP samples cover VI 768-1486. Both window markers report
+hidden=1, shown=0 and devices=0. Settings/options are disabled as required by
+noninteractive admission. This route differs from visible gameplay in audio,
+presentation, settings and resolution; it is diagnostic, not displayed FPS.
+
+Of the samples, 2,281 are in the exact accepted host. DrawPlan construction
+contains 517 (12.82 percent of all worker samples). Its bounded exact-image
+disassembly locates the dense cluster in indexed-array checks and vertex
+interpretation/decoding. The top color site is a necessary output store;
+twelve standalone hash-helper locations have unknown callers. Counts do not
+establish exclusive CPU time, critical-path delay or removable work. The
+separate main-thread capture is not merged with this population.
+
+The original runner FAIL is preserved. Its sole false predicate rejected the
+configuration log 'present mode Fifo'. The offline admission shows that this
+line records initialization, while noninteractive suppression of drawable
+acquisition prevents the actual Present path. All remaining frozen capture
+checks pass. A preceding failed configuration run exited before renderer
+startup and collected no samples; it also remains preserved.
+
+Private receipts under `build/deep-debug-20261008/current-gx-worker-profile1/`:
+
+- `runner-preparation3.json`: `c41f0a1e35a8b950ea68d30695a41c7b36632132e861524b17f88dcafa8d73b8`
+- `hidden-public-gx-worker-intro2/capture-admission1.json`: `f9261a7142c3a1ad67d35b3357fb903820793897393e37b184b8190490cfee88`
+- `worker-attribution1.json`: `136fcd4a76385960df6fc9859dbdbaa0d7d307e619890b37fbc169cf95cacd5d`
+- `drawplan-disassembly1/result.json`: `0dbeec7250beb29e27a7ad054fa6109f9ab387dfb13c350401002849fa10fb73`
+
+### Direct color output experiment, October 10
+
+A separate private graphics candidate decodes each color directly into its
+final vertex output, removing the four-float temporary and copy. The decoder
+helper is unchanged and reads all source channels before writing the output,
+including overlapping input/output cases. A one-translation-unit host rebuild
+passes, retaining the accepted other archive members and link inputs. Bounded
+disassembly confirms removal of temporary color transport; the DrawPlan body
+grows by six bytes. This alone does not establish a speedup.
+
+An O3 fixture passes 1,080 comparisons through the literal full decoder and
+265,600 helper/color-overlap comparisons across six formats, two color slots
+and direct/index8/index16 addressing. It checks output/state, bounds/fallback,
+reuse and FP environment. Topology is a shared canonical harness dependency,
+so this is scoped color/decoder evidence rather than whole-renderer proof.
+
+The root then executes the frozen control and candidate arms separately,
+checking native-process quiescence and available commit before each child.
+Both hidden game children exit 0 after 1,800 VI with clean device/window
+markers. The original control result is PASS; the original candidate result
+remains FAIL because its no-compiles predicate observes 87 pipelines created.
+The outer pair launcher was not executed; offline aggregation combines the
+two actual arm receipts without changing their statuses.
+
+Initial cache/player/environment inputs match, but terminal work is not exact:
+submitted/planned vertices are 8,431,724/8,431,716 and noops are 3,024/3,008.
+CPU totals are 52.953125/53.375 seconds; wall totals are 38.313/38.828 seconds.
+These are descriptive measurements, not qualified gain or regression evidence.
+Both seed and final cache databases are byte-identical with 253 records.
+Their records do not identify the origin or timing of the additional pipeline
+counter observations; padding/hash corruption is not established. No cache
+failure waiver, automatic retry or production promotion follows.
+
+The frozen build receipt's copied `prepared_format_operation_study=true` flag
+is a metadata error: this candidate only changes direct color output placement.
+The original receipt is preserved, with this scoped correction.
+
+Private receipts under `build/deep-debug-20261008/gx-color-direct1/`:
+
+- `source-preparation1.json`: `4c341c48712e459b047867e66b3ae406ccf300c8d6fbfb1c608d59fddeefe274`
+- `build1/attempt1/result.json`: `eb1a099bf9e0f52ef0f0502c728ac259d4e14bc70e9ab3455f6e0fd3f8d90250`
+- `drawplan-disassembly1/result.json`: `41feeaeae3b53c79ecea27f47ecf0b6ffd87a134451ecb9450ad51eeb696b90e`
+- `fixture2/owned-attempt1/result.json`: `c2ba907b1e936629c2ce0a59427f0dbb4cc146a9bed8b629326f4aa012cd168d`
+- `runtime1/actual-pair-aggregation1.json`: `69c7d722b2f333d5c03637efdc49561ce9c393fbd26dcb1ec9d5bdbf2a5bacde`
+- `runtime1/pipeline-db-audit1.json`: `8f9e0f0351d167c6666c678936335d053b74e02bdd0825378d1ee1d401fec7ce`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
