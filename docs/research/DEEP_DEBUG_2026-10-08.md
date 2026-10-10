@@ -3500,6 +3500,39 @@ Private receipts under `build/deep-debug-20261008/host-packed-modes1/`:
 - `fixture1/attempt1/result.json`: `36323a7893b2edd565252e992debc90e7c2db456e845b26a3cd8ef02e9e24ac2`
 - `compile1/codegen2.json`: frozen unrelated-opcode screen failed; full report retained.
 
+### Coherent pipeline-window diagnostic, October 10
+
+A new private diagnostic records a coherent atomic started/completed pair
+around VI750-1500, including work already active at the first boundary. It
+covers each creation callback through map publication, counter/prune work and
+notification. Separate origin counts and the original phase trace aid
+diagnosis. It adds no worker wait, prewarm, cache edit or gameplay delay. The
+original per-VI row format and terminal completion counter remain intact.
+
+The actual host build replaces only main and the one Aurora archive provider;
+the game module and 168 other physical providers remain fixed. Two setup
+failures remain preserved: an overbroad environment guard rejected the existing
+no-dialog setting, then missing architecture metadata caused the genuine
+certificate generator to emit zero. Restoring the accepted build's exact
+environment fields allowed compilation without bypassing the certificate.
+
+One fresh intro passes all 32 route checks, all six complete logical state
+checkpoints and the full P6 image against the retained accepted-C2 reference.
+The complete trace contains 242 creations: 218 cache rows and 24 derived uber
+pipelines. Both boundary snapshots are coherent, error-free and idle at
+242 started/242 completed, with zero starts or completions between them. This
+excludes covered pipeline creation/publication work during this run's widened
+measurement window. It does not exclude unrelated cache I/O, explain historical
+19 FPS observations or qualify a speedup. Earlier failed comparisons stay
+failed; the accepted tester remains unchanged.
+
+Private receipts under `build/deep-debug-20261008/pipeline-counter-contamination1/`:
+
+- `future-source1/source-preparation1.json`: `b4a39a74de4ddd02d4b6ea99b1b3012149088cad20040ad2cd79adc4939169f5`
+- `future-build1/attempt3/result.json`: `619a40f1dbf10e79b2ccfef89de9c09e717a0898b74ad627a108b9d9c9fb1de4`
+- `future-runtime1/diagnostic-result1.json`: `e5f81afbc6b560c809ebf3cf5eca36fc3699c4679eb5ecb652abc06a4859ce38`
+- `future-runtime1/parser-fixtures1.json`: 16 pure quiet/dirty/malformed cases pass; distinct from runtime proof.
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
