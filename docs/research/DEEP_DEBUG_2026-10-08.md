@@ -2766,6 +2766,87 @@ Private source receipts under `build/deep-debug-20261008/`:
 - `f40-admission-refresh1/result2.json`: `024a8dd6134fc21bbecf1052d39c978941fbe291e1ff9e38e13acb7ced9479e2`
 - `inactive-native-current1/integration-audit1.json`: `3053cc9c74e63b4df8da53e76f4a1f365117f0f711f28b9e250b7cee385e022d`
 
+### Current native ownership and remaining arithmetic candidates
+
+A further offline merge binds the accepted C2 capture to exact original
+objects and conservatively bounded native control flow. Of 943 examined
+sample sequences, 708 have unique qualified CodeView source regions and 128
+have unique native-CFG owners; 85 remain shared and 22 unknown. Another 1,251
+of the 2,194 translated chunk/loop samples remain unmapped. Published CPU.pc
+and nearest symbols do not resolve that missing ownership.
+
+The largest uniquely named body is GroundCrossGrpRp with 29 samples (0.651%
+of all 4,455), followed by J3D recursiveCalc with 20 (0.449%). The disjoint
+J3D, J3DGD and GX name groups together account for 428 (9.607%); collision and
+geometry account for 233 (5.230%). These whole-route frequencies establish
+neither exclusive function time nor removable cost. No single large new leaf
+replacement emerges from this mapped subset.
+
+The recursive matrix traversal invokes six dynamic callbacks, including child
+and sibling recursion. Its original source reloads child and sibling pointers
+after the relevant callbacks; prewalking or caching the tree would change
+that behavior. Its existing matrix copies already have native forms. The two
+remaining line-geometry bodies have only 23 unique samples combined. No new
+traversal or geometry replacement was built.
+
+The current standalone scalar-FP associations contain 70 samples (1.571%),
+including 21 at fmuls. Its emitted arithmetic already uses double multiply
+followed by single rounding and widening. Converting both operands to single
+before a hardware single multiply changes results: x=1+2^-25 and y=1+2^-24
+give a different rounded product. Quantization, NI/NaN/status handling and
+stfs bit conversion cannot be removed on this evidence. No scalar-FP candidate
+was built or timed.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `targeted-current-native-cfg1/result1.json`: `9bbceec40ea8121ea9b74e2c6919e5aa03f753cb8256d8d733e0c329916c8866`
+- `current-primary-ranking1/result1.json`: `7060c1a67cc9f671060f9cc2757202aa670d4cf2bcc5c703afdb51540cfe6afe`
+- `inactive-native-current1/TRAVERSAL_FEASIBILITY1.md`: `e3100dd843ea7338f1c70dbd5fcd24d4712e175c446e3b0d22ac9964747ed8b2`
+- `scalar-fp-arithmetic-refresh1/result1.json`: `764e6f89fc42bd98efbf63c7230cf48525d3ff25835c4483e83677f42db87177`
+
+### Read-only readiness compiler pilot: stopped before integration
+
+A separate hypothesis tested whether a caller-visible read-only admission
+query would let the compiler retain CPU values across the query. The complete
+host callback cannot carry that attribute: some paths read atomic configuration
+or diagnostics. Only the reviewed sufficient-negative main-code leaf has a
+plain read-only source closure. The private compiler pilot used broad
+`memory(read)`, never readnone, argmem-only or a no-alias promise. A false query
+kept the existing return to the dispatcher; no full callback was hidden inside
+the annotated function.
+
+An authored fixture with separate opaque provider translation units showed
+the intended compiler effect. Successful-query CPU reloads fell from four to
+zero and three to zero in two cases. All four publication stores remained;
+an intervening RAM store kept both queries, and an opaque observer still forced
+three CPU reloads. Value-chain code nevertheless grew from 272 to 304 bytes.
+Six serial compiler rows passed and drained. An earlier attempt compiled one
+object but failed while recording its result; that partial attempt remains
+preserved and is not counted as a successful run.
+
+The real-code follow-up compiled exactly original C2 chunk 0145 with its
+48-member dependency closure and original ordered O2/x86-64-v3/FP flags.
+Only the copied readiness header and one experimental define differed.
+Both dependency-query and compile rows passed. The external certified provider
+was intentionally unresolved in this object-only experiment.
+
+The real-code gate failed: all 24 other functions have identical raw machine
+bytes and identical named relocation records. The main body still has 132,618
+instructions, 9,067 calls and its original 152-byte frame. Only the readiness
+helper shrank, from 144 to 80 bytes; no actual caller reload, publication or
+spill reduction occurred. The preregistered protocol therefore stops before
+provider integration, linking, game execution or timing. Authored compiler
+behavior is not a game optimization or runtime-contract qualification.
+
+Private receipts under `build/deep-debug-20261008/readonly-fast-query1/`:
+
+- `PILOT_PROTOCOL1.md`: original stop criteria and scope.
+- `actual-audit4.json`: `2b7a81682d8bf2235d98f618203ffb3b02b3c3494bd35a7080830b12f8cce747`
+- `chunk-pilot1/attempt1/result.json`: `eda485e8ffbf16e03e6e3c805a5d6a9c3c470eef8f6e5560260215b02000f0dd`
+- `chunk-pilot1/independent-compile-audit1.json`: `41e176df13dbdbb553af8628221350557f61e24ebb1284bca0556f8aaca26c9e`
+- `chunk-pilot1/attempt1/codegen1.json`: `ad59887a300908ffc3600639af145a58e0199ea6a41c0dade98d1ba7e094328b`
+- `chunk-pilot1/attempt1/function-scope1.json`: `995abb30f93f395b01123600fe2095f511b4ec3f96a1f8a7ef0e86638db04d57`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
