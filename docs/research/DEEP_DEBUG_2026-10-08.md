@@ -3060,6 +3060,71 @@ Private receipts under `build/deep-debug-20261008/`:
 - `targeted-current-native-cfg-next8-2/result1.json`: `b8f4cbd0f6f033f8260ca7e27e0c0aa1409589eed9572c688278c5ed830e7a0c`
 - `targeted-current-native-cfg-next8-2/summary1.json`: `cbbf079dad747339462c1b8b94cf3149489698dad94f6130119a6f46d1b455fc`
 
+### Separate base-span correctness study, October 10
+
+The original compiler text-size failure remains unchanged. A separately
+specified study tests the same frozen transform because actual native paths
+show reduced successful-path work: 75 to 47 instructions for a three-store
+region and 163 to 60 for an eight-store region, with three/eight range checks
+reduced to one. These counts assume admitted ordinary RAM and a zero deadline
+budget. Their executed frequency and speed effect are unknown. All original
+source PC/suffix/deadline/refund lines remain; the compiler also removes some
+intermediate native metadata stores and combines two adjacent stores.
+
+Independent source review found test-coverage gaps before execution, including
+nonmonotonic access order and later callback-triggered refund seams. The
+immutable source3 successor fills them without modifying the production
+transform, helper or compiled candidate objects. It contains 204 shapes, of
+which 108 transform and 96 explicitly decline. Reachable refunds after
+callbacks one through six, no-refund controls seven/eight and a reservation
+mutation before later stores are asserted from actual callback-time state.
+Both wrong-paid-label and wrong-prepaid-state mutants must diverge.
+
+Root then executes four configurations: pointer/fixed CPU state, each ordinary
+O2 and AddressSanitizer, all with fixed 32 MiB MEM1 and the real 3552-byte CPU
+and canonical gather/memory providers. All 40 owned children complete with
+zero exits and normal drain. Each configuration passes 646,884 executions
+across 204 shapes and 1,057 scenarios: **2,587,536 total executions**. Full CPU,
+all 12 KiB writable MEM1, protected remaining MEM1, other memory owners,
+callback traces and floating environment match without normalizing PC,
+suffix, cycles or memory. No sanitizer diagnostic occurs. Actual M/MD closure,
+physical link providers, ASan imports and preserved inputs pass an independent
+post-run audit. This is synthetic differential evidence, not whole-game proof
+or a performance measurement.
+
+A later isolated pair links fresh control and candidate modules with exactly
+the two qualified objects at slots 760/796. Each retains 833 other direct
+objects, the five C2 replacements, 15 physical libraries and the original link
+order. Both links complete and drain normally. Physical byte-ledger/provider,
+actual M/MD, constants, PE export/import/resource/ABI and before/after input
+records pass an independent actual audit. The fresh control equals accepted
+C2 across the entire 410,185,216-byte DLL except three bytes in the COFF
+timestamp. The candidate is 410,201,088 bytes. No runtime or speed claim follows
+from linked-file size or these build checks.
+
+A bounded join of the exact 91 clusters against the current ordinary native
+capture finds only six uniquely source-associated samples across five native
+RIPs and five clusters. Of 221 selected main-owner samples, 202 have unique
+source-region associations; 196 of those lie outside the frozen cluster
+tuples, with 19 shared/line-zero rows unresolved. The six include CPU result,
+suffix and refund publication: they are not six proved removable range checks.
+Neither selected native successful-path offset set has a captured sample.
+This small source-associated footprint does not establish executed guard
+frequency, a time bound, deadline distribution or an expected FPS gain.
+
+Private receipts under `build/deep-debug-20261008/base-span-ram1/`:
+
+- `fixture1/source3/source-preparation1.json`: `320d38adae4dbb7af23822c8eab57a8e1b5e7d1b8e45e080258b2736e6aa7641`
+- `fixture1/peer-e-source3-review1.json`: `c2bcdeff88dfcd2022d598b05f7361e982d3d69aac78082b55f3fbd2dc6c5ee9`
+- `fixture1/recipe2.json`: `6bff4e91f6c7bc7ce603f200ef04b8526b6f0269898fa4e9404ccd4a1cb9a355`
+- `fixture1/attempt1/result.json`: `1be44a34f031ed30ca3fe3c979faf0c8b211c13a71a69645ec1b8c01473f8866`
+- `fixture1/independent-actual-audit1.json`: `b106193c178388a078eb294550eb68cb4fc5cd804d5f4986f745b6a250f8bbd6`
+- `module-pair1/attempt1/control/result.json`: `89c4fad04e23aa642a94d38b2a7071879d64dcd3548284d8326333bec9f2dc4e`
+- `module-pair1/attempt1/candidate/result.json`: `58f8bbc1648dc7cea78ee8dfde43de51247ba7376a57a05cf1c095509dec8927`
+- `module-pair1/control-versus-C2-binary1.json`: `4857bc8e641885fb2a3cbd698f8804d739fda7316c6c1a47bbdb17fd96ac82d8`
+- `module-pair1/independent-actual-pair-audit1.json`: `0c4642cf1dbc4f94ba158dcf721a930b033f8d15ee9d1627315df441dbd2de1b`
+- `materiality1/result1.json`: `30aeded6d62672c3127992ac3b83a8d3bccc53f8daea81a75bacfda0601c88be`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
