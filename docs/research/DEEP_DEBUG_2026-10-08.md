@@ -2561,6 +2561,74 @@ Private receipts under `build/deep-debug-20261008/`:
 - `paid-twin-ram-runtime1/native-efb1/paid-twin-ram-c2-per-vi-input-parity1.json`: `579434621f8fbe990d88283584dc686db597c1d8fa24b4fb4fd273299d304416`
 - `paid-twin-ram-runtime1/independent-correctness-audit1.json`: `cb6a2449a77df3c92878e03b410050450ef80a1fbce0def187145a705deb8045`
 
+### Ten-owner cold-tail expansion
+
+After the one-owner intro pass, nine additional exact C2 owners were transformed;
+0145's already qualified source and object were reused. The ten selected chunks
+are 0041, 0100, 0144, 0145, 0181, 0182, 0186, 0187, 0200 and 0201, with 11,968
+recognized integer accesses. All whole-source inverses and precise-body
+label-only inverses passed. Chunk 0187 derives from the actual C2 PSQ-prepared
+source; four other modified C2 objects remain byte-exact. This expansion does
+not retain all five modified objects byte-exact, because 0187 is recompiled.
+
+All 18 fresh M/compiler children and the two retained 0145 children passed and
+drained, with original ordered flags and 477 total dependencies. Public function
+sets remain unchanged and no undefined provider is added. Total selected text
+grows from 7,114,409 to 7,511,561 bytes (+5.58%); this is a performance risk.
+Additional compiler constants are admitted only by exact per-owner bytes,
+size and flags in relocation-free, read-only nonexecuting COMDAT sections.
+
+One source-only link preparation failed on forward-slash versus backslash
+spelling of an existing 1,712-byte library pin. Its bytes and SHA-256 matched.
+The partial response and failure were preserved; a new recipe normalizes path
+identity while requiring unchanged bytes/hash. The actual ten-owner link then
+passed: 835 direct objects, exactly ten original slots replaced, 825 retained,
+15 libraries, 850 physical providers and 852 reproduction members. PE imports,
+exports, resources, section permissions and ABI match C2. The private module is
+410,583,040 bytes, SHA-256
+`3d6f7585169663f3a8895838fa1942414b3a1b1ffeecca857551016875a2b4d0`.
+The ten-owner controlled intro passes all six complete logical guest states,
+the full P6 frame, all 1,801 work cursors and all 1,134 EFB inputs. Both owned
+games pass all 32 route gates, exit normally and drain. Independent raw audit
+confirms unchanged GX/clock/dispatch and zero terminal pipeline creation.
+
+The subsequent fixed eight timing runs all pass their native/workload gates,
+but the predeclared repeatable-gain rule fails. CPU means are 17.296875 versus
+16.863281 seconds (-2.506775%); wall means are 17.499223825 versus 17.030676450
+seconds (-2.677532%). Thread cycles average -2.629520%. All four pairs remain:
+
+| Pair | CPU change | Wall change |
+| --- | ---: | ---: |
+| A1/G1 | +1.614350% | +1.013159% |
+| A2/G2 | -0.638104% | -0.629281% |
+| A3/G3 | -1.779026% | -1.759429% |
+| A4/G4 | -8.972125% | -9.071315% |
+
+Primary and all five segment workloads and endpoints match exactly, along with
+terminal GX/clock/dispatch. The first pair regresses, so the experiment remains
+inactive and this block is closed without extra rescue runs, a changed window
+or a discarded pair. The descriptive mean does not qualify displayed FPS or
+resolve the reported 19 FPS. Pre-run background-busy snapshots range from
+23.56% to 65.53%; they do not establish a cause for any result. Timer calibration
+remains unresolved, its retained component estimate is 0.0114441 seconds, and
+no overhead is subtracted. The previous tester and production remain unchanged.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `cold-twin-memory1/ten-source1/source-preparation1.json`: `28ea1d5e2f79f5af1fb0ab0ec266b2bd7334e39f989700f784bb8b6d24a1dc90`
+- `paid-twin-ram-next10-compile1/attempt1/result.json`: `b364144aae526ceaa09577637f7bc7e27cbefbfc807ac264b95e2493d2f8c777`
+- `paid-twin-ram-next10-compile1/independent-actual-audit1.json`: `e3659b22e4396183c9283ee9366129450bbb510f71375c8515f97c1b605fe23f`
+- `paid-twin-ram-next10-module1/preparation-negative3.json`: `b33344973b00dba51a3c04d9ce3dfa5c4c6b288915ff94e5f1714534c98af6f3`
+- `paid-twin-ram-next10-module1/recipe2/source-preparation1.json`: `f1b8bc3942708caa373a2297838308be6df0f401b6933fcb0320ec5ae2bb77ae`
+- `paid-twin-ram-next10-module1/attempt1/result.json`: `b2a7015bbe2c54931d2c07e87931c4f5007a775a403777fc069f71e32099d5c9`
+- `paid-twin-ram-next10-module1/independent-actual-link-audit1.json`: `27f9fa75c11491b7d4b4465d4a59b56cc8cc373b301a49d9b6cc0b89b7f1a61e`
+- `paid-twin-ram-next10-runtime1/correctness-batch1.json`: `e10b672cb03998a883c043d94e3193dbc5abdc07ad9880f6aedbb570a42176e4`
+- `paid-twin-ram-next10-runtime1/native-efb1/paid-twin-ram-next10-c2-per-vi-input-parity1.json`: `2c70e63b57d2ace253890d0c9c7a46d4f01fd2b76be2d21dc94f3e57c7a2e870`
+- `paid-twin-ram-next10-runtime1/independent-correctness-audit1.json`: `f153f08e4452a835e6d993bc95c318ce4f534ec4d1d62424b885a90c93a4910c`
+- `paid-twin-ram-next10-runtime1/controlled-batch1.json`: `ee460e391ea782e938c22ae1453c07bca65eec942addb567acce6b554b9af479`
+- `paid-twin-ram-next10-runtime1/controlled-input1/paid-twin-ram-next10-c2-per-vi-eight-run1.json`: `671bd3cbe4965c0d15abc273e267d31716e00b365d32553e517f43aba2166657`
+- `paid-twin-ram-next10-runtime1/independent-timing-audit1.json`: `0542dc050f064665023d344c3aae1654e6279fadc68229273ab11a2090f8e1e6`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
