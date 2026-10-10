@@ -3533,6 +3533,77 @@ Private receipts under `build/deep-debug-20261008/pipeline-counter-contamination
 - `future-runtime1/diagnostic-result1.json`: `e5f81afbc6b560c809ebf3cf5eca36fc3699c4679eb5ecb652abc06a4859ce38`
 - `future-runtime1/parser-fixtures1.json`: 16 pure quiet/dirty/malformed cases pass; distinct from runtime proof.
 
+### Private dispatch calling convention, October 10
+
+A separate private module experiment carries a typed private calling convention
+through the chassis inner loop, shared dispatch helpers and two selected
+translated chunks. Ordinary host entries, callback types, function-pointer
+identities and mod/native selection remain authoritative. Ordinary wrappers
+allow other chunks and callbacks to enter the selected code with the existing
+ABI. This is a new capsule, distinct from the closed partial-entry experiment.
+
+The first compiled capsule added identity checks at all 245 constant-slot call
+sites. A helper-only successor restricts those checks to the 26 sites targeting
+the two selected original slots; the other 219 keep ordinary table calls.
+Dynamic lookup still checks the actual selected pointer. Mutable table entries
+remain valid because an ordinary wrapper is available even if another slot
+acquires a selected pointer.
+
+All six dependency/compile rows pass for the successor. Actual code shows the
+selected main frames shrinking from 152/184 to 136/152 bytes and the shared
+original-call and indirect helpers from 56 to 40 bytes. The ordinary outer
+chassis frame grows from 88 to 312 bytes, with its broader register save once
+per host entry; ordinary selected wrappers have 216-byte frames. The three
+translation units total 3,344 fewer text bytes and 20 more static call sites.
+Actual argument transport and inspected ordinary save/restore sequences agree
+with their unwind records. These are static mechanism checks, not measured
+dynamic savings, native unwind execution or game correctness.
+
+The actual private link passes with exactly three replacements, 832 retained
+direct objects and all 15 libraries. The five C2 CPU/paired-single/REL
+providers and the original public PE surface/resources remain qualified.
+The resulting module is private; the accepted playable tester is unchanged.
+Before runtime, a distinct fixed study protocol was frozen: six-state/full-P6
+parity first, then eight fresh runs with the same coherent diagnostic host and
+window, all four paired CPU/wall changes and 95% paired intervals retained.
+Mixed pair signs do not automatically fail the study. A claim requires both
+primary means to improve at least 1% and both interval upper bounds below
+zero; four pairs have low power under the authorized current background load.
+
+Both fresh correctness runs pass all route/input checks, all six complete
+logical state checkpoints and full P6 equality. Their coherent measurement
+windows are idle, with 242 completed seed-origin creations before the window.
+The fixed timing study then stops at its third case: A1 and G1 pass, but G2
+aborts during Aurora initialization while Direct3D creates `Staging Buffer 1`.
+The log identifies an out-of-memory HRESULT path and reports no device-removal
+reason. This precedes guest CPU initialization and translated dispatch. All
+three owned jobs drain; the five remaining cases and timing analysis are not
+run. The incomplete study establishes no paired mean, confidence interval or
+performance gain and is closed without retry or gate changes.
+
+A later read-only Windows memory snapshot reports 183,566,336 available
+commit bytes (about 175 MiB), despite 9,557,196,800 free physical bytes. Even a
+new PowerShell process failed to initialize its CLR during this pressure.
+The frozen Aurora source allocates five 88-MiB staging buffers plus 64 MiB of
+shared buffers at startup; the fatal names the second staging buffer. This
+documents current allocation pressure, not a proven game/driver leak or the
+cause of historical 19 FPS. No unrelated application, pagefile, cache or
+player file was changed. Runtime work needs adequate commit headroom; source
+work can continue while the accepted tester remains unchanged.
+
+Private receipts under `build/deep-debug-20261008/private-abi-dispatch1/`:
+
+- `source-preparation3.json`: `8eb251d133ea3d75b603acebfcc89e2e098838e7b0cac05d8f634693e1d4240a`
+- `compile2/attempt1/result.json`: `fec837e7c5037a313d50d0ffed8902e65794bd13e3eda8caba4b5d22ada55e69`
+- `compile2/attempt1/codegen1.json`: `901b9944b4bd5ae74ecb103256d8a3c090e9218be76ce4ebe74eadc4feef7993`
+- `compile2/attempt1/abi-transport-unwind1.json`: `3bf51741bb80b0be758f2d68af1a81bb493001dc807f5bf8c91ea531240a9ffa`
+- `module2/attempt1/result.json`: `602b941c09c3f6c227cd301fdf3da4b7b0aa62ee2de47d774a71431e7b34f156`
+- `runtime1/preparation1.json`: `c23593f61aedee10f0e9624d48521ae02ffa785f6454377c8b0fd3abdbc8151c`
+- `runtime1/correctness-batch1.json`: `923d7516158f1465cd58efcd3d4ac10b32de949c8a60670754dab837660a17e6`
+- `runtime1/native-efb1/private-abi-dispatch-per-vi-input-parity1.json`: `8f73e999528c35ea27ed349e56e702235e4d6123072ca0e3fe454409c8fcf682`
+- `runtime1/controlled-batch1.json`: `b001eeb0196721293fb853192431cc3591ffd2ba7143b307302685877ae5f9db`
+- `runtime1/TERMINAL1.json`: `c9b7b800ebab96bc971fc5b9dd319a0d44bf5fd7d2bdc8c85c2e903306bbde9c`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
