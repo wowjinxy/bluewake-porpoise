@@ -3453,8 +3453,19 @@ fresh suffix, named relocation semantics and branch targets agree. All 122
 unrelated helpers preserve executable semantics and unwind information; one
 readonly constant moves with table layout but its referenced 16 bytes agree.
 The immutable payload grows from 12,530 to 105,600 bytes, which may offset the
-saved dependent work. No runtime or FPS gain is established by these checks;
-the linked comparison is still pending and the accepted tester remains intact.
+saved dependent work. The private instrumented host also passed the same leaf
+checks, exact 425-dependency closure and one-object link/provider/PE review.
+
+Fresh runtime correctness passed: all six complete CPU/MEM1/MEM2/ordered-alias
+checkpoints and the full P6 image agree, using the same C2 and 1,134-entry replay.
+The fixed eight-run timing batch then stopped after its second native run.
+The candidate exited normally and preserved inputs, but reported 53 terminal
+pipeline creations, failing the existing zero-compilation condition. Only the
+first control run is timing-eligible; there is no valid pair, mean or FPS result.
+The unfinished schedule is preserved without rescue runs or relaxed gates.
+This candidate is closed as timing-inconclusive; the accepted tester remains
+intact. The terminal counter does not locate those creations within the primary
+measurement window and does not by itself identify the performance bottleneck.
 
 Private receipts under `build/deep-debug-20261008/host-flat-bitmap1/`:
 
@@ -3462,6 +3473,10 @@ Private receipts under `build/deep-debug-20261008/host-flat-bitmap1/`:
 - `fixture1/attempt3/result.json`: `dfd1bf363c3df7b46cc3a30c60216cbcaefebd01b69e43d85d869340e8798ad9`
 - `compile1/actual-codegen-e2.json`: `f5ac3b1511ffd38f56b761c2f84eeedf7c3fea8d74d6ac48246ce55f934cd668`
 - `compile1/independent-other-helpers-summary1.json`: `cb6c7538a0845500a4d92b58e6cfd500aebaffa9105b0af8e6802fb94906ac6b`
+- `linked1/attempt1/result.json`: `27ce840f0da5de0e2fe2888f982372ac063fa2b757960b1ebc0545f7ef412d13`
+- `linked1/independent-build-audit1.json`: `27d99791b54b482acf4dd755c9fe7d724481a56946d180fdb5c26236883106bc`
+- `runtime1/correctness-batch1.json`: `a00641413b2449ccb4137475daae2e52c819d56851ba13ad4061daa30dfa1d85`
+- `runtime1/controlled-batch1.json`: `ce28e87c893f17890b345de51d3ac8fc91ce304c0e520d2b7786315e00de8f8f`
 
 ## Validation boundary and retained evidence
 
