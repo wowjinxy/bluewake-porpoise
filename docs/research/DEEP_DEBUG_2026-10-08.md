@@ -3183,6 +3183,45 @@ The source feasibility receipt is
 `build/k7-uniforms-20261008/native1/asset-inputs-after-base-span-20261010-1.json`
 (`64e920fec03e3c0a489d06b6d3cc3069e234a1191cb0b741ed87196a4cdba736`).
 
+### Pipeline phase trace result, October 10
+
+The bounded QPC recorder completed one accepted-C2 intro. Its private host
+changes only the pipeline-cache archive member; all 169 other link providers,
+64 direct host objects and the game module remain unchanged. The initial
+dependency query stopped before compilation because 55 additional Windows SDK
+headers were outside the recipe's admitted closure. Their frozen SDK provenance
+was checked before a fresh build admitted the exact observed 619 tokens (617
+unique files). A temporary-directory routing defect was also corrected before
+that build. Earlier recipes and the failed attempt remain preserved.
+
+The game exited zero and drained. All six complete logical state checkpoints,
+the full P6 capture, 1,801 workload rows and 1,134 EFB inputs match the retained
+accepted-C2 baseline. The trace has 242 complete records and actual counter IDs
+1 through 242 exactly once: 218 cache rows and 24 cache-derived uber pipelines.
+There are no runtime-origin creations, cancellations, incomplete records,
+overflow, queued jobs or serializer errors.
+
+Every request, creation and notification precedes VI0, including every
+completion-counter bracket. The last notification precedes VI0 by 52.4548 ms
+and VI750 by 9.9173566 seconds. No creation interval overlaps VI750..1500.
+This excludes pipeline creation during that measured interval in this run;
+it does not explain the earlier PIPE4/50 results or the player's particular
+19 FPS run. The recorded creation envelope spans 98.3259 ms across four creator
+threads; that overlapping envelope is not CPU cost.
+
+This is a diagnostic result, with PIPE0 deliberately not an admission gate.
+It establishes no speed gain, new readiness barrier or candidate promotion.
+The existing tester remains unchanged, and Tingle rescue wait-skip stays off.
+
+Private receipts under `build/deep-debug-20261008/pipeline-phase-diagnostic1/`:
+
+- `build1/attempt2/result.json`: `29f43b0644a7f7e6a4022529f97a6694b72c764f660b9732d5cda581ed5bbe64`
+- `build1/independent-build-audit2.json`: `6ba11d5580d69f264ba9684631f54ad5c32b5b455a8d69289b4f9747e80f9ea6`
+- `runtime1/diagnostic-result1.json`: `9d4707387fb4db8af1eed391495c78707bb920dba9ad49317c83663fca007d47`
+- `runtime1/actual-temporal-audit1.json`: `01b0d5f51647dc60428e6e7106381c154b85480a431233297981153a2a85c35e`
+- `runtime1/peer-g-actual-trace1.json`: `b459f6a10b9bc464849d4d84d6ed8ecda6e3607675df8b6c674d2aaa7d109904`
+- `runtime1/root-work-parity1.json`: `73cdb1d264e703547bb7e2985dc1fff3711ea7b3f11551b430ba3215d6a53e38`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
