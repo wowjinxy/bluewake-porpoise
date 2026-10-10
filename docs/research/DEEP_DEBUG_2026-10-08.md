@@ -3336,9 +3336,17 @@ Private receipts under `build/deep-debug-20261008/alias-callee-prune1/`:
 
 A separate compiler-backend screen uses the unchanged accepted chunk 0145,
 its original repository headers and the installed x64 MinGW GCC 15.2.0.
-The explicit mapping retains effective O2, x86-64-v3, SLP disabled and
-FP contraction off; it removes the Clang-only backend/autolink options.
+The explicit mapping retains O2, x86-64-v3 and FP contraction off, maps the
+early SLP-disable spelling and removes Clang-only backend/autolink options.
 No previously closed Clang candidate is restored by this screen.
+
+Qualification correction: the earlier original-0145 driver receipt actually
+enables Clang loop and SLP vectorization after the later optimization flags.
+The early disable spelling alone does not establish the effective policy.
+GCC's effective vectorizer state was not independently certified in this
+screen, so the mapped settings are not an optimizer-matched backend control.
+The actual compiled bytes and observations below remain valid, but do not
+isolate the compiler backend as their cause. No new flag trial follows.
 
 Three owned dependency queries passed, with 41 Clang-witness, 35 GCC-witness
 and 34 GCC-chunk tokens. GCC uses its own package headers, and its chunk keeps
