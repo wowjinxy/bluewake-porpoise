@@ -3642,6 +3642,56 @@ Private receipts under `build/deep-debug-20261008/staging-demand1/`:
 - `runtime1/preparation1.json`: `3382d30f6160ec84552189509563bc76cde62839a852029cb6cdc08069735299`
 - `runtime1/diagnostic-result1.json`: `48308d44f613689b905e312a83eee592f37ffd5e7363b4d66923ffeb0623c692`
 
+### Private dispatch on the demand-staging host, October 10
+
+A separate study uses the new demand-staging host in both arms and the same
+original C2/private-dispatch modules. The earlier allocation-failed study
+remains closed; none of its timing rows are reused. The completed new-host C2
+intro is explicitly bound as the logical control, preserving its original
+one-arm diagnostic record. A fresh private-module intro passes all six full
+logical state checkpoints and exact P6 equality against that control.
+
+The eight fresh timed runs complete in the frozen A-G-G-A,G-A-A-G order. All
+route, replay, clock, segment-work, GX, phase and coherent-activity checks pass.
+Every primary window contains identical work: 547,802 blocks, 6,075,000,001
+guest cycles and 99 replayed EFB entries. Covered pipeline creation is idle
+throughout the widened measurement windows. Whole-process terminal counts
+are 0, 0, 0, 0, 14, 2, 2, 0; these remain diagnostic rather than a zero gate.
+
+| Pair | Private/original CPU change | Private/original elapsed change |
+| --- | ---: | ---: |
+| A1/G1 | -13.15% | -13.43% |
+| A2/G2 | -10.52% | -11.14% |
+| A3/G3 | -6.74% | -6.89% |
+| A4/G4 | +5.35% | +5.67% |
+
+The four-pair mean changes are -6.26% CPU and -6.44% elapsed time. Their 95%
+paired-t intervals are [-19.27%, +6.75%] and [-20.00%, +7.11%], respectively;
+both include regression. The retained calibration has unresolved CPU timer
+steps. One-second pre-case total-system CPU samples range from 33.27% to
+93.26%; they are not continuous measurements of external load. No load
+adjustment, omitted pair, retry or confidence-threshold change follows. This
+complete study is inconclusive and supports no performance claim or tester
+promotion. Its hidden, unpaced title route does not measure displayed FPS or
+establish the cause of the user's roughly 19 FPS observation.
+
+Available commit is checked immediately before each new game child, with a
+2-GiB minimum and no application/pagefile changes. To fit the remaining disk,
+only immutable module images use same-volume hardlinks; source/link file
+identity and hashes remain qualified before use and after each owned run.
+Player files, caches, hosts and support DLLs are isolated copies. Read-only
+use does not imply independent NTFS ACL protection. All native jobs drained;
+the accepted playable tester remains unchanged.
+
+Private receipts under `build/deep-debug-20261008/private-abi-dispatch1/runtime-staging1/`:
+
+- `preparation1.json`: `c10feb428e8b731f757f65fbedd8e5866be011b4da787de25856790eb40e5704`
+- `correctness-batch1.json`: `2e6f20ff638ed3ca4919138dfd79af7d14bb9481d1a226ba8014d62c316ece4a`
+- `native-efb1/private-abi-staging-per-vi-input-parity1.json`: `a5436ea18410125fbb103a3bfd2bb54ce93537b6c961565d8933b1569ba4b899`
+- `controlled-batch1.json`: `8110eeaa6cb98085cc507dc7af68ab5e0c2b8226be754fb626ea2799d54a4603`
+- `controlled-input1/private-abi-staging-per-vi-eight-run1.json`: `747f34e86bf7350aa8759c115257cc6d645f419a5540075cf80f0120f477a857`
+- `TERMINAL1.json`: `615fbe03afb909c0f8f03fca2aeef507c9de35c3059a9e2ca3b2388358aea2de`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
