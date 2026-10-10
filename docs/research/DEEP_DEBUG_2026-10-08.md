@@ -2481,6 +2481,86 @@ reopens the failed PC-defer, SSA and tail trials on sample counts alone.
 | `independent-audit1.json` | `e5484ff67d75f7c1794b1f081104741a166b7c5a28eaeaa8519c0b52c4ef501b` |
 | `ordinary-attribution1/result1.json` | `87df44fdb17f3c1ad336dc50549fde9cc2f2af098da42a5a391bd2c47ee44b25` |
 
+## Cold precise memory tails, October 9
+
+The reported 19 FPS remains unresolved. A private integer-memory experiment
+changes the control flow of existing prepaid copies: a failed original RAM guard
+leaves the copy permanently for the original current-instruction precise part,
+with `cycle_block_prepaid` still true. A completed access that encounters a
+deadline refunds through the original next-instruction continuation. Neither
+case replays a completed store or charges the block again.
+
+This differs from the closed `lean_memory35` experiment: there are no observed
+flags, duplicate slow services, or callback paths that rejoin the successful RAM
+chain. The prototype recognizes only strict translated EA plus one integer
+8/16/32-bit access, requires the accepted fixed 32 MiB MEM1 profile, retains the
+original gather guards, and leaves unsupported forms unchanged. Precise bodies
+gain only labels; complete source inverses were checked.
+
+The first exact C2 chunk, 0145, has 824 transformed accesses across two functions.
+Its original ordered compiler settings and actual 49-member M/MD closure passed.
+The emitted representative success paths, with the deadline disabled and every
+RAM guard passing, show a real structural difference:
+
+- Block 851 falls from 76 to 63 native instructions, retains the incoming GPR3
+  value across the first load, and reduces alias checks from three to one.
+- Block 220 falls from 61 to 60 instructions on one outcome; the taken guest
+  branch needs an additional layout jump and reaches parity. Its load-result
+  chain was already retained in the original.
+- Both still publish guest GPR results. Main and loop entry frames remain 152
+  and 72 bytes. Whole-chunk text grows from 709,841 to 760,865 bytes (+7.19%),
+  which remains a performance risk. Static call sites fall from 9,136 to 8,404;
+  neither static count represents executed time.
+
+Four real-memory differential profiles passed: pointer and fixed CPU, each with
+fixed MEM1, at the accepted O2 policy and with AddressSanitizer. Each runs 100
+synthetic shapes and 1,024 scenarios against original, prepaid and candidate
+functions, totaling 1,228,800 function executions and 819,200 full comparisons.
+They compare the complete 3,552-byte CPU, all writable MEM1 bytes, alias/MEM2
+storage, ordered callback records, journal/reservation state and host fenv/MXCSR.
+Both wrong-current-label and premature-prepaid-clear mutants are detected in
+every profile. All 40 owned compiler/link/test rows drained; actual dependencies,
+physical CRT/ASan providers and input preservation passed independent audit.
+
+Two harness defects were found before native execution and preserved separately:
+address/source-alias cases could legitimately write into protected test pages,
+and alternate/null RAM owners initially retained an incorrect 32 MiB size. The
+final corpus bounds the affected input payloads without changing instruction
+bodies and gives those owners truthful sizes. These are harness corrections,
+not evidence of candidate correctness before the final tests. FIFO addresses,
+concurrency, extreme signed scheduler overflow and whole-game behavior are not
+qualified by this corpus.
+
+Across ten already source-qualified owners, 242 current profile samples associate
+with recognized access regions, including 94 direct PC/suffix-store samples.
+These are source associations, not exclusive removable cost or evidence that
+their dynamic guards passed. Only chunk 0145 has been compiled. Its linked module
+passed the actual 1,800-retrace intro against original C2 on the same host:
+all six complete CPU/MEM1/MEM2/ordered-alias checkpoints, all 1,228,335 rendered
+P6 bytes, all 1,801 workload cursors, GX/clock/dispatch counts and all 1,134
+controlled EFB inputs match. Both native jobs drained with all 32 route gates
+passing and zero terminal pipeline compilations. Independent raw audit confirms
+these results. This qualifies the observed intro's semantics, not dynamic guard
+activation, ordinary gameplay or speed. Matched timing remains pending;
+production and the previous private tester are unchanged. There is no measured
+speedup yet.
+
+Private receipts under `build/deep-debug-20261008/`:
+
+- `cold-twin-memory1/source-preparation1.json`: `a48eaaf49ebce1911cceb64624ac2c559323674e1f150f0433e3e8a035a003f9`
+- `paid-twin-ram-compile1/attempt1/result.json`: `d39bd4d69f23fbc3b6dc12feb50ca8dd934edc905c86b863e1d66f88092f1f95`
+- `paid-twin-ram-compile1/attempt1/codegen1.json`: `28918eff4294da17289eac0d7c1a0f4745ffa2690d305c55e6e732a9d339aeb6`
+- `paid-twin-ram-compile1/attempt1/success-path-review1.json`: `9eada98fa91720295df3adfa42162d09382ddbf7d29faac1e42426b74f607e38`
+- `cold-twin-memory1/fixture1/peer-e-source3.json`: `44fab79cc99a8642780f781b994a33e7f7d29da7a7a866caf06bee511c87934f`
+- `cold-twin-memory1/fixture1/attempt1/result.json`: `1512932084da900318b0089a0785aed51bbc7d0660dc7ba4e30ae23a0dead313`
+- `cold-twin-memory1/fixture1/actual-independent-audit1.json`: `7ec45855e755690f8256961c6055c12feea8ef64697ca68d4880699aec0cc341`
+- `cold-twin-memory1/applicability1.json`: `ed0a7d96346b04d7a295e482ed5fb6dc7508e1ff9003c7f5011faadee23b667e`
+- `paid-twin-ram-compile1/ten-chunk-scope1.json`: `8991116ae8983c89cbd9d296fd7b4b52868cf416ca26c1c24c324a8673561006`
+- `paid-twin-ram-compile1/module1/attempt1/result.json`: `240718dde2914a11cd3d75e63009220876baad58ef61b3c213982c14d13a5cd7`
+- `paid-twin-ram-runtime1/correctness-batch1.json`: `a197320d522111398681f149a62918a18f6983c3f620b6aa7babe9cf965e9a71`
+- `paid-twin-ram-runtime1/native-efb1/paid-twin-ram-c2-per-vi-input-parity1.json`: `579434621f8fbe990d88283584dc686db597c1d8fa24b4fb4fd273299d304416`
+- `paid-twin-ram-runtime1/independent-correctness-audit1.json`: `cb6a2449a77df3c92878e03b410050450ef80a1fbce0def187145a705deb8045`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned

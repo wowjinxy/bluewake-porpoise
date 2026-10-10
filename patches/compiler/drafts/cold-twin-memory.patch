@@ -1,0 +1,1016 @@
+diff --git a/experiments/cold-twin-memory/cold_twin_memory.h b/experiments/cold-twin-memory/cold_twin_memory.h
+new file mode 100644
+--- /dev/null
++++ b/experiments/cold-twin-memory/cold_twin_memory.h
+@@ -0,0 +1,34 @@
++#ifndef BW_COLD_TWIN_MEMORY1_H
++#define BW_COLD_TWIN_MEMORY1_H
++/* Private experiment: caller has just proved the original gather RAM guard.
++ * This contract is deliberately restricted to the exact fixed-MEM1 C2 profile.
++ * No callback, reservation or journal operation is elided on a failed guard. */
++#if !defined(BW_GUEST_MEM1) || !defined(BW_GUEST_MEM1_SIZE)
++#error "cold twin memory requires the qualified fixed MEM1 compile profile"
++#endif
++_Static_assert(BW_GUEST_MEM1_SIZE == 0x02000000u, "fixed MEM1 size");
++static inline __attribute__((always_inline)) u8 bwcold_load8(u32 address) {
++    return BW_RAM_BYTES[address - GC_RAM_BASE];
++}
++static inline __attribute__((always_inline)) u16 bwcold_load16(u32 address) {
++    u16 value;
++    memcpy(&value, BW_RAM_BYTES + (address - GC_RAM_BASE), 2);
++    return __builtin_bswap16(value);
++}
++static inline __attribute__((always_inline)) u32 bwcold_load32(u32 address) {
++    u32 value;
++    memcpy(&value, BW_RAM_BYTES + (address - GC_RAM_BASE), 4);
++    return __builtin_bswap32(value);
++}
++static inline __attribute__((always_inline)) void bwcold_store8(u32 address, u8 value) {
++    BW_RAM_BYTES[address - GC_RAM_BASE] = value;
++}
++static inline __attribute__((always_inline)) void bwcold_store16(u32 address, u16 value) {
++    const u16 word = __builtin_bswap16(value);
++    memcpy(BW_RAM_BYTES + (address - GC_RAM_BASE), &word, 2);
++}
++static inline __attribute__((always_inline)) void bwcold_store32(u32 address, u32 value) {
++    const u32 word = __builtin_bswap32(value);
++    memcpy(BW_RAM_BYTES + (address - GC_RAM_BASE), &word, 4);
++}
++#endif
+diff --git a/experiments/cold-twin-memory/fixture.c b/experiments/cold-twin-memory/fixture.c
+new file mode 100644
+--- /dev/null
++++ b/experiments/cold-twin-memory/fixture.c
+@@ -0,0 +1,327 @@
++/* Inactive differential experiment. This fixture uses the real
++ * pinned CPU/gather memory services. It never substitutes a memory simulator.
++ * The original, prepaid-copy and cold-twin functions share the same input,
++ * complete CPU comparison, writable MEM1 bytes, aliases, MEM2 and observers. */
++#ifdef NDEBUG
++#undef NDEBUG
++#endif
++#include "core/cpu.h"
++#include "gather_pipe.h"
++#include "cold_twin_memory.h"
++#include <assert.h>
++#include <fenv.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++#include <xmmintrin.h>
++
++#define MEM1_BYTES 0x02000000u
++#define PAGE_BYTES 4096u
++#define LOW_BYTES 8192u
++#define WRITABLE_BYTES (LOW_BYTES + PAGE_BYTES)
++#define TRACE_MAX 32u
++#define RANDOM_CASES 1000u
++_Static_assert(sizeof(CPUState) == 3552u, "accepted C2 ABI-6 CPU required");
++_Static_assert(BW_GUEST_MEM1_SIZE == MEM1_BYTES, "fixed MEM1 must be 32 MiB");
++__attribute__((aligned(4096))) u8 bw_guest_mem1[MEM1_BYTES];
++CPUState bw_guest_cpu;
++extern void ppc_set_mem_write_journal(PPCMemWriteJournal, void*);
++
++/* Qualified production budget policy. The corpus
++ * avoids signed overflow in D+dc, negation of B and the eight-cycle subtraction. */
++#define DOLRECOMP_C_LOOP_CYCLE_BUDGET (ctx->cycle_budget)
++static bool dolrecomp_block_can_precharge(const CPUState* ctx, u32 cycles) {
++    const s64 remaining = ctx->cycle_deadline_budget + ctx->downcount;
++    return ctx->cycle_deadline_budget <= 0 || (remaining >= 0 && (u64)remaining >= cycles);
++}
++static bool dolrecomp_charge_precise(CPUState* ctx, u32 cycles, u32 resume) {
++    if (ctx->downcount <= -(s64)DOLRECOMP_C_LOOP_CYCLE_BUDGET) {
++        ctx->pc = resume;
++        return false;
++    }
++    ctx->downcount -= cycles;
++    return true;
++}
++
++enum { MUTATE_D=1, MUTATE_META=2, MUTATE_ALIAS=4, MUTATE_JOURNAL=8,
++       MUTATE_REGS=16, MUTATE_BUDGET=32, MUTATE_EXCEPTION=64 };
++typedef struct Event {
++    CPUState cpu;
++    u32 kind, address, size;
++    u64 value;
++    u8 low[768], tail[16], alias[128], mem2[128];
++} Event;
++static Event trace[TRACE_MAX], wanted_trace[TRACE_MAX];
++static unsigned trace_count, mode, current_shape, current_scenario;
++static unsigned io_reads, io_writes, journals, observations;
++static CPUState *active;
++static u8 alias_storage[128], mem2_storage[128], other_ram[128];
++static u8 initial_alias[128], initial_mem2[128], initial_other[128];
++static u8 initial_ram[WRITABLE_BYTES], wanted_ram[WRITABLE_BYTES];
++static u8 wanted_alias[128], wanted_mem2[128], wanted_other[128];
++static u8 wanted_pipe[BW_GATHER_PIPE_BATCH+8u];
++static unsigned wanted_pipe_length;
++static u32 seed=0xC01D7A11u;
++static void journal(u32 offset, u32 size, void* user);
++static u32 random32(void) {
++    seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed;
++}
++static void require(int ok, const char* message) {
++    if (!ok) {
++        fprintf(stderr,"COLD_TWIN_FAIL shape=%u scenario=%u check=%s seed=%08X\n",
++                current_shape,current_scenario,message,seed);
++        exit(1);
++    }
++}
++static void capture_ram(u8* out) {
++    memcpy(out,bw_guest_mem1,LOW_BYTES);
++    memcpy(out+LOW_BYTES,bw_guest_mem1+MEM1_BYTES-PAGE_BYTES,PAGE_BYTES);
++}
++static void restore_ram(const u8* in) {
++    memcpy(bw_guest_mem1,in,LOW_BYTES);
++    memcpy(bw_guest_mem1+MEM1_BYTES-PAGE_BYTES,in+LOW_BYTES,PAGE_BYTES);
++}
++static int same_ram(const u8* expected) {
++    return !memcmp(expected,bw_guest_mem1,LOW_BYTES) &&
++        !memcmp(expected+LOW_BYTES,bw_guest_mem1+MEM1_BYTES-PAGE_BYTES,PAGE_BYTES);
++}
++static void record(CPUState* cpu,u32 kind,u32 address,u64 value,u32 size) {
++    require(trace_count<TRACE_MAX,"bounded observer trace");
++    Event* e=&trace[trace_count++];
++    memset(e,0,sizeof(*e)); e->cpu=*cpu;
++    e->kind=kind; e->address=address; e->value=value; e->size=size;
++    memcpy(e->low,bw_guest_mem1+0x100u,sizeof(e->low));
++    memcpy(e->tail,bw_guest_mem1+MEM1_BYTES-16u,sizeof(e->tail));
++    memcpy(e->alias,alias_storage,sizeof(e->alias));
++    memcpy(e->mem2,mem2_storage,sizeof(e->mem2));
++    if (mode&MUTATE_D) cpu->cycle_deadline_budget=1+(mode%6u);
++    if (mode&MUTATE_META) { cpu->pc^=0x104u; cpu->cycle_observation_suffix^=0x15u; }
++    if (mode&MUTATE_ALIAS) {
++        u8* p=NULL;
++        if (ppc_guest_alias_get_storage(0x80000200u,sizeof(alias_storage),&p))
++            require(ppc_guest_alias_remove(0x80000200u,sizeof(alias_storage)),"remove alias");
++        else require(ppc_guest_alias_add_shared(0x80000200u,sizeof(alias_storage),alias_storage),"add alias");
++    }
++    if (mode&MUTATE_JOURNAL) ppc_set_mem_write_journal(journal,active);
++    if (mode&MUTATE_REGS) {
++        cpu->gpr[3]^=0xD1FF30A5u; cpu->gpr[4]=0x80000300u;
++        cpu->gpr[5]=0x80000200u; cpu->gpr[6]=0x80000308u;
++    }
++    if (mode&MUTATE_BUDGET) { cpu->cycle_budget=16; cpu->downcount=-16; }
++    if (mode&MUTATE_EXCEPTION) cpu->exception^=PPC_EXC_DSI;
++}
++static void observe(CPUState* cpu) { ++observations; record(cpu,1,0,0,0); }
++static u64 io_read(CPUState* cpu,u32 address,u8 size) {
++    ++io_reads; record(cpu,2,address,0,size);
++    return 0x123456789ABCDEF0ull^address^size;
++}
++static void io_write(CPUState* cpu,u32 address,u64 value,u8 size) {
++    ++io_writes; record(cpu,3,address,value,size);
++}
++static void journal(u32 offset,u32 size,void* user) {
++    require(user==active,"journal user owner");
++    ++journals; record(active,4,offset,0,size);
++}
++
++#define mem_read8 bw_mem_read8
++#define mem_read16 bw_mem_read16
++#define mem_read32 bw_mem_read32
++#define mem_read64 bw_mem_read64
++#define mem_write8 bw_mem_write8
++#define mem_write16 bw_mem_write16
++#define mem_write32 bw_mem_write32
++#define mem_write64 bw_mem_write64
++typedef void (*Run)(CPUState*);
++typedef struct Shape { Run variants[3]; const char* name; } Shape;
++#ifdef FIXTURE_FIXED_CPU
++#define ctx (&bw_guest_cpu)
++#endif
++#include "rewritten_cases.h"
++#ifdef FIXTURE_FIXED_CPU
++#undef ctx
++#endif
++
++typedef struct Snapshot {
++    CPUState cpu;
++    unsigned count,reads,writes,journal_count,observe_count;
++    u32 generation;
++    bool overlap;
++    PPCMemWriteJournal journal;
++    void* journal_user;
++    int exceptions,rounding;
++    unsigned mxcsr;
++} Snapshot;
++static CPUState initial_cpu;
++static Snapshot snapshot(void) {
++    Snapshot s; memset(&s,0,sizeof(s)); s.cpu=*active;
++    s.count=trace_count; s.reads=io_reads; s.writes=io_writes;
++    s.journal_count=journals; s.observe_count=observations;
++    s.generation=g_ppc_guest_alias_generation;
++    s.overlap=g_ppc_guest_aliases_overlap_mem1;
++    s.journal=g_mem_write_journal; s.journal_user=g_mem_write_journal_user;
++    s.exceptions=fetestexcept(FE_ALL_EXCEPT); s.rounding=fegetround(); s.mxcsr=_mm_getcsr();
++    return s;
++}
++static void reset_arm(unsigned alias_on,unsigned journal_on) {
++    restore_ram(initial_ram);
++    memcpy(alias_storage,initial_alias,sizeof(alias_storage));
++    memcpy(mem2_storage,initial_mem2,sizeof(mem2_storage));
++    memcpy(other_ram,initial_other,sizeof(other_ram));
++    ppc_guest_alias_clear();
++    if (alias_on) require(ppc_guest_alias_add_shared(0x80000200u,sizeof(alias_storage),alias_storage),"initial alias");
++    /* Compare relative generation deterministically; reset itself is test setup. */
++    g_ppc_guest_alias_generation=0x12340000u;
++    bw_guest_cpu=initial_cpu; active=&bw_guest_cpu;
++    ppc_set_mem_write_journal(journal_on?journal:NULL,active);
++    bw_gather_pipe_write=NULL; bw_gather_pipe_bytes=NULL; bw_gather_pipe_length=0;
++    memset(bw_gather_pipe_buffer,0,sizeof(bw_gather_pipe_buffer));
++    trace_count=io_reads=io_writes=journals=observations=0;
++    memset(trace,0,sizeof(trace));
++    require(feclearexcept(FE_ALL_EXCEPT)==0,"clear fenv");
++    require(fesetround(FE_TONEAREST)==0,"round fenv");
++    _mm_setcsr((_mm_getcsr()&~0xE07Fu)|0x1F80u);
++}
++static void capture_wanted(void) {
++    capture_ram(wanted_ram);
++    memcpy(wanted_alias,alias_storage,sizeof(wanted_alias));
++    memcpy(wanted_mem2,mem2_storage,sizeof(wanted_mem2));
++    memcpy(wanted_other,other_ram,sizeof(wanted_other));
++    memcpy(wanted_trace,trace,sizeof(wanted_trace));
++    memcpy(wanted_pipe,bw_gather_pipe_buffer,sizeof(wanted_pipe));
++    wanted_pipe_length=bw_gather_pipe_length;
++}
++static int equal_arm(const Snapshot* a,const Snapshot* b) {
++    return !memcmp(a,b,sizeof(*a)) && same_ram(wanted_ram) &&
++        !memcmp(wanted_alias,alias_storage,sizeof(wanted_alias)) &&
++        !memcmp(wanted_mem2,mem2_storage,sizeof(wanted_mem2)) &&
++        !memcmp(wanted_other,other_ram,sizeof(wanted_other)) &&
++        !memcmp(wanted_trace,trace,sizeof(wanted_trace)) &&
++        !memcmp(wanted_pipe,bw_gather_pipe_buffer,sizeof(wanted_pipe)) &&
++        wanted_pipe_length==bw_gather_pipe_length;
++}
++static void seed_case(unsigned scenario) {
++    memset(&initial_cpu,0,sizeof(initial_cpu));
++    for (unsigned i=0;i<32;++i) {
++        initial_cpu.gpr[i]=random32();
++        u64 bits=((u64)random32()<<32)|random32(); memcpy(&initial_cpu.fpr[i],&bits,8);
++        bits=((u64)random32()<<32)|random32(); memcpy(&initial_cpu.ps1[i],&bits,8);
++    }
++    initial_cpu.pc=random32(); initial_cpu.lr=random32(); initial_cpu.ctr=random32();
++    initial_cpu.cr=random32(); initial_cpu.xer=random32(); initial_cpu.fpscr=random32();
++    initial_cpu.msr=random32(); initial_cpu.cycle_observation_suffix=random32();
++    initial_cpu.ram=bw_guest_mem1; initial_cpu.ram_size=MEM1_BYTES;
++    if (scenario%17u==0) { initial_cpu.ram=other_ram; initial_cpu.ram_size=sizeof(other_ram); }
++    if (scenario%19u==0) { initial_cpu.ram=NULL; initial_cpu.ram_size=0; }
++    initial_cpu.exram=mem2_storage; initial_cpu.exram_size=sizeof(mem2_storage);
++    initial_cpu.external_read=io_read; initial_cpu.external_write=io_write;
++    initial_cpu.downcount=(s64)(random32()%32u)-12;
++    initial_cpu.cycle_budget=scenario%5u ? (s64)(1+random32()%32u):0;
++    if (scenario%29u==0) initial_cpu.cycle_budget=-3;
++    initial_cpu.cycle_deadline_budget=scenario%4u ? (s64)(1+random32()%48u):0;
++    initial_cpu.reserve_valid=scenario%3u==0; initial_cpu.reserve_addr=0x80000200u;
++    const u32 addresses[]={0x80000100u,0x80000200u,0xC0000100u,
++        0xCC006C00u,0x81FFFFFFu,0x90000003u,0x80000301u};
++    initial_cpu.gpr[4]=addresses[scenario%7u];
++    initial_cpu.gpr[5]=addresses[(scenario/7u)%7u];
++    initial_cpu.gpr[6]=addresses[(scenario/49u)%7u];
++    initial_cpu.gpr[10]=scenario%3u;
++    for (unsigned i=0;i<WRITABLE_BYTES;++i) initial_ram[i]=(u8)random32();
++    for (unsigned i=0;i<128u;++i) {
++        initial_alias[i]=(u8)random32(); initial_mem2[i]=(u8)random32(); initial_other[i]=(u8)random32();
++    }
++    mode=scenario%128u;
++}
++/* Corpus restriction for RA=RS address consumers: the first loaded word is
++ * a known safe cached-MEM1 pointer, and the intervening add adds zero. These
++ * shapes test original alias/update ordering rather than arbitrary pointers
++ * into protected RAM. Bodies, guard, callbacks and original accesses unchanged. */
++static void constrain_alias_payload(unsigned shape) {
++    const char* name=cases[shape].name;
++    if (!strstr(name,"store_update_alias") && !strstr(name,"indexed_store_alias")) return;
++    initial_cpu.gpr[8]=0;
++    const u32 pointer=__builtin_bswap32(0x80000180u);
++    memcpy(initial_ram+0x100u,&pointer,4);
++    memcpy(initial_ram+0x200u,&pointer,4);
++    memcpy(initial_ram+0x301u,&pointer,4);
++    memcpy(initial_alias,&pointer,4);
++    memcpy(initial_mem2+3u,&pointer,4);
++}
++static unsigned equivalent_case(unsigned shape,unsigned scenario,unsigned alias_on,unsigned journal_on) {
++    Snapshot wanted;
++    current_shape=shape; current_scenario=scenario;
++    for (unsigned variant=0;variant<3;++variant) {
++        reset_arm(alias_on,journal_on);
++        cases[shape].variants[variant](active);
++        Snapshot got=snapshot();
++        if (!variant) { wanted=got; capture_wanted(); }
++        else if (!equal_arm(&wanted,&got)) {
++            fprintf(stderr,"shape_name=%s variant=%u pc=%08X/%08X suffix=%u/%u dc=%lld/%lld events=%u/%u\n",
++                    cases[shape].name,variant,wanted.cpu.pc,got.cpu.pc,
++                    wanted.cpu.cycle_observation_suffix,got.cpu.cycle_observation_suffix,
++                    (long long)wanted.cpu.downcount,(long long)got.cpu.downcount,wanted.count,got.count);
++            require(0,"full CPU/RAM/alias/MEM2/trace/fenv parity");
++        }
++    }
++    return 3;
++}
++static void protect_readonly(void) {
++    DWORD old;
++    require(VirtualProtect(bw_guest_mem1,MEM1_BYTES,PAGE_READONLY,&old)!=0,"protect all MEM1");
++    require(VirtualProtect(bw_guest_mem1,LOW_BYTES,PAGE_READWRITE,&old)!=0,"low writable pages");
++    require(VirtualProtect(bw_guest_mem1+MEM1_BYTES-PAGE_BYTES,PAGE_BYTES,PAGE_READWRITE,&old)!=0,"tail writable page");
++}
++static void readonly_zero(void) {
++    for (u32 i=LOW_BYTES;i<MEM1_BYTES-PAGE_BYTES;++i)
++        require(bw_guest_mem1[i]==0,"all remaining MEM1 unchanged");
++}
++int main(void) {
++    unsigned runs=0,directed=0,mutants=0;
++    protect_readonly(); readonly_zero();
++    for (unsigned c=0;c<sizeof(cases)/sizeof(cases[0]);++c)
++        for (unsigned s=0;s<RANDOM_CASES;++s) {
++            seed_case(s); constrain_alias_payload(c); runs+=equivalent_case(c,s,(s&4u)!=0,(s&8u)!=0);
++        }
++    /* Deterministic grid: ordinary fast RAM; first-part cold miss; later miss
++     * after committed RAM store; reserve/journal; callback-mutated metadata,
++     * deadline, aliases and register updates. All start prepaid unless a row
++     * explicitly exercises a precise/deadline entry. */
++    for (unsigned c=0;c<sizeof(cases)/sizeof(cases[0]);++c)
++        for (unsigned s=0;s<24u;++s) {
++            seed_case(123u+s); mode=s<8u?0u:1u<<(s%7u);
++            initial_cpu.downcount=20; initial_cpu.cycle_budget=256;
++            initial_cpu.cycle_deadline_budget=256; initial_cpu.reserve_valid=false;
++            initial_cpu.gpr[3]=0x80000180u; initial_cpu.gpr[4]=0x80000100u;
++            initial_cpu.gpr[5]=0x80000200u; initial_cpu.gpr[6]=0x80000300u; initial_cpu.gpr[10]=0;
++            if(s==1u || s==8u || s==9u) initial_cpu.gpr[4]=0xCC006C00u;
++            if(s==2u || s>=10u) initial_cpu.gpr[6]=0xCC006C00u;
++            if(s==3u) initial_cpu.gpr[5]=0xC0000200u;
++            if(s==4u) initial_cpu.reserve_valid=true;
++            if(s==5u) initial_cpu.cycle_deadline_budget=1;
++            if(s==6u) { initial_cpu.downcount=-256; initial_cpu.cycle_deadline_budget=0; }
++            if(s==7u) { initial_cpu.downcount=0; initial_cpu.cycle_budget=0; initial_cpu.cycle_deadline_budget=0; }
++            constrain_alias_payload(c);
++            runs+=equivalent_case(c,1000u+s,s==16u,s==17u); ++directed;
++        }
++    /* Actual consumer mutants. Their first RAM read must take the cold arm;
++     * skipping its original precise part or clearing prepaid must diverge. */
++    seed_case(555u); mode=0; initial_cpu.downcount=20;
++    initial_cpu.cycle_budget=256; initial_cpu.cycle_deadline_budget=256;
++    initial_cpu.reserve_valid=false; initial_cpu.gpr[4]=0xCC006C00u;
++    initial_cpu.gpr[5]=0x80000200u; initial_cpu.gpr[6]=0x80000300u;
++    reset_arm(0,0); mutant_original(active); Snapshot wanted=snapshot(); capture_wanted();
++    Run negatives[]={mutant_wrong_label,mutant_prepaid_false};
++    for(unsigned i=0;i<2u;++i) {
++        reset_arm(0,0); negatives[i](active); Snapshot got=snapshot();
++        require(!equal_arm(&wanted,&got),"behavioral consumer mutant detected"); ++mutants;
++    }
++    readonly_zero();
++    ppc_set_mem_write_journal(NULL,NULL); ppc_guest_alias_clear();
++    require(runs==sizeof(cases)/sizeof(cases[0])*(RANDOM_CASES+24u)*3u,"run accounting");
++    require(mutants==2u,"both consumer mutants detected");
++    printf("COLD_TWIN_DIFFERENTIAL_PASS shapes=%u scenarios=%u runs=%u directed=%u mutants=%u CPU=%u MEM1=%u writable=%u readonly=1 traces=full fenv=1 timing=0\n",
++           (unsigned)(sizeof(cases)/sizeof(cases[0])),RANDOM_CASES+24u,runs,directed,mutants,
++           (unsigned)sizeof(CPUState),MEM1_BYTES,WRITABLE_BYTES);
++    return 0;
++}
+diff --git a/experiments/cold-twin-memory/generate_fixture.py b/experiments/cold-twin-memory/generate_fixture.py
+new file mode 100644
+--- /dev/null
++++ b/experiments/cold-twin-memory/generate_fixture.py
+@@ -0,0 +1,199 @@
++"""Generate only synthetic differential sources; never compile or run them.
++
++Usage: python -B -S experiments/cold-twin-memory/generate_fixture.py --output FRESH_DIRECTORY
++"""
++import argparse
++import difflib
++import hashlib
++import importlib.util
++import json
++from pathlib import Path
++import re
++import sys
++
++sys.dont_write_bytecode = True
++BASE = Path(__file__).resolve().parent
++for ROOT in BASE.parents:
++    if (ROOT / 'tests/test_prepaid_rewrites.py').is_file():
++        break
++else:
++    raise RuntimeError('Place the experiment inside the matching BlueWake source tree')
++
++def load(name, path):
++    spec = importlib.util.spec_from_file_location(name, path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++def pin(path):
++    data = path.read_bytes()
++    return {'name': path.name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
++
++def write(path, value):
++    with path.open('x', encoding='utf8', newline='\n') as stream:
++        stream.write(value)
++
++def save(path, value):
++    write(path, json.dumps(value, indent=2) + '\n')
++
++def translated(original, bits, kind='ordinary'):
++    """Keep the old entry/markers/refund layout; replace only operation bodies.
++    The raw32 shape family is retained separately as a decline control."""
++    width = str(bits)
++    read = {8: 'lbz', 16: 'lhz', 32: 'lwz', 64: 'ld'}[bits]
++    store = {8: 'stb', 16: 'sth', 32: 'stw', 64: 'std'}[bits]
++    operations = {
++        0: [read, 'ctx->gpr[4]', f'ctx->gpr[3] = (u32)mem_read{width}(ctx, ea);', None],
++        2: [store, 'ctx->gpr[5]', f'mem_write{width}(ctx, ea, (u{width})ctx->gpr[3]);', None],
++        6: [store, 'ctx->gpr[6]', f'mem_write{width}(ctx, ea, (u{width})ctx->gpr[7]);', None],
++    }
++    if kind == 'miss_after_store':
++        operations[4] = [read, 'ctx->gpr[6]', f'ctx->gpr[7] = (u32)mem_read{width}(ctx, ea);', None]
++    elif kind == 'load_update':
++        operations[0] = ['lwzu', 'ctx->gpr[4] + ctx->gpr[10]', 'ctx->gpr[3] = (u32)mem_read32(ctx, ea);', 'ctx->gpr[4] = ea;']
++    elif kind == 'load_update_alias':
++        operations[0] = ['lwzu', 'ctx->gpr[3] + ctx->gpr[10]', 'ctx->gpr[3] = (u32)mem_read32(ctx, ea);', 'ctx->gpr[3] = ea;']
++    elif kind == 'indexed_load_alias':
++        operations[0] = ['lwzx', 'ctx->gpr[4] + ctx->gpr[10]', 'ctx->gpr[4] = (u32)mem_read32(ctx, ea);', None]
++    elif kind == 'store_update':
++        operations[2] = ['stwu', 'ctx->gpr[5] + ctx->gpr[10]', 'mem_write32(ctx, ea, (u32)ctx->gpr[3]);', 'ctx->gpr[5] = ea;']
++    elif kind == 'store_update_alias':
++        operations[2] = ['stwu', 'ctx->gpr[3] + ctx->gpr[10]', 'mem_write32(ctx, ea, (u32)ctx->gpr[3]);', 'ctx->gpr[3] = ea;']
++    elif kind == 'indexed_store_alias':
++        operations[2] = ['stwx', 'ctx->gpr[3] + ctx->gpr[10]', 'mem_write32(ctx, ea, (u32)ctx->gpr[3]);', None]
++    lines = original.splitlines()
++    for i, operation in operations.items():
++        pc = 0x80004000 + 4*i
++        start = lines.index(f'    // {pc:08X}: synthetic instruction')
++        # Each old synthetic body is exactly one line at these indices.
++        body = [f'    // {pc:08X}: {operation[0]} synthetic', '    {',
++                '        u32 ea = ' + operation[1] + ';', '        ' + operation[2]]
++        if operation[3]:
++            body.append('        ' + operation[3])
++        body.append('    }')
++        lines[start:start+2] = body
++    return '\n'.join(lines) + '\n'
++
++def special(original, kind):
++    text=translated(original,32,'miss_after_store')
++    if kind=='first_inherits_callback':
++        # A syntactically valid standard leader with no unconditional PC write
++        # before its first operation. The callback's PC must survive cold entry.
++        text=text.replace('    ctx->pc = 0x80004000u;\n', '    observe(ctx);\n', 1)
++    elif kind=='prior_pure_pc':
++        # Remove the first memory instruction, retaining its pure instruction.
++        # Force a PC marker on the following pure instruction and remove the
++        # store's own PC. fast_blocks moves that PREVIOUS PC to the store header.
++        first='\n'.join(['    ctx->cycle_observation_suffix = cycle_block_prepaid ? 7u : 0u;',
++              '    // 80004000: lwz synthetic','    {','        u32 ea = ctx->gpr[4];',
++              '        ctx->gpr[3] = (u32)mem_read32(ctx, ea);','    }',*load_fast().REFUND])
++        assert text.count(first)==1
++        text=text.replace(first,'    // 80004000: addi synthetic\n    ctx->gpr[3] += 1u;',1)
++        text=text.replace('    ctx->pc = 0x80004008u;\n','',1)
++        if '    ctx->pc = 0x80004004u;' not in text:
++            text=text.replace('label_80004004:\n','label_80004004:\n    ctx->pc = 0x80004004u;\n',1)
++    else:
++        raise ValueError(kind)
++    return text
++
++def load_fast():
++    return load('cold_fixture_fast_for_special',ROOT/'scripts/windows/fast_blocks.py')
++
++
++def main():
++    global OUT
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--output', type=Path, required=True)
++    OUT = parser.parse_args().output
++    if OUT.exists():
++        raise RuntimeError('Fresh output directory required')
++    expected_inputs = {'tests/test_prepaid_rewrites.py': '0f147c36af1e66cb3397e8af6e02993f629f319c2ca03379bb6b2ba8f323a7a7', 'scripts/windows/fast_blocks.py': 'd463882939dd402f5cd37fb9299ff61ba7d9b2eecd44313805e34988a69142f3', 'scripts/windows/lean_memory.py': '4966151cad472a84ff26e96e3b78959525047e691ad84e6e6bef9186ce71a875'}
++    for relative, expected in expected_inputs.items():
++        if hashlib.sha256((ROOT / relative).read_bytes().replace(b'\r\n', b'\n')).hexdigest() != expected:
++            raise RuntimeError('Source dependency changed; requalify: ' + relative)
++    test = load('cold_fixture_old_shapes', ROOT / 'tests/test_prepaid_rewrites.py')
++    cold = load('cold_fixture_transform', BASE / 'transform.py')
++    sources=[]
++    # Exact old32 remain an independent unsupported-operand/64-bit control.
++    for bits in (8,16,32,64):
++        for loop in (False,True):
++            for early in (False,True):
++                for omit in (False,True):
++                    original=test.source(bits,loop,early,omit)
++                    sources.append((f'raw_{bits}_{int(loop)}_{int(early)}_{int(omit)}',original,False))
++                    sources.append((f'translated_{bits}_{int(loop)}_{int(early)}_{int(omit)}',translated(original,bits),bits!=64))
++    for kind in ('miss_after_store','load_update','load_update_alias','indexed_load_alias',
++                 'store_update','store_update_alias','indexed_store_alias'):
++        for loop in (False,True):
++            for omit in (False,True):
++                sources.append((f'{kind}_{int(loop)}_{int(omit)}',translated(test.source(32,loop,False,omit),32,kind),True))
++    for kind in ('first_inherits_callback','prior_pure_pc'):
++        for loop in (False,True):
++            for omit in (False,True):
++                sources.append((f'{kind}_{int(loop)}_{int(omit)}',special(test.source(32,loop,False,omit),kind),True))
++    functions=[]; tables=[]; records=[]; inverse_files=[]
++    selected=None
++    OUT.mkdir(parents=True)
++    for index,(name,original,expect_changed) in enumerate(sources):
++        fast,count=test.fast.transform(original)
++        assert count==1,(name,count)
++        lines=fast.splitlines()
++        head=next(i for i,line in enumerate(lines) if cold.FUNCTION.match(line))
++        close=max(i for i,line in enumerate(lines) if line=='}')
++        rewritten,report=cold.transform_function(lines[head:close+1])
++        candidate='\n'.join(lines[:head]+rewritten+lines[close+1:])+'\n'
++        assert bool(report['changed'])==expect_changed,(name,report)
++        # A complete source inverse proves the unmodified input is retained.
++        delta=list(difflib.ndiff(fast.splitlines(keepends=True),candidate.splitlines(keepends=True)))
++        assert ''.join(difflib.restore(delta,1))==fast
++        assert ''.join(difflib.restore(delta,2))==candidate
++        diff=OUT/(name+'.ndiff')
++        write(diff,''.join(delta)); inverse_files.append(pin(diff))
++        names=[]
++        for variant,body in [('original',original),('fast',fast),('cold',candidate)]:
++            function='fixture_'+name+'_'+variant
++            names.append(function)
++            body=body.replace(test.fast.INCLUDE,'').replace('test_chunk',function)
++            # The same header works with a real pointer and an explicit fixed
++            # CPU macro. The parameter itself must remain a valid declaration.
++            body=body.replace('(CPUState* ctx) {','(CPUState* fixture_ctx) {\n#ifndef FIXTURE_FIXED_CPU\n    CPUState* ctx = fixture_ctx;\n#else\n    (void)fixture_ctx;\n#endif')
++            functions.append(body)
++        tables.append('{ {'+','.join(names)+'},"'+name+'" }')
++        records.append({'name':name,'index':index,'changed':len(report['changed']),
++                        'report':report,'original_sha256':hashlib.sha256(original.encode()).hexdigest(),
++                        'fast_sha256':hashlib.sha256(fast.encode()).hexdigest(),
++                        'candidate_sha256':hashlib.sha256(candidate.encode()).hexdigest()})
++        if name=='translated_32_0_0_0':
++            selected=(original,candidate,report)
++    assert len(sources)==100
++    assert selected is not None
++    original,candidate,report=selected
++    first=next(row for row in report['changed'] if row['pc']=='80004000')
++    target=first['label']
++    wrong=first['refund_target']
++    needle='            goto '+target+';'
++    assert candidate.count(needle)==1 and target!=wrong
++    mutants={'mutant_original':original,
++             'mutant_wrong_label':candidate.replace(needle,'            goto '+wrong+';',1),
++             'mutant_prepaid_false':candidate.replace(needle,'            cycle_block_prepaid = false;\n'+needle,1)}
++    for name,body in mutants.items():
++        body=body.replace(test.fast.INCLUDE,'').replace('test_chunk',name)
++        body=body.replace('(CPUState* ctx) {','(CPUState* fixture_ctx) {\n#ifndef FIXTURE_FIXED_CPU\n    CPUState* ctx = fixture_ctx;\n#else\n    (void)fixture_ctx;\n#endif')
++        functions.append(body)
++    header='\n'.join(functions)+'\nstatic const Shape cases[] = {\n'+',\n'.join(tables)+'\n};\n'
++    write(OUT/'rewritten_cases.h',header)
++    write(OUT/'fixture.c',(BASE/'fixture.c').read_text())
++    write(OUT/'cold_twin_memory.h',(BASE/'cold_twin_memory.h').read_text())
++    save(OUT/'shape-ledger1.json',records)
++    assert sum(bool(row['changed']) for row in records) == 60
++    assert sum(row['changed'] for row in records) == 160
++    summary = {'status': 'GENERATED_SYNTHETIC_SOURCES_ONLY', 'shapes': 100,
++               'changed_shapes': 60, 'changed_accesses': 160,
++               'generated_header': pin(OUT/'rewritten_cases.h'),
++               'fixture': pin(OUT/'fixture.c'), 'memory_header': pin(OUT/'cold_twin_memory.h'),
++               'native_executed': False}
++    save(OUT/'generation.json', summary)
++    print(json.dumps(summary))
++
++if __name__ == '__main__':
++    main()
+diff --git a/experiments/cold-twin-memory/README.md b/experiments/cold-twin-memory/README.md
+new file mode 100644
+--- /dev/null
++++ b/experiments/cold-twin-memory/README.md
+@@ -0,0 +1,158 @@
++# Cold precise twin RAM experiment, October 9
++
++Status: inactive source archive. Synthetic differential qualification PASS;
++one-owner controlled-route correctness PASS. Broader gameplay and performance
++remain unqualified. Nothing here is
++registered in the production builder, CMake or workflows. Applying the patch
++does not enable this transform. The older negative lean-memory experiment and
++the closed LLVM/GD experiments remain inactive.
++
++## Mechanism
++
++The transform recognizes only translated integer 8/16/32-bit accesses with a
++pure effective-address temporary, one access, and an optional update-register
++write. It changes the existing paid fast copy. Each direct RAM operation uses
++the original fresh gather guard; stores also require no journal and no valid
++reservation. A failed guard publishes the exact committed PC/suffix and jumps
++to the original current precise part while the block remains prepaid. That
++tail executes the original access and remainder once. There is no slow-helper
++rejoin into the fast copy, no runtime observed flag, no cached alias admission,
++and no current-access or update-register write before the guard. Earlier pure
++instructions may already have committed their CPU writes. Source-pending
++metadata is flushed before
++observers/exits. Strict deadline refunds retain the original NEXT-part target
++and set prepaid false only after publishing/refunding the exact suffix.
++
++First-part resume aliases are after the original prepaid-to-fast jump, so a
++cold handoff never recharges the leader. Unknown source forms are preserved.
++FP/PSQ, 64-bit, atomic and multiple-access bodies are outside this experiment.
++The RAM helper requires the exact fixed 32 MiB MEM1 policy and uses the fixed
++global even when CPUState.ram differs. It is not a generic RAM helper.
++
++## Reproducing synthetic sources
++
++From the matching BlueWake checkout after applying this patch:
++
++```text
++python -B -S experiments/cold-twin-memory/generate_fixture.py --output cold-twin-generated
++```
++
++This command generates source only. It uses the repository's synthetic source
++shapes and original fast-block generator, verifies their qualified hashes after CRLF-to-LF normalization,
++and emits 100 synthetic original/paid-copy/cold-twin triplets plus two mutants.
++It imports only the parser from lean_memory.py; it never runs the old lean
++transform. Every fast-to-cold source inverse is retained in the output. No
++translated game source, player data, binary or private path is in this patch.
++
++`transform.py` exports `transform_source(text)` and `transform_function(lines)`.
++It has no command-line mutation or automatic integration. Its recognized
++transformation function bodies are unchanged from the qualified prototype;
++only repository discovery and the opening description were adapted.
++
++## Actual bounded qualification
++
++Windows x64 Clang 19, MSVC dynamic CRT, GNU C11, final O2, fixed 32 MiB MEM1;
++pointer CPU and fixed CPU, each normal and ASan. All four profiles passed:
++
++```text
++COLD_TWIN_DIFFERENTIAL_PASS shapes=100 scenarios=1024 runs=307200 directed=2400 mutants=2 CPU=3552 MEM1=33554432 writable=12288 readonly=1 traces=full fenv=1 timing=0
++```
++
++Across four profiles: 1,228,800 executions, 819,200 original-reference
++comparisons and eight required mutant detections. All 40 owned child rows
++exited zero and drained. The real CPU/gather services were compiled into each
++fixture; no memory-service simulator was substituted. Callback traces compare
++complete CPU state in order, alongside final 3,552-byte CPU state, every
++writable MEM1 byte, alias/MEM2/alternate-owner buffers, gather state, journal,
++host fenv and MXCSR. The rest of MEM1 is read-only with full before/after scans.
++
++Cases include guard misses after a committed store, inherited/prior-pure PC,
++deadlines/refunds, update-register aliases, mutable callbacks, journals,
++reservations, raw/mirrored/aliased RAM, external MMIO, and unsupported shapes.
++Two setup defects were repaired before execution: store-value-as-address
++shapes now constrain their seed to writable memory, and null/128-byte alternate
++RAM owners have truthful sizes. Operation bodies were not weakened.
++
++Evidence SHA-256:
++
++- Four-profile terminal receipt: `1512932084da900318b0089a0785aed51bbc7d0660dc7ba4e30ae23a0dead313`.
++- Independent actual audit: `7ec45855e755690f8256961c6055c12feea8ef64697ca68d4880699aec0cc341`.
++- Final source preparation: `53da1fccd96b30e315b6f1c2eb1d019714bf99ab280deeaa4f1fef46d8f24ad4`.
++- Original canonical CPU header: `96304098a5ba52708eb760c96a8f9fe3b0a83e83f3c212f691b961f3e7ee29af`.
++- Original gather header: `465903449d7e1a651aeff335ffadc32aa380bb05cff5cc42415b767a5092f57b`.
++
++The synthetic result alone does not establish actual translated-chunk execution,
++concurrent observer safety, all alias priorities, FIFO coverage or gameplay.
++The tested MMIO address is external MMIO, not the GX FIFO address. Loop-first
++forms with unrecognized entry layout decline. Budgets avoid undefined signed
++overflow. ASan covers the C fixture and services. No timing was measured.
++
++One private exact-source compile showed fewer instructions/reloads at a
++three-load anchor but increased whole-chunk text by 7.19%; another two-load
++anchor was nearly unchanged. Static counts establish no speedup. Runtime
++correctness for broader source scopes, actual guard admission and strict paired
++timing are required before any production proposal.
++
++## Actual private one-owner module and controlled-route correctness
++
++The separate private candidate replaces only original C2 chunk0145 and retains
++834 existing direct objects, all five prior C2 modified objects, the dispatcher,
++native/mod selection, exports and 15 physical providers. It has 835 direct
++objects and 852 LINKREPRO members. Actual original-policy M/MD had 49 inputs:
++the original 48 plus the experiment header. The link passed exact PE imports,
++exports, resources and provider checks. No translated source or module is
++included in this public patch.
++
++The private candidate is 410,236,416 bytes, SHA-256
++`f4991c5b3043fb1563ff525a2b99a3e51a7c459ac11989ae185b46b59eed8ad6`;
++original C2 is
++`541191776a1b8b7289606d98f34b294a62e71ec23a4ee9008547a1ba77ce89b2`.
++Both controlled title-route cases used the same diagnostic host with v3 off,
++1,800 VI and the same 1,134 recorded physical EFB inputs. All 32 route checks
++passed in each arm, both owned game children completed and drained, and the
++comparison passed. All six complete logical CPU/MEM1/MEM2/ordered-alias
++checkpoint hashes matched, as did the full 1,228,335-byte P6 image. Raw 1,801-VI
++work cursors and terminal GX/clock/dispatch matched; terminal PIPE was zero.
++These are source-qualified complete logical state hashes, not retained RAM
++byte dumps. The physical EFB reads remained part of the protocol.
++
++| Private evidence | SHA-256 |
++| --- | --- |
++| One-owner compile | `d39bd4d69f23fbc3b6dc12feb50ca8dd934edc905c86b863e1d66f88092f1f95` |
++| One-owner module link | `240718dde2914a11cd3d75e63009220876baad58ef61b3c213982c14d13a5cd7` |
++| Correctness batch | `a197320d522111398681f149a62918a18f6983c3f620b6aa7babe9cf965e9a71` |
++| Six-state/P6 comparison | `579434621f8fbe990d88283584dc686db597c1d8fa24b4fb4fd273299d304416` |
++| Independent raw correctness audit | `cb6a2449a77df3c92878e03b410050450ef80a1fbce0def187145a705deb8045` |
++
++This proves controlled-route correctness for the one-owner candidate only.
++It does not dynamically identify every RAM guard, qualify a ten-owner expansion,
++establish ordinary determinism, arbitrary gameplay, displayed FPS or speedup.
++No performance measurement has qualified this archive and no production
++activation is included. Older archival snapshots remain unchanged.
++
++## Manual compilation requirements
++
++This is not a standalone build system. Compile generated fixture.c with the
++matching canonical core/cpu.h and core/types.h, gather_pipe.h and its original
++header closure, plus real cpu.c, cpu_exception.c and gather_pipe.c. Do not link
++a second guest_cpu provider: the fixture defines bw_guest_cpu and bw_guest_mem1.
++Canonical CPU storage ABI 6 (3552 bytes) is distinct from module interface ABI.
++Changed public runtime headers/providers require requalification.
++
++The qualified compile defines were:
++
++```text
++BW_GUEST_MEM1=bw_guest_mem1
++BW_GUEST_MEM1_SIZE=0x02000000u
++```
++
++The fixed-CPU arms require both `FIXTURE_FIXED_CPU=1` and
++`BLUEWAKE_FIXED_CPU=1`; omit both for the pointer-CPU arms. The matching ordered
++compiler policy used `-march=x86-64-v3 -fno-slp-vectorize -mllvm
++-large-interval-freq-threshold=10 -O3 -DNDEBUG -std=gnu11`, final `-O2`, and
++`-ffp-contract=off`; no effective no-SLP claim is made from that ordering.
++The fixture undefines NDEBUG so its checks remain active. ASan arms add
++`-fsanitize=address -fno-omit-frame-pointer` and matching runtime libraries.
++Windows VirtualProtect is required; use the real platform/CRT include and
++library environment. This archive intentionally supplies no automatic
++compiler/launcher/provider selection or production activation.
+diff --git a/experiments/cold-twin-memory/transform.py b/experiments/cold-twin-memory/transform.py
+new file mode 100644
+--- /dev/null
++++ b/experiments/cold-twin-memory/transform.py
+@@ -0,0 +1,273 @@
++"""Inactive cold precise twin experiment. Pure source transform only.
++
++No slow helper rejoins a transformed fast copy. A fresh original gather guard
++miss publishes committed metadata and enters the original current paid part.
++Unrecognized access/body/part forms are retained, never guessed.
++"""
++import importlib.util
++import re
++from pathlib import Path
++
++def repository_root():
++    for parent in Path(__file__).resolve().parents:
++        if (parent / 'scripts/windows/lean_memory.py').is_file():
++            return parent
++    raise RuntimeError('Place this experiment inside the matching BlueWake source tree')
++
++
++ROOT = repository_root()
++_spec = importlib.util.spec_from_file_location('cold_twin_original_lean_parser', ROOT / 'scripts/windows/lean_memory.py')
++lean = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(lean)
++FUNCTION = re.compile(r'^(?:static )?void (\w+)\(CPUState\* (?:ctx|ctx_param)\) \{$')
++ENTRY = re.compile(r'^    if \(cycle_block_prepaid\) goto bwfast_(\d+);$')
++CHARGE = re.compile(r'^    if \(!cycle_block_prepaid && !dolrecomp_charge_precise\(ctx, \d+u, 0x([0-9A-F]{8})u\)\) return;$')
++PRECISE_SUFFIX = re.compile(r'^    ctx->cycle_observation_suffix = cycle_block_prepaid \? (\d+)u : 0u;$')
++SLOW = re.compile(r'^bwslow_(\d+)_\d+: ;$')
++OP = re.compile(r'^    // ([0-9A-F]{8}):\s+(\w+)\b')
++READ_OPS = set('lbz lbzx lbzu lbzux lhz lhzx lhzu lhzux lha lhax lhau lhaux lwz lwzx lwzu lwzux'.split())
++WRITE_OPS = set('stb stbx stbu stbux sth sthx sthu sthux stw stwx stwu stwux'.split())
++MARK = '/* private cold-twin RAM experiment: original paid precise tails */'
++
++
++def access_shape(body):
++    """Only braces, pure EA, one scalar access and optional RA=EA qualify."""
++    live = [line for line in body if line.strip()]
++    if len(live) not in (5, 6) or live[1] != '    {' or live[-1] != '    }':
++        return None
++    op = OP.match(live[0])
++    if op is None or op.group(2) not in READ_OPS | WRITE_OPS:
++        return None
++    ea = re.fullmatch(r'        u32 ea = (.+);', live[2])
++    if ea is None:
++        return None
++    expr = re.sub(r'ctx->gpr\[\d+\]', '0', ea.group(1))
++    # Constants, casts and wrapping addition only; no CPU writes or calls.
++    expr = re.sub(r'\b(?:u32|s32)\b', '', expr)
++    if re.search(r'[^0-9a-fA-FxXuU() +\-]', expr):
++        return None
++    reads = re.fullmatch(r'        ctx->gpr\[\d+\] = (?:(?:\((?:u32|s32|s16|s8)\))*)mem_read(8|16|32)\(ctx, ea\);', live[3])
++    writes = re.fullmatch(r'        mem_write(8|16|32)\(ctx, ea, \(u(?:8|16|32)\)ctx->gpr\[\d+\]\);', live[3])
++    if reads is not None and op.group(2) in READ_OPS:
++        kind, bits = 'read', int(reads.group(1))
++    elif writes is not None and op.group(2) in WRITE_OPS:
++        kind, bits = 'write', int(writes.group(1))
++    else:
++        return None
++    if len(live) == 6 and re.fullmatch(r'        ctx->gpr\[\d+\] = ea;', live[4]) is None:
++        return None
++    return kind, bits
++
++
++def current_part(lines, entry, end, pc, suffix, copy_id):
++    hits = [i for i in range(entry + 1, end) if OP.match(lines[i]) and OP.match(lines[i]).group(1) == pc]
++    if len(hits) != 1:
++        return None
++    c = hits[0]
++    comments = [i for i in range(entry + 1, end) if OP.match(lines[i])]
++    first = c == comments[0]
++    if PRECISE_SUFFIX.match(lines[c - 1]) is None or int(PRECISE_SUFFIX.match(lines[c - 1]).group(1)) != suffix:
++        return None
++    j = c - 1
++    if j > entry + 1 and CHARGE.match(lines[j - 1]):
++        if CHARGE.match(lines[j - 1]).group(1) != pc:
++            return None
++        j -= 1
++    elif not first:
++        return None
++    current_pc = None
++    if j > entry + 1 and lean.PC.match(lines[j - 1]):
++        current_pc = lean.PC.match(lines[j - 1]).group(1)
++        if current_pc != pc:
++            return None
++        j -= 1
++    if first:
++        j = entry + 1
++        # Step zero must skip the complete precharge/goto prefix. Only original
++        # metadata and an optional existing slow label may lie before comment.
++        for line in lines[j:c]:
++            if not (lean.PC.match(line) or CHARGE.match(line) or PRECISE_SUFFIX.match(line) or SLOW.match(line)):
++                return None
++        pcs = [lean.PC.match(line).group(1) for line in lines[j:c] if lean.PC.match(line)]
++        current_pc = pcs[-1] if pcs else None
++    if j > entry + 1 and SLOW.match(lines[j - 1]) and SLOW.match(lines[j - 1]).group(1) == copy_id:
++        label, insertion = lines[j - 1].split(':')[0], None
++    else:
++        label, insertion = f'bwcold_{copy_id}_{pc}', j
++    return dict(label=label, insertion=insertion, first=first, precise_comment_line=c,
++                precise_start_line=j, precise_current_pc=current_pc)
++
++
++def rewrite_copy(body, copy_id, mappings):
++    out, changed = [], []
++    pending_pc = pending_suffix = None
++
++    def publication(indent='    ', pc=None, suffix=None, explicit=False):
++        p = pc if explicit else pending_pc
++        s = suffix if explicit else pending_suffix
++        result = []
++        if p is not None:
++            result.append(f'{indent}ctx->pc = 0x{p}u;')
++        if s is not None:
++            result.append(f'{indent}ctx->cycle_observation_suffix = {s}u;')
++        return result
++
++    def flush():
++        nonlocal pending_pc, pending_suffix
++        out.extend(publication())
++        pending_pc = pending_suffix = None
++
++    for item in lean.parse_copy(body):
++        if item[0] == 'pc':
++            flush()
++            out.append(f'    ctx->pc = 0x{item[1]}u;')
++            continue
++        if item[0] == 'line':
++            if lean.calls(item[1]) or lean.leaves(item[1]) or 'ctx->pc' in item[1] or 'ctx->cycle_observation_suffix' in item[1]:
++                flush()
++            out.append(item[1])
++            continue
++        _, header_pc, suffix, pc, insn, check = item
++        shape = access_shape(insn)
++        mapping = mappings.get(pc)
++        if shape is not None and mapping is not None and suffix is not None and check is not None:
++            kind, bits = shape
++            prior_suffix = pending_suffix
++            guard = 'BW_RAM_FAST' if kind == 'read' else 'BW_RAM_FAST_STORE'
++            # A header can publish the prior pure instruction's PC, rather
++            # than current metadata. That value is already committed on the
++            # precise path and must be restored BEFORE the cold handoff.
++            cold_pc = pending_pc
++            if header_pc is not None and header_pc != mapping['precise_current_pc']:
++                cold_pc = header_pc
++            guarded = []
++            for line in insn:
++                guarded.append(line)
++                if re.fullmatch(r'        u32 ea = .+;', line):
++                    guarded.extend([f'        if (__builtin_expect(!{guard}(ctx, ea, {bits // 8}u), 0)) {{',
++                                    *publication('            ', cold_pc, pending_suffix, True),
++                                    f'            goto {mapping["label"]};', '        }'])
++            access_name = f'bwcold_{"load" if kind == "read" else "store"}{bits}( '
++            # Keep original casts, access value and RA update ordering verbatim.
++            guarded = [line.replace(f'mem_{kind}{bits}(ctx, ', access_name).replace('( ea', '(ea') for line in guarded]
++            out.extend(guarded)
++            if header_pc is not None:
++                pending_pc = header_pc
++            pending_suffix = suffix
++            out.extend(['    if (ctx->cycle_deadline_budget > 0 &&',
++                        f'        (s64){suffix}u > ctx->cycle_deadline_budget) {{',
++                        *publication('        '),
++                        f'        ctx->downcount += (s64){suffix}u;',
++                        '        cycle_block_prepaid = false;', check[4], '    }'])
++            changed.append(dict(pc=pc, kind=kind, bits=bits, header_pc=header_pc,
++                                suffix=suffix, cold_precurrent_pc=cold_pc,
++                                cold_precurrent_suffix=prior_suffix,
++                                refund_target=lean.REFUND_GOTO.match(check[4]).group(1), **mapping))
++            continue
++        text = '\n'.join(insn)
++        # Only pure body code can carry pending metadata across this item.
++        if header_pc is not None or suffix is not None or lean.calls(text) or lean.leaves(text) or check is not None or 'ctx->pc' in text or 'ctx->cycle_observation_suffix' in text:
++            flush()
++        if header_pc is not None:
++            out.append(f'    ctx->pc = 0x{header_pc}u;')
++        if suffix is not None:
++            out.append(f'    ctx->cycle_observation_suffix = {suffix}u;')
++        out.extend(insn)
++        if check is not None:
++            flush()
++            out.extend(check)
++    flush()
++    return out, changed
++
++
++def transform_function(lines):
++    name_match = FUNCTION.match(lines[0])
++    if name_match is None:
++        raise ValueError('not a translated function')
++    name = name_match.group(1)
++    copies = [(i, lean.COPY.match(line).group(1)) for i, line in enumerate(lines) if lean.COPY.match(line)]
++    if not copies:
++        return lines, dict(function=name, changed=[])
++    precise_end = copies[0][0]
++    entries_by_id, ends_by_id = {}, {}
++    for index, line in enumerate(lines[:precise_end]):
++        entry_match = ENTRY.match(line)
++        end_match = re.fullmatch(r'bwend_(\d+): ;', line)
++        if entry_match:
++            entries_by_id.setdefault(entry_match.group(1), []).append(index)
++        if end_match:
++            ends_by_id.setdefault(end_match.group(1), []).append(index)
++    inserts, replacements, all_changed = {}, {}, []
++    for start, number in copies:
++        entries = entries_by_id.get(number, [])
++        ends = ends_by_id.get(number, [])
++        if len(entries) != 1 or len(ends) != 1 or not entries[0] < ends[0]:
++            raise ValueError(f'{name} bwfast_{number}: ambiguous exact original entry/end')
++        stop = start + 1
++        while stop < len(lines) and lines[stop] != f'    goto bwend_{number};':
++            stop += 1
++        if stop >= len(lines):
++            raise ValueError('fast copy has no closing goto')
++        body = lines[start + 1:stop]
++        mappings = {}
++        for item in lean.parse_copy(body):
++            if item[0] != 'insn' or item[2] is None or item[5] is None or access_shape(item[4]) is None:
++                continue
++            found = current_part(lines, entries[0], ends[0], item[3], item[2], number)
++            if found is not None:
++                c = found['precise_comment_line']
++                if lines[c:c + len(item[4])] != item[4]:
++                    raise ValueError(f'{name}/{number}/{item[3]}: precise/fast body mismatch')
++                mappings[item[3]] = found
++        new_body, changed = rewrite_copy(body, number, mappings)
++        if not changed:
++            continue
++        replacements[start + 1] = (stop, new_body)
++        for row in changed:
++            if row['insertion'] is not None:
++                inserts.setdefault(row['insertion'], []).append(row['label'] + ': ;')
++            row.update(function=name, copy_id=number, precise_entry_line=entries[0],
++                       fast_start_line=start, fast_end_line=stop)
++        all_changed.extend(changed)
++    out, i = [], 0
++    while i < len(lines):
++        out.extend(inserts.get(i, []))
++        if i in replacements:
++            stop, body = replacements[i]
++            out.extend(body)
++            i = stop
++        else:
++            out.append(lines[i])
++            i += 1
++    return out, dict(function=name, changed=all_changed)
++
++
++def transform_source(text):
++    if MARK in text:
++        raise ValueError('already transformed')
++    lines = text.split('\n')
++    heads = [i for i, line in enumerate(lines) if FUNCTION.match(line)]
++    if not heads:
++        raise ValueError('no exact translated functions')
++    out, reports = lines[:heads[0]], []
++    for ordinal, start in enumerate(heads):
++        stop = heads[ordinal + 1] if ordinal + 1 < len(heads) else len(lines)
++        close = stop - 1
++        while close > start and lines[close] != '}':
++            close -= 1
++        body, report = transform_function(lines[start:close + 1])
++        for row in report['changed']:
++            for key in ('precise_comment_line', 'precise_start_line', 'precise_entry_line', 'fast_start_line', 'fast_end_line'):
++                row[key] += start + 1
++            if row['insertion'] is not None:
++                row['insertion'] += start + 1
++        out.extend(body)
++        out.extend(lines[close + 1:stop])
++        reports.append(report)
++    candidate = '\n'.join(out)
++    include = '#include "inline_fp.h"\n'
++    if candidate.count(include) != 1:
++        raise ValueError('ambiguous helper include route')
++    candidate = candidate.replace(include, include + MARK + '\n#include "cold_twin_memory.h"\n', 1)
++    return candidate, dict(functions=reports, accesses=sum(len(row['changed']) for row in reports),
++                           no_observed_flags=True, no_slow_rejoin=True, widths=[8,16,32])
