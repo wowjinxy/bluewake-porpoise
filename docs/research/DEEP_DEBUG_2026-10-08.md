@@ -84,6 +84,49 @@ module and tester ZIP remain unchanged. Reference:
 [WPR command-line options](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options),
 [ETW session permissions](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-starttracew).
 
+### Offline hardware-counter reader, October 10
+
+The bounded offline reader now builds and passes 28 in-process checks. A
+separate read-only TDH test also resolves the installed PerfInfo PMC47/version2
+and interval73/version2 schemas. All seven deliberately constructed values
+decode with their exact expected widths and bytes. This proves local schema
+availability and the reader's test paths; it does not prove actual ETL delivery,
+hardware counter allocation, a loss-free recording, or a new FPS improvement.
+
+The source is preserved at
+[`experiments/pmu-etl-decoder/etl_decode.cpp`](../../experiments/pmu-etl-decoder/etl_decode.cpp).
+Its output path deliberately remains restricted to the private diagnostic
+folder on D. It never starts, stops or queries a session. The real-file path uses
+`OpenTraceW`, `ProcessTrace` and TDH to retain all event headers, raw data and
+actual schemas, including undecodable events. It preserves raw timestamps and
+the supported trace-header loss fields; a system sample's header PID is not
+assumed to identify the sampled process. Input files remain read-only, outputs
+use exclusive creation, and budget failures produce incomplete results.
+
+Root ran four serial, hidden, owned children: compile, link, pure tests and the
+separate synthetic schema test. All exit zero and drain. Two macro-redefinition
+warnings are retained without rebuilding. The executable imports the required
+offline consumer APIs and has no direct recording, privilege-change or child
+launch imports; an import table alone does not rule out dynamic calls. An
+independent audit rehashes the saved inputs and dependencies and confirms both
+raw schemas and every test value. No trace or game was launched in this phase.
+
+Evidence under `D:/Projects/BlueWake-pmu-feasibility-20261010/decoder1/`:
+
+- `source-preparation1.json`: `e1301fae6869ec8d5e4a0e24fbb51de12dafcd671d59983582d89edf4819c077`.
+- `build1/result.json`: `436b73e3489bf91ae3778ea94df8168f4d076384b903994c9b2f15ef7bb19d57`.
+- `build1/output/etl_decode.exe`: 481,792 bytes,
+  `84dfa0dea2775535c79ebce8ca7b3fab1feff0393a6aabe82d055801005cfaf4`.
+- `peer-b-actual-build1.json`: `07dac085621c2a22e4cc2b50e3523ecdddd6c0deda8476ae6e60ad93bfb2220d`.
+
+The administrator capture still has no attempt or ETL files. The next external
+step remains `capture1/Launch4.cmd` run as administrator. Actual sample source,
+interval, loss, owned thread/process lifetime, loaded module and intro QPC
+window must be checked on that recording before interpreting counter counts.
+The accepted game binaries, tester and disabled Tingle wait-skip are unchanged.
+References: [Microsoft offline consumption](https://learn.microsoft.com/en-us/windows/win32/etw/consuming-events),
+[TDH metadata](https://learn.microsoft.com/en-us/windows/win32/etw/retrieving-event-data-using-tdh).
+
 ### Wider private calling convention: no qualified gain, October 10
 
 A new private candidate changes twenty original DOL chunk providers and the

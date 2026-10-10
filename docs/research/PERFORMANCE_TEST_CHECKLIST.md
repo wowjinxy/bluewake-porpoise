@@ -34,6 +34,12 @@ Windows 11 command and the corrected status-code assumption are preserved in
 the hardware-counter section of [the investigation](DEEP_DEBUG_2026-10-08.md).
 This diagnostic does not change the tester or gate unrelated port milestones.
 
+The offline reader now builds, passes 28 pure checks and decodes both installed
+sample and interval schemas against deliberate test bytes. No real trace has
+been delivered yet; these checks establish tooling compatibility only. Source
+and exact build/audit receipts are preserved in the investigation's offline
+reader section. Administrator capture remains the next required external step.
+
 ## Implementation progress
 
 All 38 numbered candidates remain in scope. Implement dependency groups in
