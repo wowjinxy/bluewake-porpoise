@@ -8,12 +8,96 @@ The fresh capture with observation tracing disabled still identifies observation
 checks and translated game code as CPU optimization candidates. No repeatable
 ordinary-play speedup is qualified yet.
 
-### Hardware-counter capture feasibility, October 10
+### First administrator capture and harness correction, October 10
+
+The user's administrator run produced
+`D:/Projects/BlueWake-pmu-feasibility-20261010/capture1/attempt1/result.json`
+at 17:26:44 UTC, SHA
+`287d37aa9f9b85626c11afa2933737418e8e183ac780e8dd539cf7b0709812dd`.
+It failed before launching the game: a shared environment validator still
+accepted only paths from the earlier private calling-convention experiment.
+The named status, instruction-cache recording start and owned stop all exited
+zero and drained. The terminal receipt reports no session requiring cleanup.
+No game case completed, so this recording cannot attribute the game slowdown.
+
+The separate `capture1/Launch5.cmd` uses a corrected validator, exclusive
+attempt 2 and three exact diagnostic case paths. All 59 pure prelaunch checks
+pass, including reproduction of the old failure and construction of the real
+parser, environment, phase paths and launcher arguments. An independent source
+review passes. These checks do not execute staging or Windows APIs. Profiles,
+workload, accepted C2 module, ownership and resource guards are preserved;
+attempt 1 and the original sources remain unchanged. Capture5 has not run.
+
+The failed run still saved a 50,331,648-byte ETL, SHA
+`fd599e32c9a01192cdb06b68bda9a1bae8fa3b5df8e314d2eb45f9bc28c75ec7`.
+One owned offline reader child opened it, but aborted at the original 64 MiB
+aggregate export cap. Its incomplete prefix retains 29,690 events, including
+5,256 actual PMC47/version2 events with valid TDH property widths and source
+ID 9. Only two buffer callbacks occurred; no interval events were reached.
+This proves real event delivery to the reader, not complete metadata, loss-free
+recording, source semantics, game attribution or an FPS improvement. The failed
+export and all partial files remain preserved without an unchanged retry.
+
+A distinct reader2 raises only the aggregate output allowance to 2 GiB and
+adds six pure boundary checks. The 4 MiB summary reserve, 256 MiB input cap,
+two-million-event cap, schema/property limits, all raw fields, no PID filter,
+108-second soft limit and 120-second owned child limit remain. Its runner
+requires 4 GiB free disk and fresh native/commit admission before each child.
+Compile, link and all 34 pure checks pass in three serial owned children. The
+actual compiler dependency closure matches the previous 315 entries with only
+the source substituted. The earlier synthetic TDH fixture is retained as
+ancestry and was not repeated. This builds diagnostic tooling, not a game fix.
+
+One separate reader2 export then completes all 393,155 events and 61 schemas
+from the preserved failed recording, with 48 buffer callbacks and all three
+offline API statuses zero. Its owned child exits zero and drains in 49.484
+seconds; aggregate output is 844,759,913 bytes. Independent input/summary/schema
+audits pass. There are 28,020 PMC samples and one CollectionEnd74/version3
+event, but no SetInterval72 or CollectionStart73. The current analyzer therefore
+cannot establish the beginning of a valid interval. Header loss counters are
+zero, while 213,142 events with unknown schemas remain retained.
+Complete export is transport evidence only, and the missing start metadata is
+being investigated before requesting another game recording.
+
+A finite passive scan finds no unknown schemas for required counter,
+process/thread lifetime or image events. The three unknown property values are
+the unrelated PerfInfo Mark34/version0 `Padding` field. CollectionEnd74/version3
+decodes source 9, new and old intervals 65,536, and name `IcacheMisses`; its
+fields pass the current scalar decoder. Version3 compatibility is therefore
+not the blocker. The absent CollectionStart remains UNKNOWN; the end event
+does not establish the beginning of a collection interval.
+
+Microsoft documents memory logging as circular and file logging as sequential.
+That makes a short file-mode feasibility capture a possible next test, not a
+proven correction: missing start metadata alone does not prove circular wrap.
+File mode also needs its own temporary path and disk/time admission because it
+has no automatic finite file-size bound. See
+[logging modes](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/logging-mode),
+[ETW sessions](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/sessions)
+and [WPR start options](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options).
+
+Evidence under the private diagnostic root:
+
+- `capture1/peer-b-failed-capture1.json`: `fc12a8dea0200839e3cec6b4837ede0713351f0c79f6cf5eada983c8456af95a`.
+- `capture1/SOURCE_READY5.json`: `b9cac9f2ed1e9c837ed122fcebebc756e295233dd5248ffa60f5a560f05aa8ea`.
+- `capture1/peer-b-capture5-source1.json`: `831ea0a6095809d63e0c53197ea3b368a8077b78c1ac9e8e07a144159599c070`.
+- `decoder1/failed-capture1/attempt1/result.json`: `41b100b0f9f80d0ba3607da3b329e09d644c28e18fb32262fd4611064d70d612`.
+- `decoder1/failed-capture1/prefix-assessment1.json`: `fff914cbb54810b276baaa3fb39271421fa5359b46f8251d576c2151fdd616a4`.
+- `decoder1/source-preparation2.json`: `cc5175fb67078fbd2dce858f1ee95624f931717245812f39b61a47752a0cd98b`.
+- `decoder1/build2/result.json`: `9581b354eb3dacdfb231464610fb4b4a35757e207882f236bccfe3e470008c42`.
+- `decoder1/build2/output/etl_decode.exe`: 482,304 bytes, `f81af4fd14ddebe378a7073e9b4395aafe70e6d677b0af4bcc1f525635f36868`.
+- `decoder1/peer-b-reader2-source-and-build1.json`: `182ea3e92ff0042eb1ca071334cbd838043337dfe7eed9099d1236743ce48021`.
+- `decoder1/failed-capture1/attempt2/result.json`: `621ae864eb2a7ea36cbdd2fa89ac7482a1221b468fe7249f6ec7f232895191df`.
+- `decoder1/failed-capture1/peer-b-actual-export2.json`: `cc605dc85b4ec677a52060ad88e3f6a1647f91ef1fbdc5a0f592955588f01099`.
+- `decoder1/failed-capture1/peer-g-metadata2.json`: `3b1b14f121343ca77054be3491aa69a467aa0679f7db16cc8e5b2e49c5d6e9d4`.
+
+### Hardware-counter capture feasibility before the first recording, October 10
 
 The next diagnostic targets instruction-cache misses, data-cache misses and
 branch mispredictions. Ordinary instruction-pointer sampling identifies where
 the thread runs, but does not establish which of these costs dominates. No
-hardware-counter trace has been recorded or new speedup established yet.
+hardware-counter trace had been recorded at this feasibility stage. No new
+speedup was established.
 
 Live read-only checks identify Windows 10 Pro 22H2, build 19045.6466, and an AMD
 Ryzen 7 3700X (family 23, model 113, stepping 0). The installed WPR 10.0.19041
@@ -44,7 +128,7 @@ actual nonzero PMC events with their source/period metadata, loss checks and
 matching game PID/TID/module identity. Parser acceptance and catalog names do
 not validate counter semantics on this processor or establish a stall budget.
 
-The prepared administrator entry point is
+The initial prepared administrator entry point was
 `D:/Projects/BlueWake-pmu-feasibility-20261010/capture1/Launch4.cmd`. Independent
 source reviews pass for its exact recipe, actual launcher construction, private
 player/cache staging and accepted-C2-only commands. It runs at most three hidden
@@ -52,7 +136,7 @@ player/cache staging and accepted-C2-only commands. It runs at most three hidden
 and the named `BlueWakePmuIntro` instance. It requests no elevation itself.
 The actual limited-token gate check passes input identities and refuses before
 creating a capture attempt or launching any WPR/game child. The elevated path
-remains unexecuted.
+was unexecuted at this stage; the failed actual run is recorded above.
 
 Ownership survives a successful start followed by an output-guard error;
 ambiguous starts stay explicitly unknown. Cleanup never globally cancels a
@@ -78,7 +162,8 @@ The private evidence is under
 - `capture1/nonadmin-gate1.json`: `f3c0c99464a859e5afb61a1c240ba26221cc64757a1f5d35219fff81a91de70e`;
   actual gate refusal with no trace/game attempt directory created.
 
-No recording was started, stopped or cancelled. The accepted public host, C2
+No recording was started, stopped or cancelled during these feasibility checks.
+The accepted public host, C2
 module and tester ZIP remain unchanged. Reference:
 [Microsoft PMU recording](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-pmu-events),
 [WPR command-line options](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options),
@@ -119,8 +204,9 @@ Evidence under `D:/Projects/BlueWake-pmu-feasibility-20261010/decoder1/`:
   `84dfa0dea2775535c79ebce8ca7b3fab1feff0393a6aabe82d055801005cfaf4`.
 - `peer-b-actual-build1.json`: `07dac085621c2a22e4cc2b50e3523ecdddd6c0deda8476ae6e60ad93bfb2220d`.
 
-The administrator capture still has no attempt or ETL files. The next external
-step remains `capture1/Launch4.cmd` run as administrator. Actual sample source,
+At this initial reader build, administrator capture had no attempt or ETL files.
+The later failed recording and corrected `capture1/Launch5.cmd` are recorded
+above. Actual sample source,
 interval, loss, owned thread/process lifetime, loaded module and intro QPC
 window must be checked on that recording before interpreting counter counts.
 The accepted game binaries, tester and disabled Tingle wait-skip are unchanged.

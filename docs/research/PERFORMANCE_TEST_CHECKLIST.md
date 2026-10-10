@@ -28,17 +28,24 @@ four pairs, tradeoffs, private receipt hashes and the preserved harness failure.
 
 The next diagnostic uses separate instruction-cache, data-cache and branch
 hardware counters. Their three memory profiles pass the installed WPR parser,
-but the current Windows token lacks system-profiling privilege. No PMU trace
-or new FPS gain is established. Read-only query results, the unsupported
+but the agent's Windows token lacks system-profiling privilege. The user's
+administrator run recorded and stopped successfully, then failed before the
+game launch because of a stale path validator. No new FPS gain is established.
+Read-only query results, the unsupported
 Windows 11 command and the corrected status-code assumption are preserved in
 the hardware-counter section of [the investigation](DEEP_DEBUG_2026-10-08.md).
 This diagnostic does not change the tester or gate unrelated port milestones.
 
 The offline reader now builds, passes 28 pure checks and decodes both installed
-sample and interval schemas against deliberate test bytes. No real trace has
-been delivered yet; these checks establish tooling compatibility only. Source
-and exact build/audit receipts are preserved in the investigation's offline
-reader section. Administrator capture remains the next required external step.
+sample and interval schemas against deliberate test bytes. The first actual
+ETL export reached real PMC events but stopped at its 64 MiB output cap; its
+partial files are preserved. The corrected capture launcher passes 59 pure
+checks and independent source review. A separate reader with a 2 GiB output
+cap builds and passes 34 pure checks, with its other parsing/time limits intact.
+It exports all 393,155 events from the failed recording; missing CollectionStart
+metadata still prevents interval qualification. A complete game recording and metadata,
+loss and ownership checks remain required before interpreting counters. Source
+and exact build/audit receipts are preserved in the investigation.
 
 ## Implementation progress
 

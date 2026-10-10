@@ -22,7 +22,7 @@
 
 namespace {
 constexpr uint64_t kInputCap = 256ull << 20;
-constexpr uint64_t kOutputCap = 64ull << 20; // all three files together
+constexpr uint64_t kOutputCap = 2ull << 30; // all three files together; measured-output successor
 constexpr uint64_t kSummaryReserve = 4ull << 20;
 constexpr uint64_t kEventCap = 2000000;
 constexpr size_t kSchemaCap = 4096, kSchemaBytesCap = 1 << 20;
@@ -481,6 +481,13 @@ int self_test() {
     bool caught=false;try{unsigned_le({1,2,3});}catch(...){caught=true;}test(caught);
     Budget b;b.cap=16;b.reserve=4;b.charge(12);caught=false;try{b.charge(1);}catch(...){caught=true;}test(caught&&b.used==12);
     b.charge(4,true);caught=false;try{b.charge(1,true);}catch(...){caught=true;}test(caught&&b.used==16);
+    // Cap regression: cross the old cap, enforce the new boundary, and preserve summary reserve.
+    Budget large;test(large.cap==(2ull<<30)&&large.reserve==(4ull<<20));
+    large.charge(64ull<<20);test(large.used==(64ull<<20));
+    large.charge(large.cap-large.reserve-large.used);test(large.used==large.cap-large.reserve);
+    caught=false;try{large.charge(1);}catch(...){caught=true;}test(caught&&large.used==large.cap-large.reserve);
+    large.charge(large.reserve,true);test(large.used==large.cap);
+    caught=false;try{large.charge(1,true);}catch(...){caught=true;}test(caught&&large.used==large.cap);
     Schema bad;bad.bytes.resize(4);bad.validate();test(!bad.valid&&!bad.issues.empty());
     const size_t base=offsetof(TRACE_EVENT_INFO,EventPropertyInfoArray);
     Schema good;good.bytes.resize(base+sizeof(EVENT_PROPERTY_INFO)+4,0);
@@ -583,7 +590,7 @@ int decode(const std::wstring& etl_arg,const std::wstring& out_arg) {
         ",\"loss_inventory_note\":\"Name-based candidates only; UNKNOWN schema loss events may remain in the full raw event inventory. Zero counters do not establish PMU delivery or loss-free capture.\""+
         ",\"elapsed_seconds\":"+num(std::chrono::duration<double>(std::chrono::steady_clock::now()-d.begin).count())+
         ",\"schema_cache_key_bytes\":"+num(d.schema_cache_key_bytes)+
-        ",\"limits\":{\"input_bytes\":268435456,\"output_total_bytes\":67108864,\"summary_reserved_bytes\":4194304,\"schema_cache_key_bytes\":16777216,\"events\":2000000,\"schemas\":4096,\"soft_seconds\":108}"+
+        ",\"limits\":{\"input_bytes\":268435456,\"output_total_bytes\":2147483648,\"summary_reserved_bytes\":4194304,\"schema_cache_key_bytes\":16777216,\"events\":2000000,\"schemas\":4096,\"soft_seconds\":108}"+
         ",\"output_bytes_before_summary\":"+num(d.budget.used)+"}";
     d.summary.line(std::move(s),true);
     std::printf("ETL_DECODER_%s events=%llu schemas=%zu pmu_validated=0\n",complete?"EXPORT_COMPLETE":"EXPORT_FAILED",
