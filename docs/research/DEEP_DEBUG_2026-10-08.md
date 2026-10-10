@@ -2451,6 +2451,36 @@ The mixed pairs and current background load do not establish a reliable gain or 
 
 The public archive preserves three inactive handwritten experiment/fixture files. Generated game source, module routing and player data remain private. The archive has no production build target or automatic installation.
 
+### Further binary-matched source mapping, October 9
+
+Two more debug-only object clones now match the actual C2 executable bytes,
+named relocations, function offsets and complete Windows unwind data. Chunk
+0187 uses the rebuilt paired-singles source and object; chunk 0186 uses its
+unchanged retained object. Their original flags, absolute source paths and
+48/46 dependency closures remain fixed. Four compiler jobs and two passive
+CodeView readers completed and drained. No module was linked or game launched.
+
+The new tables associate 114 native RIP samples from the existing ordinary
+capture: 56 in the 0187 main procedure, 54 in the 0186 main procedure, and four
+in two 0186 loops. Interrupted instructions have 41 direct PC/cycle metadata
+operands, 21 direct guest-state operands, 35 arithmetic/move/control operations,
+12 branches and five other-memory operations. No sampled instruction is CALL.
+These are instruction-location counts, not removable CPU time.
+
+The largest associated public routine is J3DTexMtx::calc with ten samples.
+Native-source and published-PC routine regions agree for 102 samples, differ
+for four, and remain unassigned for eight. Optimized/shared regions and stale
+published PCs remain explicit limitations. This adds source evidence for
+distributed translated J3D work; it neither identifies a dominant new leaf nor
+reopens the failed PC-defer, SSA and tail trials on sample counts alone.
+
+| Private evidence under `build/deep-debug-20261008/line-map-next2-2/` | SHA-256 |
+| --- | --- |
+| `preparation1.json` | `1372d553b97e5a5f3bae34df1b27a16c5f7444506706a70b0888da317fba93ce` |
+| `attempt1/analysis-result1.json` | `b9253edc8fd4ec1e2e9a5b3001b695702d7a4a3584a6074ef14ebe71fea4b357` |
+| `independent-audit1.json` | `e5484ff67d75f7c1794b1f081104741a166b7c5a28eaeaa8519c0b52c4ef501b` |
+| `ordinary-attribution1/result1.json` | `87df44fdb17f3c1ad336dc50549fde9cc2f2af098da42a5a391bd2c47ee44b25` |
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
