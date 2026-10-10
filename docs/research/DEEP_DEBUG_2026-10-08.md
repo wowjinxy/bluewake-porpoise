@@ -8,6 +8,82 @@ The fresh capture with observation tracing disabled still identifies observation
 checks and translated game code as CPU optimization candidates. No repeatable
 ordinary-play speedup is qualified yet.
 
+### Hardware-counter capture feasibility, October 10
+
+The next diagnostic targets instruction-cache misses, data-cache misses and
+branch mispredictions. Ordinary instruction-pointer sampling identifies where
+the thread runs, but does not establish which of these costs dominates. No
+hardware-counter trace has been recorded or new speedup established yet.
+
+Live read-only checks identify Windows 10 Pro 22H2, build 19045.6466, and an AMD
+Ryzen 7 3700X (family 23, model 113, stepping 0). The installed WPR 10.0.19041
+successfully enumerates 176 profile sources, including `IcacheMisses`,
+`DcacheMisses` and `BranchMispredictions`, each with default interval 65,536.
+The attempted `-pmcsessions` query fails with unsupported-option error
+`0xc5600602`; that failure is preserved. Microsoft documents this query as
+Windows 11 or later, so it does not establish a failure to support recording.
+
+Three separate strict, single-counter profiles pass the installed recorder's
+read-only `-profiledetails` validation. Each requests `Loader`, `ProcessThread`
+and `PmcProfile` with 64 buffers of 1,024 KiB in memory mode. This is a configured
+64 MiB buffer payload, not a proven bound on all Windows allocation. WPR reports
+its normalized collector name, rather than the custom XML name. Named-instance
+ownership remains necessary for any future start and cleanup.
+
+A further read-only named-status query exits zero and reports `WPR is not
+recording`. The initial harness expected `0xc5583000`, incorrectly borrowed
+from the documentation's **stop** example. Its failed criterion and actual
+successful query are preserved without a rerun. Capture admission must use the
+installed recorder's observed status response, rather than that assumption.
+
+The current process has a limited, unelevated token; `SeSystemProfilePrivilege`
+and `SeProfileSingleProcessPrivilege` are both absent. These observations are
+from `TOKEN_QUERY` only, with no privilege or group changes. Recording still
+requires a suitable elevated execution context, successful strict allocation,
+actual nonzero PMC events with their source/period metadata, loss checks and
+matching game PID/TID/module identity. Parser acceptance and catalog names do
+not validate counter semantics on this processor or establish a stall budget.
+
+The prepared administrator entry point is
+`D:/Projects/BlueWake-pmu-feasibility-20261010/capture1/Launch4.cmd`. Independent
+source reviews pass for its exact recipe, actual launcher construction, private
+player/cache staging and accepted-C2-only commands. It runs at most three hidden
+1,800-VI intros, with 120-second child limits, separate single-counter profiles
+and the named `BlueWakePmuIntro` instance. It requests no elevation itself.
+The actual limited-token gate check passes input identities and refuses before
+creating a capture attempt or launching any WPR/game child. The elevated path
+remains unexecuted.
+
+Ownership survives a successful start followed by an output-guard error;
+ambiguous starts stay explicitly unknown. Cleanup never globally cancels a
+recording or stops an unproven session. Resource/output guards can still refuse
+an owned stop, and external termination can leave ETW active after the child
+Job closes. The capsule preserves named recovery instructions for those cases;
+it does not promise automatic cleanup under every failure. Captures are private
+diagnostic inputs, with no timing or release qualification.
+
+The private evidence is under
+`D:/Projects/BlueWake-pmu-feasibility-20261010/`:
+
+- `attempt1/result.json`: `fdeb0d4cb993685f35dfb22446b5e074f916eaed5d6fe6d3d0fbb5b35c177f20`;
+  preserves the successful source query and unsupported session query.
+- `token-attempt1/result.json`: `d4c5ff4e5382ce0bcd4fdc2fec6fd9bbd4a936ad5f7acd9d54f92431290ea757`.
+- `profile1/attempt2/result.json`: `daefccdc766feef2b8937978260a764c693bd2dee07c3ad559a74dd516d0a8bc`;
+  all three owned, hidden parser queries exit zero and drain.
+- `status1/attempt1/result.json`: `dd260ecda5fc5239d04b46bf9796b5af380a4f086e1f811a809ef6aa4d7f2982`;
+  retains the status-code assumption failure and actual absence response.
+- `capture1/capture-recipe4.json`: `ddbd6e2e7dd393e41065a04c4afcefb01725f3d97f8af661b695426b48c42cf9`.
+- `capture1/peer-b-source5.json`: `2df3f6ef086a99384786cd56352f42ff58f287b0f64113f58607b0664844d450`.
+- `capture1/peer-g-source4.json`: `e83e62ac2c9bc8469142fc0c62145689dadfdae6d68f1a3ebd6dcfeb1c35fbb4`.
+- `capture1/nonadmin-gate1.json`: `f3c0c99464a859e5afb61a1c240ba26221cc64757a1f5d35219fff81a91de70e`;
+  actual gate refusal with no trace/game attempt directory created.
+
+No recording was started, stopped or cancelled. The accepted public host, C2
+module and tester ZIP remain unchanged. Reference:
+[Microsoft PMU recording](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-pmu-events),
+[WPR command-line options](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options),
+[ETW session permissions](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-starttracew).
+
 ### Wider private calling convention: no qualified gain, October 10
 
 A new private candidate changes twenty original DOL chunk providers and the

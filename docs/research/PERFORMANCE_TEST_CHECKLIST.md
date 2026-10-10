@@ -26,6 +26,14 @@ inactive and closed to unchanged retries; no tester replacement follows. See
 the October 10 section of [the investigation](DEEP_DEBUG_2026-10-08.md) for all
 four pairs, tradeoffs, private receipt hashes and the preserved harness failure.
 
+The next diagnostic uses separate instruction-cache, data-cache and branch
+hardware counters. Their three memory profiles pass the installed WPR parser,
+but the current Windows token lacks system-profiling privilege. No PMU trace
+or new FPS gain is established. Read-only query results, the unsupported
+Windows 11 command and the corrected status-code assumption are preserved in
+the hardware-counter section of [the investigation](DEEP_DEBUG_2026-10-08.md).
+This diagnostic does not change the tester or gate unrelated port milestones.
+
 ## Implementation progress
 
 All 38 numbered candidates remain in scope. Implement dependency groups in
