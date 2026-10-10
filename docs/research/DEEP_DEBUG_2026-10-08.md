@@ -2847,6 +2847,54 @@ Private receipts under `build/deep-debug-20261008/readonly-fast-query1/`:
 - `chunk-pilot1/attempt1/codegen1.json`: `ad59887a300908ffc3600639af145a58e0199ea6a41c0dade98d1ba7e094328b`
 - `chunk-pilot1/attempt1/function-scope1.json`: `995abb30f93f395b01123600fe2095f511b4ec3f96a1f8a7ef0e86638db04d57`
 
+### Expanded current coverage and exact public-host attribution
+
+A second bounded native-CFG pass examines eight previously unmapped original
+C2 main owners. Their 276 samples split into 235 unique guest-function names,
+33 shared and eight unknown. Exact current object bytes and code relocation
+targets match the captured image; chunk 0160 uses its actual PSQ successor.
+Both passive passes read 13,977,368 image bytes, below their 16 MiB bound.
+Combined coverage is now 1,219 of 2,194 translated samples examined: 1,071
+unique, 118 shared, 30 unknown and 975 unexamined. The largest newly named
+routine, diffLight, has 18 samples. These are association counts, not exclusive
+cost or a new optimization qualification.
+
+The 73 previously unresolved mod-provider samples also now have unique actual
+object providers. Duplicate MAP basenames had prevented the first match.
+Exact external COFF definitions, retained link/source records and the compiled
+mod-table function relocations resolve all 11 owners. This does not yet name
+their interrupted guest instructions or establish the cost of a mod feature.
+
+The captured public host has its own matching MAP and PDB. PE CodeView GUID/age,
+MAP metadata, pdata starts and selected exact main-object payloads qualify
+675 of its 772 samples; two remain shared and 95 unknown. Qualified body
+counts include direct-call observation query 227, host main 92, chassis full
+facts 49, GX write 41, complete observation predicate 38 and shadow FIFO 36.
+No older host profile or nearest-only symbol supplies those counts.
+
+Within the 227 direct-query samples, reviewed native CFG/operands partition
+65 at the static page/mask lookup, 39 at live mode flags, 24 at interrupt/dirty
+checks, 40 at event state, four at overlap, 22 at raw REL, 14 at raw-code ranges,
+five at CPU/null/alignment and 14 at success. These identify instruction
+locations, not rejection frequencies or removable time. In particular, the
+65 lookup samples include one at the page load and none at the mask load;
+64 interrupt address/bit-index preparation. Sampling does not assign load
+latency to the following MOV instruction.
+
+The old 81.55% shortcut acceptance was measured before removal of the finite
+Bloom restriction. It cannot estimate the remaining callback workload of this
+public host. No current query-address distribution or refusal-frequency
+census has been inferred from the new capture.
+
+Private evidence under `build/deep-debug-20261008/`:
+
+- `targeted-current-native-cfg-next8-1/result2.json`: `8fcbd345a786d38166d8555583efcc896987a5ca4c28ea3c3955e35d49fac71f`
+- `targeted-current-native-cfg-next8-1/summary1.json`: `5c70403db68c7af82f2c54707e3d4b29708ffef85c993e08ee42b89f9263498e`
+- `current-primary-ranking1/unmapped-mod-providers1.json`: `03ad9fae0817e5da57d19593bb2a33e02799ec9786b756ce20eeafaee0ffaaae`
+- `current-host-attribution1/result1.json`: `692fc73a5a045e7d816fac458a01ee406548bf3639b10b2074ca1ac98502c790`
+- `current-host-attribution1/leaf-guard-partition1.json`: `d62f2bad49d46d6c6a90863104f5cc55136c5eb8352273a20ec11df9ffe7d611`
+- `current-host-attribution1/static-lookup-detail1.json`: `1cf2cf84abcd37008ab53352344df5e53b65e65a746f9312a224d06f605606af`
+
 ## Validation boundary and retained evidence
 
 A separate snapshot-only native call-stack diagnostic now passes owned
