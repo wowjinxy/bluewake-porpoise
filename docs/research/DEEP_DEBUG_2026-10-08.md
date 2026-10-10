@@ -3816,6 +3816,28 @@ memory-owner migration is therefore not justified by this measurement.
 - `native5/compile/result.json`: `0b2e31c04383c625798d26db2a0c6641d4c1f937f25950fa562b25e928808b49`
 - `native5/execute/result.json`: `d80995502b6a9e858b6f4aa444dcc42e860a79ca2aae2160db66a537efd64a30`
 
+One distinct successor captures the arena base in an unescaped local and uses
+it for all three mapped-load operands. Actual code removes two global arena
+reloads, retains the same 56-byte frame and saved registers, and still passes
+the unchanged 640-case corpus and eight-run benchmark. This does not rescue
+the architecture: original/candidate totals are 1,034,259,804/1,275,952,788
+thread cycles (+23.37 percent) and 0.289396/0.356648 QPC seconds (+23.24 percent).
+All four adjacent pairs remain slower. These are separate same-binary arm
+comparisons; the two experiments are not compared across their process runs
+to claim a benefit from the pointer capture.
+
+The mapped three-load lane is closed without production integration. Bounded
+source scans find mostly two-load sequences, with no substantial longer hot
+region established to amortize admission. Section-backed ownership remains
+source-feasible, but existing fixed-array consumers need coherent rebuilding
+and new lifetime/teardown handling. Those prerequisites do not establish a
+performance reason to migrate. No unchanged timing retry follows.
+
+- `source-preparation7.json`: `8df908292213b81a582e1395caa57f0bce4fb03afb30345e32ff1303f9770cad`
+- `native6/compile/result.json`: `b7f18ae5327ba0ef3094107d5183f1664fcd620386a707c502590b25b0d42cbf`
+- `native6/execute/result.json`: `32a9fc27d33cec4431a2cc9b5a9c981a390f129a31450ae432094d3d17a64e75`
+- `actual-microbenchmark6.json`: `966431cbd79994c85ce993278d725f2f4035a551c6b594e87adf88fb772dade3`
+
 ### Current graphics-worker samples, October 10
 
 A new hidden accepted13c/C2 title capture targets the exact registered GX
@@ -3894,6 +3916,7 @@ Private receipts under `build/deep-debug-20261008/gx-color-direct1/`:
 - `fixture2/owned-attempt1/result.json`: `c2ba907b1e936629c2ce0a59427f0dbb4cc146a9bed8b629326f4aa012cd168d`
 - `runtime1/actual-pair-aggregation1.json`: `69c7d722b2f333d5c03637efdc49561ce9c393fbd26dcb1ec9d5bdbf2a5bacde`
 - `runtime1/pipeline-db-audit1.json`: `8f9e0f0351d167c6666c678936335d053b74e02bdd0825378d1ee1d401fec7ce`
+- `scope-summary1.json`: `4c9660563a2c8d1f4c84a2cdb872eeccef940135dd04309fdd1040af664488bd`
 
 ## Validation boundary and retained evidence
 
