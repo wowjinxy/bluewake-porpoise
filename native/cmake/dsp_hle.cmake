@@ -60,6 +60,12 @@ endif ()
 target_compile_definitions(cos_dsp_hle PRIVATE
         _ARCH_64=1 ${_cos_dsp_arch} _DEFAULT_SOURCE __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS
         NOMINMAX=1 WIN32_LEAN_AND_MEAN=1)
+if (WIN32)
+    # RecompCore 8ab24da Source/CMakeLists.txt configures its Windows sources
+    # with both Unicode macros. Keep that contract when compiling DSPHLE alone:
+    # Common/StringUtil.h's TCHAR helpers use the wide-string branch on Windows.
+    target_compile_definitions(cos_dsp_hle PRIVATE UNICODE=1 _UNICODE=1)
+endif ()
 target_compile_features(cos_dsp_hle PRIVATE cxx_std_23)
 # Dolphin's code, not ours: its warnings are not acted on here.
 if (MSVC)
