@@ -30,8 +30,10 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -362,6 +364,7 @@ void testOffsetPtr() {
 }
 
 // Runs fn in a child process; true if the child ended abnormally (OSPanic aborts).
+#if !defined(_WIN32)
 bool panics(void (*fn)()) {
     std::fflush(nullptr);
     pid_t pid = fork();
@@ -404,6 +407,11 @@ void testOffsetPtrPanics() {
         p.setBase(&p);
     }));
 }
+#else
+void testOffsetPtrPanics() {
+    std::fprintf(stderr, "cos_pc_tests: SKIP OffsetPtr/null-and-range death checks: requires POSIX fork/wait\n");
+}
+#endif
 
 // TColor's u32 form is 0xRRGGBBAA (GXColor1u32, GXSetTevColor's packed form, BLO colours read
 // with JSUInputStream::readU32): r is its high byte whatever the host's byte order (step 4.5).

@@ -80,7 +80,7 @@ COS_SMOKE_TEST(basic) {
 int main(int argc, char** argv) {
     // Headless: SDL's audio (the AI's output, step 5.3) goes to its dummy driver unless the
     // caller chose one.
-    setenv("SDL_AUDIO_DRIVER", "dummy", 0);
+    cos_smoke::SetEnv("SDL_AUDIO_DRIVER", "dummy", 0);
     auto tests = cos_smoke::Registry();
     std::sort(tests.begin(), tests.end(), [](const cos_smoke::Test& a, const cos_smoke::Test& b) {
         return std::strcmp(a.name, b.name) < 0;

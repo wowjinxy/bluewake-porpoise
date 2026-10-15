@@ -91,6 +91,9 @@ if (TARGET cos_sdk)
             "${COS_ROOT}/src/SSystem/SComponent/c_sxyz.cpp")
     target_link_libraries(cos_pc_tests PRIVATE cos_game_headers cos_pc cos_sdk)
     set_target_properties(cos_pc_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+    if (WIN32)
+        aurora_copy_runtime_dlls(cos_pc_tests)
+    endif ()
 endif ()
 
 if (NOT TARGET cos_sdk)
@@ -188,6 +191,9 @@ set_target_properties(switchwaker PROPERTIES
         LINKER_LANGUAGE CXX
         # Relink when the response file changes (objects are already dependencies via add_dependencies)
         LINK_DEPENDS "${_exe_rsp}")
+if (WIN32)
+    aurora_copy_runtime_dlls(switchwaker)
+endif ()
 
 message(STATUS "cos_native: executable switchwaker from ${_exe_n_rel} REL units after the main.dol "
         "units, then audio")

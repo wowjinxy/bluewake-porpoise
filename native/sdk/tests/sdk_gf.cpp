@@ -21,8 +21,10 @@
 #include <cstring>
 #include <string>
 
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -198,6 +200,7 @@ COS_SMOKE_TEST(gf) {
 
     // GFSetArray has no size, so on Aurora it stops loudly (OSPanic) instead of writing a
     // truncated CP_REG_ARRAYBASE that Aurora would ignore. Run it in a forked child.
+#if !defined(_WIN32)
     {
         int fds[2];
         COS_SMOKE_CHECK(pipe(fds) == 0);
@@ -224,6 +227,9 @@ COS_SMOKE_TEST(gf) {
         COS_SMOKE_CHECK(!(WIFEXITED(status) && WEXITSTATUS(status) == 0));
         COS_SMOKE_CHECK(out.find("GFSetArraySized") != std::string::npos);
     }
+#else
+    std::fprintf(stderr, "cos_sdk_smoke: SKIP gf/GFSetArray death check: requires POSIX fork/wait\n");
+#endif
 
     // Outside a display list the same calls go to Aurora's command FIFO (no GPU is needed to
     // write it; it is only parsed at drain): they must not write into the last list's buffer.

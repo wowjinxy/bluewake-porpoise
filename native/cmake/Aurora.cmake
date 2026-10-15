@@ -141,6 +141,11 @@ FetchContent_Declare(aurora
             -P "${_cos_aurora_patch_script}"
         EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(aurora)
+if (WIN32)
+    # The Windows packages use shared SDL, nod and Dawn libraries. Aurora's helper
+    # also deploys the DXC DLLs that Dawn loads dynamically for its D3D12 backend.
+    include("${aurora_SOURCE_DIR}/cmake/AuroraCopyRuntimeDLLs.cmake")
+endif ()
 unset(_cos_aurora_head)
 
 # As in Dusklight. Off GEKKO, Aurora's <dolphin/mtx.h> maps the PSMTX* names to the C_MTX*

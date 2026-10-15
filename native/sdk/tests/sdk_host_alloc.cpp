@@ -11,10 +11,23 @@
 
 #include <dolphin/os.h>
 
+#if defined(_WIN32)
+#include <malloc.h>
+#include <process.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <pthread.h>
+#endif
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <new>
@@ -44,9 +57,15 @@ void* CountedAlloc(std::size_t size, std::size_t align) {
     if (size == 0) {
         size = 1;
     }
+#if defined(_WIN32)
+    // Every Windows allocation uses the aligned family so CountedFree can
+    // pair it correctly without allocation tracking of its own.
+    void* p = _aligned_malloc(size, align);
+#else
     void* p = align <= alignof(std::max_align_t)
                   ? std::malloc(size)
                   : std::aligned_alloc(align, (size + align - 1) & ~(align - 1));
+#endif
     if (p == nullptr) {
         std::abort();
     }
@@ -56,7 +75,11 @@ void* CountedAlloc(std::size_t size, std::size_t align) {
 void CountedFree(void* p) noexcept {
     if (p != nullptr) {
         Count();
+#if defined(_WIN32)
+        _aligned_free(p);
+#else
         std::free(p);
+#endif
     }
 }
 
@@ -127,6 +150,13 @@ void* Foreign(void*) {
     return OSGetCurrentThread() != nullptr ? reinterpret_cast<void*>(1) : nullptr;
 }
 
+#if defined(_WIN32)
+unsigned __stdcall ForeignWindows(void* result) {
+    *static_cast<void**>(result) = Foreign(nullptr);
+    return 0;
+}
+#endif
+
 } // namespace
 
 COS_SMOKE_TEST(host_alloc) {
@@ -164,10 +194,22 @@ COS_SMOKE_TEST(host_alloc) {
     COS_SMOKE_CHECK(OSJoinThread(&sWorker, &result));
     COS_SMOKE_CHECK(result == reinterpret_cast<void*>(0x42));
 
+    void* adopted = nullptr;
+#if defined(_WIN32)
+    // std::thread allocates through operator new and would contaminate the
+    // SDK allocation counter. A CRT thread matches the pthread case while
+    // arranging the CRT's per-thread cleanup on exit.
+    HANDLE foreign = reinterpret_cast<HANDLE>(
+        _beginthreadex(nullptr, 0, ForeignWindows, &adopted, 0, nullptr));
+    COS_SMOKE_CHECK(foreign != nullptr);
+    const DWORD wait = WaitForSingleObject(foreign, 10000);
+    const BOOL closed = CloseHandle(foreign);
+    COS_SMOKE_CHECK(wait == WAIT_OBJECT_0 && closed);
+#else
     pthread_t foreign;
     COS_SMOKE_CHECK(pthread_create(&foreign, nullptr, Foreign, nullptr) == 0);
-    void* adopted = nullptr;
     COS_SMOKE_CHECK(pthread_join(foreign, &adopted) == 0);
+#endif
     COS_SMOKE_CHECK(adopted != nullptr);
 
     // The worker's host thread drops its HostThread reference in its thread-local destructors,

@@ -20,8 +20,10 @@
 #include <string>
 #include <thread>
 
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 // Aurora's <dolphin/os.h> makes __OSBusClock a low-memory read; cos_sdk defines the variable the
 // decomp's headers declare (OSMisc.cpp).
@@ -30,6 +32,7 @@ extern "C" u32 __OSBusClock;
 
 namespace {
 
+#if !defined(_WIN32)
 struct ChildResult {
     bool exited = false;   // ended through exit/_Exit
     int exitCode = -1;     // when exited
@@ -93,6 +96,7 @@ bool ExitedZero(const ChildResult& r, const char* text) {
     }
     return true;
 }
+#endif
 
 // ---- reset ------------------------------------------------------------------------------------
 
@@ -206,12 +210,16 @@ bool TestReset() {
     COS_SMOKE_CHECK(!OSGetResetSwitchState() && !OSGetResetButtonState());
 
     // Without a hook OSResetSystem ends the process (exit code 0), as it never returns.
+#if !defined(_WIN32)
     COS_SMOKE_CHECK(ExitedZero(RunChild([] {
                                    OSResetSystem(OS_RESET_SHUTDOWN, 0, FALSE);
                                    std::fputs("OSResetSystem returned\n", stderr);
                                    std::abort();
                                }),
                                "no reset hook is set"));
+#else
+    std::fprintf(stderr, "cos_sdk_smoke: SKIP misc/reset-without-hook exit check: requires POSIX fork/wait\n");
+#endif
     return true;
 }
 
@@ -373,6 +381,7 @@ bool TestMisc() {
 
 // ---- report, panic, fatal and other ends ------------------------------------------------------
 
+#if !defined(_WIN32)
 bool TestEnds() {
     ChildResult r = RunChild([] { OSReport("report %d %s\n", 7, "ok"); });
     COS_SMOKE_CHECK(ExitedZero(r, "report 7 ok\n"));
@@ -398,9 +407,16 @@ bool TestEnds() {
     COS_SMOKE_CHECK(Aborted(RunChild([] { OSSetErrorHandler(17, nullptr); }), "out of range"));
     return true;
 }
+#endif
 
 } // namespace
 
 COS_SMOKE_TEST(misc) {
-    return TestMisc() && TestSram() && TestPpc() && TestReset() && TestEnds();
+    if (!(TestMisc() && TestSram() && TestPpc() && TestReset())) return false;
+#if !defined(_WIN32)
+    return TestEnds();
+#else
+    std::fprintf(stderr, "cos_sdk_smoke: SKIP misc/captured-report and process-end checks: requires POSIX fork/wait\n");
+    return true;
+#endif
 }

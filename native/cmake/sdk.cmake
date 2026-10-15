@@ -44,6 +44,9 @@ add_executable(cos_sdk_smoke ${COS_SDK_SMOKE_SOURCES})
 target_link_libraries(cos_sdk_smoke PRIVATE cos_sdk)
 # The program sits at the top of the build directory: build/native-mac/cos_sdk_smoke.
 set_target_properties(cos_sdk_smoke PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+if (WIN32)
+    aurora_copy_runtime_dlls(cos_sdk_smoke)
+endif ()
 
 # cos_sdk_smoke_tsan: the same tests and cos_sdk sources built with ThreadSanitizer (step 2.6a:
 # the OS thread, mutex, message and alarm code must run race-free). Aurora's libraries are linked
@@ -53,9 +56,10 @@ set_target_properties(cos_sdk_smoke PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE
 # drives Aurora's DVD stream commands, so it is left out here and COS_SDK_SMOKE_NO_DVD skips that
 # part. Not part of `all`:
 #   ninja cos_sdk_smoke_tsan && build/native-mac/cos_sdk_smoke_tsan
+# Windows clang-cl has no ThreadSanitizer runtime; do not offer an unusable target there.
 # On macOS 26.6 Xcode's clang 17 TSan runtime crashes at start-up; native/sdk/README.md
 # ("ThreadSanitizer run") builds it in build/native-mac-tsan with the Command Line Tools clang.
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" AND NOT CMAKE_CROSSCOMPILING)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32)
     set(COS_SDK_TSAN_SOURCES ${COS_SDK_SOURCES})
     list(FILTER COS_SDK_TSAN_SOURCES EXCLUDE REGEX "/src/audio/DTK\\.cpp$")
     add_executable(cos_sdk_smoke_tsan EXCLUDE_FROM_ALL ${COS_SDK_TSAN_SOURCES} ${COS_SDK_SMOKE_SOURCES})

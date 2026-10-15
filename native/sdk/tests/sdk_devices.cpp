@@ -29,8 +29,10 @@
 #include <string>
 #include <thread>
 
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace aurora {
 extern AuroraConfig g_config;
@@ -50,6 +52,7 @@ namespace {
 
 // Runs `fn` in a forked child with stderr captured; true if the child aborted (SIGABRT) and its
 // stderr contains `text`.
+#if !defined(_WIN32)
 bool ChildAborts(void (*fn)(), const char* text) {
     int fds[2];
     if (pipe(fds) != 0) {
@@ -85,6 +88,7 @@ bool ChildAborts(void (*fn)(), const char* text) {
     }
     return ok;
 }
+#endif
 
 // ---- ar ---------------------------------------------------------------------------------------
 
@@ -96,6 +100,7 @@ void DmaDone() {
 
 u32 sArStack[16];
 
+#if !defined(_WIN32)
 void ConsoleAddressDma() {
     ARStartDMA(ARAM_DIR_MRAM_TO_ARAM, 0x80001000u, ARGetBaseAddress(), 32);
 }
@@ -104,6 +109,7 @@ void AramOverrunDma() {
     void* buf = OSAllocFromArenaLo(64, 32);
     ARStartDMA(ARAM_DIR_ARAM_TO_MRAM, OSCachedToPhysical(buf), ARGetSize() - 32, 64);
 }
+#endif
 
 } // namespace
 
@@ -165,8 +171,12 @@ COS_SMOKE_TEST(ar) {
     ARFree(nullptr);
 
     // A console address in place of a MEM1 physical one, and a range past the end of ARAM, abort.
+#if !defined(_WIN32)
     COS_SMOKE_CHECK(ChildAborts(ConsoleAddressDma, "not inside MEM1"));
     COS_SMOKE_CHECK(ChildAborts(AramOverrunDma, "not inside ARAM"));
+#else
+    std::fprintf(stderr, "cos_sdk_smoke: SKIP ar/invalid-address death checks: requires POSIX fork/wait\n");
+#endif
     return true;
 }
 
@@ -180,10 +190,12 @@ void GbaCallback(s32, s32) {
     sGbaCallbacks++;
 }
 
+#if !defined(_WIN32)
 void BadGbaChannel() {
     u8 status;
     GBAGetStatus(4, &status);
 }
+#endif
 
 } // namespace
 
@@ -210,7 +222,11 @@ COS_SMOKE_TEST(gba) {
     COS_SMOKE_CHECK(status == 0xAB); // never written
     COS_SMOKE_CHECK(data[0] == 1 && data[3] == 4);
     COS_SMOKE_CHECK(sGbaCallbacks == 0); // refused requests never call back
+#if !defined(_WIN32)
     COS_SMOKE_CHECK(ChildAborts(BadGbaChannel, "invalid GBA channel 4"));
+#else
+    std::fprintf(stderr, "cos_sdk_smoke: SKIP gba/invalid-channel death check: requires POSIX fork/wait\n");
+#endif
     return true;
 }
 
@@ -355,9 +371,11 @@ COS_SMOKE_TEST(si) {
 
 namespace {
 
+#if !defined(_WIN32)
 void ExceptionToDebugger() {
     __DBExceptionDestination();
 }
+#endif
 
 } // namespace
 
@@ -386,6 +404,10 @@ COS_SMOKE_TEST(db) {
     DBOpen();
     DBClose();
 
+#if !defined(_WIN32)
     COS_SMOKE_CHECK(ChildAborts(ExceptionToDebugger, "routed to the debugger"));
+#else
+    std::fprintf(stderr, "cos_sdk_smoke: SKIP db/exception death check: requires POSIX fork/wait\n");
+#endif
     return true;
 }

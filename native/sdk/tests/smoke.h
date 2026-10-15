@@ -14,8 +14,28 @@
 #define COS_SDK_TESTS_SMOKE_H
 
 #include <cstdio>
+#include <cstdlib>
 
 namespace cos_smoke {
+
+// Keep environment helpers local to the tests. Including the game's entire
+// POSIX shim here would also expose unrelated CRT aliases to every SDK test.
+inline int SetEnv(const char* name, const char* value, int overwrite) {
+#if defined(_WIN32)
+    if (!overwrite && std::getenv(name) != nullptr) return 0;
+    return _putenv_s(name, value);
+#else
+    return ::setenv(name, value, overwrite);
+#endif
+}
+
+inline int UnsetEnv(const char* name) {
+#if defined(_WIN32)
+    return _putenv_s(name, "");
+#else
+    return ::unsetenv(name);
+#endif
+}
 
 using TestFn = bool (*)();
 

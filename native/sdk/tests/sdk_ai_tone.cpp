@@ -10,7 +10,11 @@
 #include <dolphin/ai/ai.h>
 #include <dolphin/os.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -29,6 +33,7 @@ constexpr u32 kBlockBytes = 0x280; // JAudio's DAC block at 32 kHz: 160 frames, 
 constexpr u32 kBlockFrames = kBlockBytes / 4;
 constexpr u32 kBlocks = 24;
 constexpr u32 kFrames = kBlocks * kBlockFrames;
+constexpr double kPi = 3.14159265358979323846;
 
 u8* sTone = nullptr; // kBlocks blocks in MEM1
 std::atomic<u32> sInterrupts{0};
@@ -45,10 +50,10 @@ void ToneCallback() {
 }
 
 s16 Left(u32 i) {
-    return s16(std::lround(12000.0 * std::sin(2.0 * M_PI * 1000.0 * i / 32000.0)));
+    return s16(std::lround(12000.0 * std::sin(2.0 * kPi * 1000.0 * i / 32000.0)));
 }
 s16 Right(u32 i) {
-    return s16(std::lround(9000.0 * std::cos(2.0 * M_PI * 440.0 * i / 32000.0)));
+    return s16(std::lround(9000.0 * std::cos(2.0 * kPi * 440.0 * i / 32000.0)));
 }
 
 u32 LE32(const u8* p) {
@@ -73,17 +78,26 @@ static bool AiToneTest() {
         dumpPath = env;
     } else {
         const char* tmp = std::getenv("TMPDIR");
+#if defined(_WIN32)
+        if (tmp == nullptr || tmp[0] == '\0') tmp = std::getenv("TEMP");
+        if (tmp == nullptr || tmp[0] == '\0') tmp = ".";
+#endif
+#if defined(_WIN32)
+        const int processId = _getpid();
+#else
+        const int processId = getpid();
+#endif
         dumpPath = std::string(tmp != nullptr ? tmp : "/tmp") + "/cos_ai_tone_" +
-                   std::to_string(getpid()) + ".wav";
+                   std::to_string(processId) + ".wav";
         ownDump = true;
-        setenv("COS_AUDIO_DUMP", dumpPath.c_str(), 1);
+        cos_smoke::SetEnv("COS_AUDIO_DUMP", dumpPath.c_str(), 1);
     }
 
     // A fresh AIInit (any earlier test's AI state is reset) starts the dump.
     AIReset();
     AIInit(nullptr);
     if (ownDump) {
-        unsetenv("COS_AUDIO_DUMP"); // AIInit has read it; later tests get no dump
+        cos_smoke::UnsetEnv("COS_AUDIO_DUMP"); // AIInit has read it; later tests get no dump
     }
     COS_SMOKE_CHECK(AIGetDSPSampleRate() == AI_SAMPLERATE_32KHZ);
 
