@@ -12,20 +12,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#ifndef _OFF_T_DEFINED
-#define _OFF_T_DEFINED
-typedef int64_t off_t;
+// Windows headers carry their own linkage declarations. Keep them outside
+// the compatibility functions' extern "C" block, and omit min/max macros.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+// UCRT declares off_t itself (32 bits on Win64). Keep that ABI intact;
+// positioned I/O and fseeko/ftello below use explicit 64-bit offsets.
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-// Sleep from kernel32 without pulling in windows.h
-void __stdcall Sleep(unsigned long dwMilliseconds);
 
 #ifndef S_ISDIR
 #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
@@ -78,21 +84,11 @@ void __stdcall Sleep(unsigned long dwMilliseconds);
 #define PATH_MAX 4096
 #endif
 
-static inline int open(const char* path, int oflag, ...) {
-    int mode = 0;
-    if (oflag & _O_CREAT) {
-        va_list ap;
-        va_start(ap, oflag);
-        mode = va_arg(ap, int);
-        va_end(ap);
-    }
-    return _open(path, oflag, mode);
-}
+// io.h/stdio.h/process.h already declare the legacy POSIX spellings of
+// open, access, unlink, isatty, fileno, getpid, close, read and write.
+// Defining static functions with those names conflicts with UCRT's externs.
 
-#if defined(_WIN32)
-#include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
-#endif
 
 typedef uint32_t useconds_t;
 
@@ -107,42 +103,12 @@ typedef uint32_t useconds_t;
 
 #include <direct.h>
 
-static inline int access(const char* path, int mode) {
-    return _access(path, mode);
-}
-
-static inline int mkdir(const char* path, int mode) {
+static inline int cos_pc_mkdir(const char* path, int mode) {
     (void)mode;
     return _mkdir(path);
 }
-
-static inline int unlink(const char* path) {
-    return _unlink(path);
-}
-
-static inline int isatty(int fd) {
-    return _isatty(fd);
-}
-
-static inline int fileno(FILE* stream) {
-    return _fileno(stream);
-}
-
-static inline int getpid(void) {
-    return _getpid();
-}
-
-static inline int close(int fd) {
-    return _close(fd);
-}
-
-static inline int read(int fd, void* buf, unsigned int count) {
-    return _read(fd, buf, count);
-}
-
-static inline int write(int fd, const void* buf, unsigned int count) {
-    return _write(fd, buf, count);
-}
+// UCRT's legacy mkdir has one argument; POSIX callers supply a mode as well.
+#define mkdir(path, mode) cos_pc_mkdir((path), (mode))
 
 static inline ssize_t pread(int fd, void* buf, size_t count, int64_t offset) {
     int64_t cur = _lseeki64(fd, 0, SEEK_CUR);
@@ -188,9 +154,38 @@ static inline int nanosleep(const struct timespec* req, struct timespec* rem) {
 #endif
 
 static inline int clock_gettime(int clk_id, struct timespec* ts) {
-    (void)clk_id;
-    if (!ts) return -1;
-    return timespec_get(ts, TIME_UTC) ? 0 : -1;
+    if (ts == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (clk_id == CLOCK_REALTIME) {
+        if (timespec_get(ts, TIME_UTC) == TIME_UTC) return 0;
+        errno = EIO;
+        return -1;
+    }
+    if (clk_id == CLOCK_MONOTONIC) {
+        LARGE_INTEGER frequency, counter;
+        if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0 ||
+            !QueryPerformanceCounter(&counter) || counter.QuadPart < 0) {
+            errno = EIO;
+            return -1;
+        }
+        const int64_t remainder = counter.QuadPart % frequency.QuadPart;
+        ts->tv_sec = (time_t)(counter.QuadPart / frequency.QuadPart);
+        // Divide the whole seconds first so a long uptime cannot overflow the
+        // nanosecond multiplication. The fallback covers unusually high QPC
+        // frequencies while keeping tv_nsec in the timespec range.
+        if (remainder <= INT64_MAX / 1000000000LL) {
+            ts->tv_nsec = (long)(remainder * 1000000000LL / frequency.QuadPart);
+        } else {
+            const long double nanoseconds = (long double)remainder * 1000000000.0L /
+                                            (long double)frequency.QuadPart;
+            ts->tv_nsec = nanoseconds >= 1000000000.0L ? 999999999L : (long)nanoseconds;
+        }
+        return 0;
+    }
+    errno = EINVAL;
+    return -1;
 }
 
 static inline int pause(void) {

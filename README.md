@@ -76,13 +76,13 @@ This project builds upon the foundational work of:
 ## Build & Run Guide (Windows)
 
 ### Requirements
-1. **Visual Studio 2022** (Community or higher) with the **Desktop development with C++** workload.
-2. **CMake 3.28** or newer.
-3. **Python 3.10** or newer.
+1. **Visual Studio 2022** (Community or higher) with **Desktop development with C++** and the **C++ Clang tools for Windows** component. This port uses `clang-cl`; the MSVC `cl.exe` compiler is not supported.
+2. **CMake 3.28** or newer and **Ninja** (both are included with Visual Studio's C++ CMake tools).
+3. **Python 3.10** or newer, with **PyYAML** (`python -m pip install PyYAML`).
 4. **Git**.
 
-### 1. Extract Disc Assets & Audio
-Open PowerShell in the root directory:
+### 1. Prepare Asset Headers & Audio
+Open **Developer PowerShell for VS 2022** in the repository root, using its x64 tool environment. Ensure `clang-cl`, `cmake`, `ninja`, `python` and `git` are on `PATH`.
 
 ```powershell
 # Set path to your legally dumped GameCube ISO
@@ -91,34 +91,35 @@ $env:COS_DISC = "C:\Path\To\Legend of Zelda, The - The Wind Waker (USA).iso"
 # Fetch DSP audio backend
 python native/tools/fetch_recompcore.py
 
-# Generate game asset headers from your disc
-python native/tools/gen_assets.py --disc $env:COS_DISC --out build/native-win/assets/GZLE01
+# Generate headers from the pinned decompilation's configuration, without embedding game data.
+# The game reads the asset contents from COS_DISC at startup.
+python native/tools/gen_assets.py --stubs --out build/native-win/assets/GZLE01
 ```
+The preparation scripts fetch pinned dependencies into `ref/recompcore` and `build/decomp`. Existing checkouts at another revision are left unchanged. Asset output must be a fresh or empty directory; use another `--out` path to preserve an earlier preparation.
 
 ### 2. Configure CMake
 ```powershell
-cmake -S native -B build/native-win -G "Visual Studio 17 2022" -A x64
+cmake -S native -B build/native-win -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl `
+  -DCOS_RUNTIME_ASSETS=ON
 ```
+Use a fresh build directory when changing compilers or generators. The first configure downloads Aurora and its dependencies, including prebuilt Windows Dawn and nod packages.
 
 ### 3. Build the Game
 ```powershell
-cmake --build build/native-win --config Release --target switchwaker
+cmake --build build/native-win --target switchwaker --parallel 4
 ```
-The executable is generated at `build\native-win\Release\switchwaker.exe` (or `build\native-win\switchwaker.exe`).
+The executable is generated at `build\native-win\switchwaker.exe`.
 
 ### 4. Configuration & Launch
-Create or edit `user/settings.ini`:
+`COS_DISC` must remain set in the launching shell. For subsequent launches, you can also put the disc path in the `[dev]` section of `build/native-win/user/settings.ini`, next to the executable's user directory:
 ```ini
-COS_TARGET_FPS=120
-COS_FB_SCALE=3.0
-COS_ASPECT=16:9
-COS_FPS_OVERLAY=1
-COS_FULLSCREEN=0
-COS_ANISO=1
+COS_TARGET_FPS=30
 
 [dev]
 COS_DISC=C:/Path/To/Legend of Zelda, The - The Wind Waker (USA).iso
 ```
+Use `COS_TARGET_FPS=30` while validating the Windows build. High framerate interpolation and visual enhancements can be enabled afterward through the options menu.
 
 Start the game with:
 ```powershell
@@ -131,7 +132,7 @@ Start the game with:
 ## Controls & Options Menu
 
 - **Options Menu**: Press **F1** or **L + R + Z** on your controller to open the in-game options menu.
-- **Settings file**: Saved automatically to `user/settings.ini`.
+- **Settings file**: Saved automatically to `user/settings.ini` next to the executable (`build/native-win/user/settings.ini` for the build above).
 - **Target Framerate**: Toggle between 30, 60, or 120 FPS directly via `COS_TARGET_FPS`.
 - **Resolution**: Adjust `COS_FB_SCALE` (1.0 = native 480p, 2.0 = 1080p/1440p, 3.0 = 4K 2160p).
 

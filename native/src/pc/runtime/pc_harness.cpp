@@ -12,6 +12,7 @@
 #include <ctime>
 #include <unistd.h>
 #if defined(_WIN32)
+#include <fcntl.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
@@ -151,6 +152,11 @@ using namespace pc;
 extern "C" {
 
 void pc_harness_init(int argc, char* argv[]) {
+#if defined(_WIN32)
+    // POSIX descriptors are binary. UCRT otherwise translates CR/LF and treats
+    // Ctrl-Z as EOF when the disc, saves or captures are opened without O_BINARY.
+    _set_fmode(_O_BINARY);
+#endif
     (void)argc;
     (void)argv;
     sStartNs = monotonicNs();

@@ -67,6 +67,13 @@ namespace pc {
 
 namespace {
 
+#if defined(_WIN32)
+// UCRT's off_t is 32-bit; the Windows fseeko/ftello shim takes 64-bit offsets.
+using PackFileOffset = int64_t;
+#else
+using PackFileOffset = off_t;
+#endif
+
 constexpr char kIndexMagic[8] = {'T', 'W', 'W', 'H', 'D', 'I', 'X', '1'};
 constexpr uint32_t kIndexVersion = 1;
 constexpr size_t kHeaderSize = 40;
@@ -286,13 +293,13 @@ bool readPackRead(void* userData, const char* path, std::vector<uint8_t>& out) {
         FILE* f = pack->files[e.file];
         if (skipBytes == 0) {
             out.resize(e.size);
-            ok = fseeko(f, (off_t)e.offset, SEEK_SET) == 0 && fread(out.data(), 1, e.size, f) == e.size;
+            ok = fseeko(f, (PackFileOffset)e.offset, SEEK_SET) == 0 && fread(out.data(), 1, e.size, f) == e.size;
         } else {
             // The header, then the levels from the first one that fits the cap.
             out.resize(e.size - skipBytes);
-            ok = fseeko(f, (off_t)e.offset, SEEK_SET) == 0 &&
+            ok = fseeko(f, (PackFileOffset)e.offset, SEEK_SET) == 0 &&
                  fread(out.data(), 1, kDdsHeaderSize, f) == kDdsHeaderSize &&
-                 fseeko(f, (off_t)(e.offset + kDdsHeaderSize + skipBytes), SEEK_SET) == 0 &&
+                 fseeko(f, (PackFileOffset)(e.offset + kDdsHeaderSize + skipBytes), SEEK_SET) == 0 &&
                  fread(out.data() + kDdsHeaderSize, 1, out.size() - kDdsHeaderSize, f) ==
                      out.size() - kDdsHeaderSize;
         }
@@ -332,9 +339,9 @@ std::unique_ptr<Pack> openPack(const char* dir) {
     }
     std::vector<uint8_t> bytes;
     fseeko(f, 0, SEEK_END);
-    const off_t size = ftello(f);
+    const PackFileOffset size = ftello(f);
     fseeko(f, 0, SEEK_SET);
-    if (size > 0 && size < (off_t)256 * 1024 * 1024) {
+    if (size > 0 && size < (PackFileOffset)256 * 1024 * 1024) {
         bytes.resize((size_t)size);
         if (fread(bytes.data(), 1, bytes.size(), f) != bytes.size()) {
             bytes.clear();

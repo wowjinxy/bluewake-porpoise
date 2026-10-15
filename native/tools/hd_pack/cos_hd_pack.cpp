@@ -45,6 +45,12 @@ namespace fs = std::filesystem;
 
 namespace {
 
+#if defined(_WIN32)
+int strncasecmp(const char* left, const char* right, size_t count) {
+    return _strnicmp(left, right, count);
+}
+#endif
+
 enum class Fmt { BC1, BC3, BC7, RGBA, BGRA, RGBX, BGRX };
 
 bool isBC(Fmt f) { return f == Fmt::BC1 || f == Fmt::BC3 || f == Fmt::BC7; }
@@ -97,9 +103,17 @@ std::optional<Source> parseDDS(const fs::path& path, std::string& err) {
     Source s;
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) { err = "cannot open"; return std::nullopt; }
+#if defined(_WIN32)
+    // This standalone tool does not use the game's POSIX compatibility header.
+    // UCRT's off_t/ftell are 32-bit even in a 64-bit process.
+    _fseeki64(f, 0, SEEK_END);
+    const int64_t size = _ftelli64(f);
+    _fseeki64(f, 0, SEEK_SET);
+#else
     fseeko(f, 0, SEEK_END);
     const off_t size = ftello(f);
     fseeko(f, 0, SEEK_SET);
+#endif
     s.bytes.resize((size_t)size);
     const bool ok = fread(s.bytes.data(), 1, s.bytes.size(), f) == s.bytes.size();
     fclose(f);

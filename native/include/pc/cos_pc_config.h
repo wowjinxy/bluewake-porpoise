@@ -25,9 +25,11 @@
 
 #if defined(_WIN32)
 #include <sys/stat.h>
-typedef int64_t off_t;
+/* UCRT owns off_t (a 32-bit long even on Win64). Do not redefine a CRT type.
+ * The Windows unistd shim uses struct _stat64, so the descriptor query must
+ * select the matching 64-bit-size structure rather than _fstat64i32. */
 #ifndef fstat
-#define fstat _fstat
+#define fstat _fstat64
 #endif
 #ifndef S_ISREG
 #define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)

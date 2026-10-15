@@ -44,10 +44,15 @@ if (APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
 endif ()
 
 project(cos_native LANGUAGES C CXX)
-set(CMAKE_MSVC_MANIFEST_OPTION "")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
 
 if (WIN32)
+    if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+            NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        message(FATAL_ERROR "The Windows port requires clang-cl (LLVM's MSVC-compatible driver). "
+                "Configure with -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl.")
+    endif ()
+    set(CMAKE_MSVC_MANIFEST_OPTION "")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
     file(GLOB _WIN_SDK_DIRS "C:/Program Files (x86)/Windows Kits/10/Include/10.*")
     if (_WIN_SDK_DIRS)
         list(REVERSE _WIN_SDK_DIRS)
@@ -145,6 +150,11 @@ add_library(cos_scaffold_check OBJECT
         check/pc_check.cpp
         check/pc_check.c)
 target_link_libraries(cos_scaffold_check PRIVATE cos_game_headers)
+
+if (WIN32)
+    add_executable(cos_windows_io_tests check/windows_io.cpp)
+    target_link_libraries(cos_windows_io_tests PRIVATE cos_game_headers)
+endif ()
 
 # SDK header check (phase 2, step 2.3): every SDK header name the decomp has, in one unit, against
 # the game's SDK headers (Aurora's plus the native/include/sdk forwarders). cos_sdk_shadow_check

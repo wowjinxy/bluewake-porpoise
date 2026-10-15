@@ -1,4 +1,4 @@
-// COS_TARGET_FPS: 30 (console native), 60 (fluid native PC default), 120 (high refresh).
+// COS_TARGET_FPS: 30 (console native default), 60 or 120 (optional interpolation).
 #include "pc/pc_fps.h"
 #include "pc/pc_settings.h"
 
@@ -15,10 +15,10 @@ int parse() {
         v = pc_settings_get("COS_TARGET_FPS");
     }
     if (v == nullptr || v[0] == '\0') {
-        return 60; // 60 FPS default with decoupled architecture
+        return 30; // Qualify the original game rate before optional interpolation.
     }
     int fps = atoi(v);
-    if (fps <= 0) return 60;
+    if (fps <= 0) return 30;
     return fps;
 }
 
@@ -40,7 +40,7 @@ float pc_time_step(void) {
 }
 
 void pc_target_fps_set(int fps) {
-    if (fps <= 0) fps = 60;
+    if (fps <= 0) fps = 30;
     sTargetFps = fps;
 }
 
