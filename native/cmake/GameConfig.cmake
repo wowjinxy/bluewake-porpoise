@@ -17,6 +17,12 @@ set(COS_GAME_COMPILE_DEFS
         VERSION=${COS_VERSION}
         NDEBUG=1)
 
+if (WIN32)
+    # Strict clang mode defines __STDC__, so UCRT otherwise hides the POSIX
+    # spellings used by the SDK and the Windows unistd compatibility header.
+    list(APPEND COS_GAME_COMPILE_DEFS _CRT_DECLARE_NONSTDC_NAMES=1)
+endif ()
+
 # docs/RUNTIME_ASSETS.md: compile against the stub assets/ headers of `gen_assets.sh --stubs` (no
 # game data, no disc needed) and fill those arrays from the player's disc at start-up
 # (native/src/pc/runtime/pc_assets.cpp). COS_ASSETS_DIR must then hold the stubs.
