@@ -319,21 +319,24 @@ void pc_aurora_init(int argc, char* argv[]) {
         mDoAud_zelAudio_c::onInitFlag();
     }
 
-    // COS_SMOKE=save writes its own card: the path must be set before mDoMch_Create's CARDInit.
-    if (gConfig.smoke != nullptr && strcmp(gConfig.smoke, "save") == 0) {
+    // An explicit card directory applies to every run, including the title and debug-stage
+    // boots. prepareRunCard only selects the path; it never clears an existing card.
+    // The path must be set before mDoMch_Create's CARDInit.
+    const char* cardDir = getenv("COS_CARD_DIR");
+    if (cardDir != nullptr && cardDir[0] != '\0') {
+        prepareRunCard("COS_CARD_DIR");
+    } else if (gConfig.smoke != nullptr && strcmp(gConfig.smoke, "save") == 0) {
+        // COS_SMOKE=save writes its own card.
         prepareSaveSmoke();
-    }
-    // M11 new-game and M14 outset-real start from a clean memory card (pc_new_game.cpp): the
-    // name scene finds no save file and offers to create one.
-    if (newGameNeedsCleanCard()) {
+    } else if (newGameNeedsCleanCard()) {
+        // M11 new-game and M14 outset-real start from a clean memory card (pc_new_game.cpp):
+        // the name scene finds no save file and offers to create one.
         prepareRunCard(gConfig.milestone);
-    }
-    // COS_SMOKE=options-menu with "#card run" (bug B8's save through the save screen).
-    if (menuSmokeWantsRunCard()) {
+    } else if (menuSmokeWantsRunCard()) {
+        // COS_SMOKE=options-menu with "#card run" (bug B8's save through the save screen).
         prepareRunCard("options-menu");
-    }
-    // The save/load sweep (pc_save_sweep.cpp) writes and reads its own card.
-    if (saveSweepWantsRunCard()) {
+    } else if (saveSweepWantsRunCard()) {
+        // The save/load sweep (pc_save_sweep.cpp) writes and reads its own card.
         prepareRunCard(gConfig.smoke);
     }
 

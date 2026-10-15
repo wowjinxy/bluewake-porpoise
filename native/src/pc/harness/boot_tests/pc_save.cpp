@@ -465,14 +465,14 @@ void checkGci(u32 saveCount) {
 } // namespace
 
 void prepareRunCard(const char* who) {
-    if (gConfig.runDir == nullptr) {
+    const char* cardDir = getenv("COS_CARD_DIR");
+    if ((cardDir == nullptr || cardDir[0] == '\0') && gConfig.runDir == nullptr) {
         writef(STDERR_FILENO, "[cos] %s: needs COS_RUN_DIR (run it through native/tools/run.sh)\n",
                who);
         pc_exit(PC_EXIT_USAGE);
     }
     // A trailing slash: CARDSetBasePath keeps a path with no file name as the base directory.
     // COS_CARD_DIR: another card folder (the save/load sweep loads the card a save-sweep run wrote).
-    const char* cardDir = getenv("COS_CARD_DIR");
     if (cardDir != nullptr && cardDir[0] != '\0') {
         snprintf(sCardBase, sizeof(sCardBase), "%s/", cardDir);
     } else {
