@@ -423,6 +423,19 @@ includes its source/run manifest and licenses, without changing the game
 artifact or implying game qualification. Actual same-area two-game acceptance
 and complete remote models remain required.
 
+Source review subsequently found that the prototype's extra
+`settingTevStruct` call could change shared palette/player-light state, a palette
+table entry and gameplay RNG. Its stack lighting object could also leave a retained
+material light pointer. The corrected source captures the receiver's original
+current-draw lighting by value before local damage-fog effects, retains that
+copy at a stable private address, and requires the same frame and scene/player
+context before submission. A valid native lighting tag prevents the setter's
+initialization fallback. This first slice uses receiver same-area lighting;
+position-specific remote lighting remains future work. Console behavior is
+unchanged and the hook returns immediately with diagnostics disabled. The
+correction still needs a full build and actual native visual qualification;
+the earlier `a1e51826` visual diagnostic was held after this finding.
+
 ## Power Bracelets source checkpoint
 
 The native catalogue now includes item `0x28` as permanent MAX fact 24.
@@ -441,7 +454,11 @@ profiles, room stores and client journals. Wire protocol 4 and storage framing
 3 remain unchanged; previous files are preserved. The literal prior-schema
 fixtures remain byte-identical and now exercise refusal without rewriting.
 
-The new source and focused standalone checks are pending their first build.
+All eight standalone Windows suites passed at `2190269c` in
+[run 38982333726](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38982333726)
+in 18.05 seconds, along with both independent asset/body-policy tests. This
+covers schema refusal, transport deduplication, store/journal replay and
+copied settlement rules. A full game build is still pending.
 Genuine authored collection, receipt/replay, lifting heavy objects, wrist
 display and save/reload still require native qualification. Sword and shield
 facts 22/23 remain reserved.

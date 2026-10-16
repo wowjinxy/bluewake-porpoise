@@ -44,6 +44,14 @@ bool sAttempted, sReady, sHavePose;
 u64 sSceneEpoch;
 u32 sSubmittedFrame = std::numeric_limits<u32>::max();
 u32 sSubmissions;
+// setLightTevColorType retains &mLightObj in private material blocks. Keep this
+// value at a stable address through P1/DL submission, never on the caller stack.
+dKy_tevstr_c sReceiverLighting;
+u64 sLightingSceneEpoch;
+u32 sLightingFrame = std::numeric_limits<u32>::max();
+char sLightingStage[9]{};
+s8 sLightingRoom, sLightingLayer;
+bool sHaveReceiverLighting;
 
 struct CurrentHeap {
     JKRHeap* previous;
@@ -356,11 +364,31 @@ bool stage(const PcRemoteBodyPose& pose) {
     return true;
 }
 void hide() { sHavePose = false; forget_pose(); }
+void copy_receiver_lighting(const PcRemoteBodyPose& receiver, const dKy_tevstr_c* lighting) {
+    sHaveReceiverLighting = false;
+    // Only the original current native draw may authorize this value. Do not
+    // initialize or recompute lighting here: that would mutate palette/RNG state.
+    if (!lighting || lighting->mInitType != 0x7c || lighting->mLightMode != 1 ||
+        receiver.version != PC_REMOTE_BODY_POSE_VERSION ||
+        receiver.joint_count != PC_REMOTE_BODY_JOINTS || !receiver.scene_epoch ||
+        receiver.sample_frame != pc_frame_count() || receiver.room < 0 || receiver.room > 63 ||
+        receiver.layer < 0 || receiver.layer > 15 || !receiver.stage[0] || receiver.stage[8]) return;
+    sReceiverLighting = *lighting;
+    sLightingSceneEpoch = receiver.scene_epoch;
+    sLightingFrame = receiver.sample_frame;
+    std::memcpy(sLightingStage, receiver.stage, sizeof(sLightingStage));
+    sLightingRoom = receiver.room; sLightingLayer = receiver.layer;
+    sHaveReceiverLighting = true;
+}
 void before_p1(const PcRemoteBodyPose& receiver) {
     const u32 frame = pc_frame_count();
     if (!sReady || !sHavePose || sSubmittedFrame == frame) return;
     if (receiver.scene_epoch != sPose.scene_epoch || receiver.room != sPose.room || receiver.layer != sPose.layer ||
         std::memcmp(receiver.stage, sPose.stage, sizeof(sPose.stage)) || frame - sPose.sample_frame > 1) { hide(); return; }
+    if (!sHaveReceiverLighting || sLightingFrame != frame || sLightingSceneEpoch != receiver.scene_epoch ||
+        sLightingRoom != receiver.room || sLightingLayer != receiver.layer ||
+        std::memcmp(sLightingStage, receiver.stage, sizeof(sLightingStage)) ||
+        sReceiverLighting.mInitType != 0x7c) { hide(); return; }
     J3DState graphics;
     CurrentHeap current(sHeap);
     // World matrices already include actor transform. Apply diagnostic offset ONCE
@@ -374,11 +402,10 @@ void before_p1(const PcRemoteBodyPose& receiver) {
         sModel->setScaleFlag(i, sPose.scale_flags[i]);
     }
     sModel->calcWeightEnvelopeMtx();
-    dKy_tevstr_c lighting;
-    dKy_tevstr_init(&lighting, sPose.room, 0xff);
-    cXyz position(sPose.base[0][3], sPose.base[1][3], sPose.base[2][3]);
-    g_env_light.settingTevStruct(TEV_TYPE_PLAYER, &position, &lighting);
-    g_env_light.setLightTevColorType(sModel, &lighting);
+    // First slice reuses receiver same-area lighting, not remote-position lighting.
+    // Valid 0x7c skips the native UNK99 fallback; only private model/copied values
+    // are updated. No extra settingTevStruct, palette writes or gameplay RNG draw.
+    g_env_light.setLightTevColorType(sModel, &sReceiverLighting);
     dComIfGd_setListP1();
     J3DDrawBuffer* opa = j3dSys.getDrawBuffer(J3DSysDrawBuf_Opa);
     J3DDrawBuffer* xlu = j3dSys.getDrawBuffer(J3DSysDrawBuf_Xlu);

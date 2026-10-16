@@ -73,6 +73,17 @@ bool pc_remote_body_capture_native(J3DModel* model, daPy_lk_c* player, PcRemoteB
     return true; // Final world pose, without any diagnostic/remote offset.
 }
 
+void pc_remote_body_diagnostic_lighting(const dKy_tevstr_c& lighting, daPy_lk_c* player) {
+    // Keep the normal player draw path dormant unless one diagnostic is selected.
+    if (!selected() && !pc_network_body_diagnostic_selected()) return;
+    PcRemoteBodyPose receiver{};
+    if (!receiver_scene(receiver, player)) {
+        pc_remote_body::copy_receiver_lighting(receiver, nullptr);
+        return;
+    }
+    pc_remote_body::copy_receiver_lighting(receiver, &lighting);
+}
+
 void pc_remote_body_diagnostic_capture(J3DModel* model, daPy_lk_c* player) {
     if (pc_network_body_diagnostic_selected()) {
         pc_network_body_diagnostic_capture(model, player); return;

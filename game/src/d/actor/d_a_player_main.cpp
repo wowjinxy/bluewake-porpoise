@@ -1732,6 +1732,11 @@ BOOL daPy_lk_c::draw() {
         mSightPacket.setSight();
     }
     g_env_light.settingTevStruct(TEV_TYPE_PLAYER, &current.pos, &tevStr);
+#if TARGET_PC
+    // Diagnostic renderer copies this already-computed receiver light by value.
+    // Capture before local damage/confuse fog changes; ordinary lighting runs once.
+    pc_remote_body_diagnostic_lighting(tevStr, this);
+#endif
     if (checkPlayerNoDraw()) {
         offBodyEffect();
         drawMirrorLightModel();

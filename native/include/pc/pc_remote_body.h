@@ -24,12 +24,16 @@ typedef struct PcRemoteBodyPose {
 #ifdef __cplusplus
 class J3DModel;
 class daPy_lk_c;
+class dKy_tevstr_c;
 
 namespace pc_remote_body {
 // Game/render owner thread only; prepare never retains the local model pointer.
 bool prepare_private(J3DModel* local);
 bool stage(const PcRemoteBodyPose& pose);
 void hide();
+// Current draw's receiver lighting only, copied to stable private storage.
+// Passing nullptr invalidates an unsafe/stale capture without retaining pointers.
+void copy_receiver_lighting(const PcRemoteBodyPose& receiver_scene, const dKy_tevstr_c*);
 void before_p1(const PcRemoteBodyPose& receiver_scene);
 }
 
@@ -40,5 +44,6 @@ bool pc_remote_body_context_native(PcRemoteBodyPose*);
 // Narrow diagnostic controls, separate from the renderer. No player-facing
 // settings, input injection, network session or multiplayer authority.
 void pc_remote_body_diagnostic_capture(J3DModel*, daPy_lk_c*);
+void pc_remote_body_diagnostic_lighting(const dKy_tevstr_c&, daPy_lk_c*);
 void pc_remote_body_diagnostic_before_p1();
 #endif
