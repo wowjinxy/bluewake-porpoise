@@ -20,8 +20,10 @@ See [Windows bring-up](docs/WINDOWS_PC_BRINGUP.md) for actual qualification and
 Controls/menu are first. Preserve LB/Tab + D-pad shortcuts, ordinary D-pad/Down,
 X/Y/Z and conducting directions when implementing them. Co-op means independent
 exploration with shared permanent progress, using an owned TCP service inspired
-by Anchor. It is not implemented or public Anchor-compatible. Real native
-events, safe saves and room isolation precede shared rewards. Tingle rescue
+by Anchor. A Telescope-only native LAN pilot is implemented and documented in
+docs/NATIVE_NETWORK.md; broader rewards and remote Links remain future work.
+It is not public Anchor-compatible. Real native events, safe saves and room
+isolation precede additional shared rewards. Tingle rescue
 wait-skip stays disabled; retain its old work/results and never make it a gate
 for unrelated milestones or tester builds. HD migration follows a stable PC port.
 

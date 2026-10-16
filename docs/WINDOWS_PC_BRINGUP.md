@@ -195,3 +195,57 @@ The final build log is `build/pc-bringup-20261015/build-migration-final-20261016
 Earlier setup attempts remain preserved. `runtime-boat/` and `runtime-boat2/` exhausted their process bounds while the ordinary King conversation still needed native A confirmation. The successful retry sends normal A only in the live dialogue states; it does not write story flags or bypass event state. `runtime-foot/` waited in Outset's opening sequence with a neutral driver; the focused conducting retry uses the ordinary Windfall spawn above. These failed setup runs are not passing action checks. The first aggregate script also expected a nonexistent `pad-echo: PASS` string; `runtime-pad/` itself passed with its real zero-error count oracle, recorded separately in `pad-native-validation.json`. The original aggregate report is preserved.
 
 The modifier is driven through the diagnostic input seam in these game cases. This qualifies the scripted native actions, not physical LB/Tab hardware use, full profile editing, full-game stability or an in-game save/reload transaction. The slice supplies no new performance benchmark or audible-quality acceptance. Earlier normal-new-game and performance evidence above retains its original executable identity. Tingle rescue wait-skip stays disabled and does not gate this slice or a local tester. The prior tester ZIP remains intact; a fresh controls tester is sealed separately only after the staged runtime reaches the title and its capture is inspected.
+
+## Native LAN migration checkpoint
+
+Recorded on 2026-10-15 (America/Chicago), with final runtime checks through
+2026-10-16 03:43 UTC. The native implementation checkpoint is
+`532ae6d18f9a8ed457473a0cf213fcd21a1dd720`. Its executable was linked at
+03:27:31 UTC, 13,761,536 bytes, SHA-256
+`ef84bbf98064b9d1a237d54e854b71d36be267b912594977e73248fd3ef7b833`.
+Later qualification documentation does not change that executable.
+
+This slice extracts a standalone native TCP client/server and durable room
+store, adds restart-only isolated room profiles for both CARD slots, native
+reward/lifecycle/save hooks and a Network tab. The first whitelist is Telescope
+ownership only. The old guest RAM/CPU adapters are not used. Personal mode
+does not create workers or search native actors each frame. Missing default
+network.ini selects personal mode; invalid explicit configuration refuses
+startup before CARD initialization.
+
+The named Windows game and foundation targets built successfully with the
+documented clang-cl toolchain. The exact candidate passed five standalone cases:
+schema 309 checks, store 91 checks, actual transport/replay/restart 264 checks,
+profile routing PASS and game-free progression correlation 51 checks. These
+foundation results are distinct from the following actual game acceptance:
+
+- Two simultaneous native games in different scenes completed Aryll's original
+  Telescope gift and exactly one remote native apply, preserving receiver XYZ
+  assignments and consumable counts. Both completed native save-screen
+  procedures, with actual GCI/native-state comparisons.
+- Two new offline processes loaded those room saves through native file select,
+  entered gameplay and retained the Telescope with zero new local awards or
+  remote applies. Both original GCI hashes stayed unchanged.
+- A new persistent host process restored the original room. A third native
+  receiver deferred canonical progress through 12 paused game frames, applied
+  once after closing the native menu and passed a native save. The original two
+  cards stayed unchanged.
+- The Network menu's actual Host action reached Connected and wrote a persistent
+  room record; its frame-600 image was inspected. Controls live/reload and fresh
+  30 FPS/personal/off defaults passed on a verified copy of the same executable.
+- Malformed-profile and conflicting personal-card overrides each produced their
+  expected specific refusal, exit 2 and no CARD initialization. Sentinels and
+  private card trees were unchanged. Successful cases exited zero; all owned
+  process jobs drained.
+
+The full case paths, hashes, setup failures, known retry/reconnect edges and
+remaining acceptance are in [Native LAN shared-progress pilot](NATIVE_NETWORK.md).
+Ignored evidence lives in
+`build/pc-bringup-20261015/migration-network-20261015/`. No production saves were
+used; no optional Tingle wait-skip was enabled. Acceptance uses same-machine
+local sockets and scripted native actions. It does not establish external LAN,
+general reward coverage, durable client save/receipt transactions, remote Links,
+physical controller use, new performance gains or full-game stability. The
+earlier normal-new-game/performance/audio results keep their original binary
+identities. Earlier tester ZIPs are retained; a new pilot ZIP is sealed only
+after its staged title launch and image inspection.
