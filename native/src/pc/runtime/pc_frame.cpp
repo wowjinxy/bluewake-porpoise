@@ -31,6 +31,7 @@
 // the same spin); no frame-usage statistics, interpolation, turbo mode or settings; a refused
 // aurora_begin_frame waits and retries instead of skipping the game frame.
 #include "pc_internal.h"
+#include "pc/pc_network_game.h"
 #include "pc/pc_gpu_opts.h"
 #include "pc/pc_dynres.h"
 #include "pc/pc_hd_textures.h"
@@ -1019,6 +1020,7 @@ void pc_frame_end(void) {
         // menu open its rows, labels and settings strings were about 1,400 operator new calls
         // (~95 KiB) per 100 frames in the main heap (bug B8).
         JKRPcHostAllocScope hostAlloc;
+        pc_network_game_frame();
         // The options menu (pc_menu.cpp): input, pause and its window, in this frame's ImGui frame.
         menuFrame();
         if (gConfig.fpsOverlay) {
@@ -1108,6 +1110,7 @@ void pc_frame_end(void) {
     kyProcsFrame(frames);
     chestFrame(frames);
     itemSweepFrame(frames);
+    networkProgressFrame(frames);
     saveSweepFrame(frames);
     eventSweepFrame(frames);
     eventWatchFrame(frames);

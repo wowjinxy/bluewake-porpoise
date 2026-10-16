@@ -37,6 +37,7 @@
 
 #include "pc/pc_controls.h"
 #include "pc/pc_quick_items.h"
+#include "pc/pc_network_game.h"
 
 #include "d/d_com_inf_game.h"
 #include "d/d_s_play.h"
@@ -678,15 +679,15 @@ const PcSettingDesc kBuiltins[] = {
 
 // ---- menu state ----------------------------------------------------------------------------------
 
-enum class RowKind { EditMode, Setting, Warp, Sailing, Screenshot, Reload };
+enum class RowKind { EditMode, Setting, Warp, Sailing, Screenshot, Reload, NetworkHost, NetworkJoin, NetworkLeave };
 
 struct Row {
     RowKind kind;
     const PcSettingDesc* desc = nullptr;
 };
 
-const char* const kTabNames[PC_SETTING_TABS] = {"Gráficos", "Rendimiento", "Depuración", "Controles"};
-const char* const kTabNamesEn[PC_SETTING_TABS] = {"Graphics", "Performance", "Debug", "Controls"};
+const char* const kTabNames[PC_SETTING_TABS] = {"Gráficos", "Rendimiento", "Depuración", "Controles", "Red"};
+const char* const kTabNamesEn[PC_SETTING_TABS] = {"Graphics", "Performance", "Debug", "Controls", "Network"};
 
 struct Menu {
     bool initialized = false;
@@ -732,6 +733,11 @@ std::vector<Row> rowsOf(int tab) {
         rows.push_back({RowKind::Sailing});
         rows.push_back({RowKind::Screenshot});
         rows.push_back({RowKind::Reload});
+    }
+    if (tab == PC_SETTING_TAB_NETWORK && !kSwitch) {
+        rows.push_back({RowKind::NetworkHost});
+        rows.push_back({RowKind::NetworkJoin});
+        rows.push_back({RowKind::NetworkLeave});
     }
     for (int i = 0; i < pc_settings_count(); i++) {
         const PcSettingDesc* d = pc_settings_at(i);
@@ -843,6 +849,16 @@ void doSailing() {
 
 void activate(const Row& r, int dir) {
     switch (r.kind) {
+    case RowKind::NetworkHost:
+    case RowKind::NetworkJoin:
+        if (dir == 0) {
+            pc_network_game_start(r.kind == RowKind::NetworkHost);
+            PcNetworkGameSnapshot view{}; pc_network_game_snapshot(&view); toast(view.message);
+        }
+        break;
+    case RowKind::NetworkLeave:
+        if (dir == 0) { pc_network_game_leave(); toast("Disconnected; room saves remain mounted."); }
+        break;
     case RowKind::EditMode:
         m.editMode = m.editMode == PC_MODE_HANDHELD ? PC_MODE_DOCKED : PC_MODE_HANDHELD;
         break;
@@ -909,6 +925,7 @@ void handleInput(uint32_t keys) {
         setOpen(false);
         return;
     }
+    if (m.tab == PC_SETTING_TAB_NETWORK && ImGui::GetIO().WantTextInput) return;
     if (m.warpPage) {
         const int count = kMainWarpCount + kAllWarpCount;
         if (p & kBack) {
@@ -968,6 +985,9 @@ const ImVec4 kWarn(1.00f, 0.55f, 0.45f, 1.0f);
 
 std::string rowLabel(const Row& r) {
     switch (r.kind) {
+    case RowKind::NetworkHost: return "Host room (LAN)";
+    case RowKind::NetworkJoin: return "Join / reconnect";
+    case RowKind::NetworkLeave: return "Leave and stop owned host";
     case RowKind::EditMode: return T("Perfil a editar", "Profile to edit");
     case RowKind::Warp: return T("Viajar a un escenario...", "Travel to a stage...");
     case RowKind::Sailing: return T("Navegar (barco, vela y batuta)", "Sail (boat, sail and baton)");
@@ -984,6 +1004,9 @@ std::string rowLabel(const Row& r) {
 
 std::string rowValue(const Row& r) {
     switch (r.kind) {
+    case RowKind::NetworkHost:
+    case RowKind::NetworkJoin: return pc_network_game_room_mode() ? "A / Enter" : "room profile + restart required";
+    case RowKind::NetworkLeave: return "A / Enter";
     case RowKind::EditMode:
         return std::string(modeName(m.editMode)) + (m.editMode == pc_settings_mode() ? T(" (activo)", " (active)") : "");
     case RowKind::Warp: return inPlay() ? T("A: elegir", "A: choose") : T("solo en partida", "in game only");
@@ -1021,6 +1044,9 @@ std::string rowNote(const Row& r) {
 
 std::string rowHelp(const Row& r) {
     switch (r.kind) {
+    case RowKind::NetworkHost: return "Start your own persistent room host. Both players explore independently; Telescope ownership is the current sharing pilot.";
+    case RowKind::NetworkJoin: return "Connect to the mounted room. Room/server/player changes require saving the profile and restarting.";
+    case RowKind::NetworkLeave: return "Disconnect this client and stop this process's host. The room save directory stays mounted.";
     case RowKind::EditMode:
         return T("Las opciones marcadas [portátil]/[sobremesa] guardan un valor por modo; se aplican solas al "
                  "conectar o quitar la base.",
@@ -1051,6 +1077,48 @@ std::string rowHelp(const Row& r) {
     return help;
 }
 
+void drawNetwork() {
+    if (kSwitch) { ImGui::TextWrapped("The native LAN pilot is currently qualified on Windows only."); return; }
+    PcNetworkGameSnapshot status{}; pc_network_game_snapshot(&status);
+    ImGui::Separator();
+    const char* names[] = {"Offline", "Connecting", "Connected", "Reconnecting", "Rejected", "Failed"};
+    const unsigned state = (unsigned)status.session.status;
+    ImGui::Text("%s | %s", status.room_mode ? "Isolated room saves" : "Personal saves", state < 6 ? names[state] : "Unknown");
+    ImGui::TextWrapped("%s", status.message);
+    if (status.session.message[0]) ImGui::TextWrapped("%s", status.session.message);
+    ImGui::Text("Pending: %u outgoing / %u incoming", status.session.pending_outgoing, status.session.pending_incoming);
+    if (status.unsaved_remote) ImGui::TextColored(kWarn, "Received progress is unsaved. Use the game's save screen.");
+    ImGui::TextWrapped("Experimental sharing: Telescope ownership only. Scenes, controls and resource counts stay local.");
+    for (unsigned i = 0; i < status.session.peer_count && i < PC_NETWORK_PEERS; ++i)
+        ImGui::Text("%s%s", status.session.peers[i].player_name, status.session.peers[i].online ? " (online)" : "");
+    ImGui::Separator();
+    static PcNetworkProfile draft{};
+    static bool initialized = false;
+    static int port = 0;
+    if (!initialized) { initialized = pc_network_game_profile(&draft); port = draft.config.port; }
+    if (!initialized) { ImGui::TextWrapped("Room configuration is unavailable before startup completes."); return; }
+    ImGui::TextUnformatted("Room settings (keyboard entry; active after restart)");
+    ImGui::Checkbox("Use isolated room saves", &draft.enabled);
+    ImGui::InputText("Server IP / localhost", draft.config.server, sizeof draft.config.server);
+    ImGui::InputInt("Port", &port);
+    ImGui::InputText("Room", draft.config.room, sizeof draft.config.room);
+    ImGui::InputText("Player name", draft.config.player_name, sizeof draft.config.player_name);
+    ImGui::InputText("Room credential", draft.config.room_password, sizeof draft.config.room_password, ImGuiInputTextFlags_Password);
+    ImGui::InputText("Host bind address", draft.bind, sizeof draft.bind);
+    ImGui::TextWrapped("Host bind: 127.0.0.1 for this PC; 0.0.0.0 for LAN clients.");
+    ImGui::InputText("Stable player identity", draft.config.player_id, sizeof draft.config.player_id, ImGuiInputTextFlags_ReadOnly);
+    if (ImGui::Button("Save room settings for next start")) {
+        char reason[192]{};
+        if (port <= 0 || port > 65535) toast("Port must be between 1 and 65535.");
+        else {
+            draft.config.port = (uint16_t)port;
+            if (!pc_network_game_save_profile(&draft, reason, sizeof reason)) toast(reason);
+            else toast("Room settings saved. Restart before connecting with the new profile.");
+        }
+    }
+    if (status.restart_pending) ImGui::TextColored(kWarn, "Restart required; the current save mount has not changed.");
+}
+
 void drawMenu() {
     ImGuiIO& io = ImGui::GetIO();
     // About 20 px text at 720 lines (the Switch's screen, the Mac's default window).
@@ -1075,8 +1143,8 @@ void drawMenu() {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.58f, 0.28f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.72f, 0.38f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.14f, 0.48f, 0.22f, 1.0f));
-    if (ImGui::Button("  Appliquer (Apply)  ")) {
-        toast("[OK] Options appliquees et sauvegardees !");
+    if (ImGui::Button(m.tab == PC_SETTING_TAB_NETWORK ? "  Close  " : "  Appliquer (Apply)  ")) {
+        if (m.tab != PC_SETTING_TAB_NETWORK) toast("[OK] Options appliquees et sauvegardees !");
         setOpen(false);
     }
     ImGui::PopStyleColor(3);
@@ -1186,6 +1254,7 @@ void drawMenu() {
                     help = "(" + note + ") " + help;
                 }
             }
+            if (m.tab == PC_SETTING_TAB_NETWORK) drawNetwork();
         }
         m.scrollToRow = false;
     }
@@ -1202,7 +1271,8 @@ void drawMenu() {
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetTextLineHeightWithSpacing() -
                          ImGui::GetStyle().WindowPadding.y);
     ImGui::TextColored(kDim, "%s",
-                       kSwitch ? T("A: changer   B: fermer   L/R: onglet   Moins: fermer",
+                       m.tab == PC_SETTING_TAB_NETWORK ? "A: action  B/Esc: close  L/R: tab | Room edits: Save settings, then restart"
+                       : kSwitch ? T("A: changer   B: fermer   L/R: onglet   Moins: fermer",
                                    "A: change   B: close   L/R: tab   Minus: close")
                                : T("A/Intro: changer   B/Esc: fermer (sauvegarde auto)   L/R, Q/E: onglet   F1: fermer",
                                    "A/Enter: change   B/Esc: close (auto-saved)   L/R, Q/E: tab   F1: close"));

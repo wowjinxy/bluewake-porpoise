@@ -1,0 +1,16 @@
+# COS_SMOKE=options-menu, isolated personal profile and sea:11:9.
+# L from Graphics reaches the appended Network tab without changing existing tab IDs.
+# Inspect frame600 with COS_SHOT_IMGUI=1. No Host/Join command is sent.
+#expect opened 1
+#expect setting COS_TARGET_FPS 30
+#expect setting COS_QUICK_ITEMS 0
+#expect setting COS_CAMERA_INVERT_X 0
+#expect setting COS_CAMERA_INVERT_Y 0
+#expect alloc-failures 0
+#expect end 660
+400 L+R+Z 0 0
+403 - 0 0
+406 L 0 0
+408 - 0 0
+620 B 0 0
+622 - 0 0

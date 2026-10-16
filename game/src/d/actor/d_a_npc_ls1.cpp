@@ -17,6 +17,9 @@
 #include "SSystem/SComponent/c_counter.h"
 #include "d/d_snap.h"
 #include "m_Do/m_Do_lib.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 
 static daNpc_Ls1_HIO_c l_HIO;
 static fopAc_ac_c* l_check_inf[20];
@@ -1216,6 +1219,9 @@ void daNpc_Ls1_c::checkOrder() {
                 m83B = true;
                 break;
             case 2:
+#if TARGET_PC
+                pc_progress_aryll_begin(fpcM_GetID(this), mEventIDTbl[mEventIndex]);
+#endif
                 mTelescopeScale = 0.0f;
                 setAnm_NUM(ANMNUM_GET_e, TRUE);
                 break;
@@ -1645,6 +1651,9 @@ void daNpc_Ls1_c::event_proc(int i_staffIdx) {
             m850 = 5;
             break;
         case 2:
+#if TARGET_PC
+            pc_progress_aryll_end(fpcM_GetID(this));
+#endif
             setStt(2);
             m850 = 1;
             m836 = true;
@@ -2420,6 +2429,9 @@ BOOL daNpc_Ls1_c::_execute() {
 
 /* 00004654-000046A8       .text _delete__11daNpc_Ls1_cFv */
 BOOL daNpc_Ls1_c::_delete() {
+#if TARGET_PC
+    pc_progress_aryll_cancel(fpcM_GetID(this));
+#endif
 #if VERSION == VERSION_DEMO
     if (mbResLoadIsComplete) {
         l_HIO.removeHIO();

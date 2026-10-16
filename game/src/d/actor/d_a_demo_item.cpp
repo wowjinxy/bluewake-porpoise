@@ -13,6 +13,9 @@
 #include "d/d_item.h"
 #include "m_Do/m_Do_mtx.h"
 #include "f_op/f_op_camera.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 
 const int daDitem_c::m_rot_time = 8*30;
 
@@ -438,6 +441,9 @@ void daDitem_c::setListStart() {
 BOOL daDitem_c::Delete() {
     if (!chkArgFlag(FLAG_UNK01)) {
         execItemGet(m_itemNo);
+#if TARGET_PC
+        pc_progress_item_effect(fpcM_GetID(this), m_itemNo);
+#endif
     }
     
     for (int i = 0; i < ARRAY_SIZE(mpEmitters); i++) {

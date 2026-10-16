@@ -46,7 +46,8 @@ typedef enum PcSettingTab {
     PC_SETTING_TAB_PERFORMANCE = 1, /* "Rendimiento" */
     PC_SETTING_TAB_DEBUG = 2,       /* "Depuración" */
     PC_SETTING_TAB_CONTROLS = 3,    /* "Controles"; existing tab IDs stay stable */
-    PC_SETTING_TABS = 4
+    PC_SETTING_TAB_NETWORK = 4,     /* Room profile and owned native LAN service */
+    PC_SETTING_TABS = 5
 } PcSettingTab;
 
 typedef enum PcOperationMode {

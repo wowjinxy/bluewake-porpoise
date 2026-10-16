@@ -21,6 +21,7 @@
 // audio is disabled). Changed: no settings, ImGui, mods or prelaunch UI; paths and options come
 // from the harness environment; failures exit through the harness codes.
 #include "pc_internal.h"
+#include "pc/pc_network_game.h"
 #include "pc/pc_hd_textures.h"
 #include "pc/pc_aspect.h"
 
@@ -322,8 +323,17 @@ void pc_aurora_init(int argc, char* argv[]) {
     // An explicit card directory applies to every run, including the title and debug-stage
     // boots. prepareRunCard only selects the path; it never clears an existing card.
     // The path must be set before mDoMch_Create's CARDInit.
+    char networkError[192]{};
+    if (!pc_network_game_prepare(sUserPath, networkError, sizeof networkError)) {
+        writef(STDERR_FILENO, "[cos] network profile startup refused: %s\n", networkError);
+        pc_exit(PC_EXIT_USAGE);
+    }
     const char* cardDir = getenv("COS_CARD_DIR");
-    if (cardDir != nullptr && cardDir[0] != '\0') {
+    if (pc_network_game_room_mode()) {
+        // Aurora opens both slots. Neither may inherit the personal default.
+        prepareRunCardAt(pc_network_game_card_base(), true);
+        writef(STDERR_FILENO, "[cos] isolated native room CARD slots A and B selected\n");
+    } else if (cardDir != nullptr && cardDir[0] != '\0') {
         prepareRunCard("COS_CARD_DIR");
     } else if (gConfig.smoke != nullptr && strcmp(gConfig.smoke, "save") == 0) {
         // COS_SMOKE=save writes its own card.

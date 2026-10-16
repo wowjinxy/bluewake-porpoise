@@ -20,6 +20,9 @@
 #include "SSystem/SComponent/c_math.h"
 #include "string.h"
 #include "stdio.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 
 /* 800589A8-80058B54       .text init__21dSv_player_status_a_cFv */
 void dSv_player_status_a_c::init() {
@@ -1395,6 +1398,10 @@ void dSv_info_c::init() {
 
     daNpc_Sarace_c::ship_race_rupee = 0;
     daNpc_Sarace_c::ship_race_result = 0;
+#if TARGET_PC
+    if (this == &g_dComIfG_gameInfo.save)
+        pc_progress_quest_initialized();
+#endif
 }
 
 /* 8005D660-8005D860       .text reinit__10dSv_info_cFv */
@@ -1786,6 +1793,10 @@ int dSv_info_c::memory_to_card(char* i_cardPtr, int i_dataNum) {
         return -1;
     } else {
         printf("SAVE size:%d\n", save_size);
+#if TARGET_PC
+        if (this == &g_dComIfG_gameInfo.save)
+            pc_progress_save_prepared(i_dataNum);
+#endif
         return 0;
     }
 }
@@ -1870,9 +1881,17 @@ int dSv_info_c::card_to_memory(char* i_cardPtr, int i_dataNum) {
     s32 load_size = buffer - buffer_start;
     if (load_size > (s32)sizeof(dSv_save_c_PACKED)) {
         printf("LOAD size over(%d/%d)\n", sizeof(dSv_save_c_PACKED), load_size);
+#if TARGET_PC
+        if (this == &g_dComIfG_gameInfo.save)
+            pc_progress_quest_loaded(i_dataNum, 0);
+#endif
         return -1;
     } else {
         printf("LOAD size:%d\n", load_size);
+#if TARGET_PC
+        if (this == &g_dComIfG_gameInfo.save)
+            pc_progress_quest_loaded(i_dataNum, 1);
+#endif
         return 0;
     }
 }

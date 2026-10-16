@@ -1,0 +1,250 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Adapted from BlueWake runtime/host/src; see PROVENANCE.md.
+#include "network_wire.h"
+#include "network_store.h"
+#include <atomic>
+#include <cstdio>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <random>
+#include <thread>
+using namespace pc_net;
+namespace {
+std::string nonce(){std::random_device random;std::string out(32,'0');const char* hex="0123456789abcdef";for(char& c:out)c=hex[random()&15];return out;}
+void copy(char* target,size_t n,const std::string& s){std::snprintf(target,n,"%s",s.c_str());}
+using Receipt=RoomReceipt;
+using Room=StoredRoom;
+struct ServerPeer{Pipe pipe;std::string room;PcNetworkPeer info{};bool joined=false,closing=false;Clock::time_point accepted=Clock::now();};
+void presence(Bytes& b,const PcNetworkPeer& p){string(b,p.player_id);string(b,p.player_name);b.push_back(p.online?1:0);}
+bool presence(Reader& r,PcNetworkPeer& p){if(!r.text(p.player_id,sizeof p.player_id)||!r.text(p.player_name,sizeof p.player_name))return false;
+    for(const char* s=p.player_id;*s;++s)if(!((*s>='0'&&*s<='9')||(*s>='a'&&*s<='f')))r.ok=false;
+    if(std::strlen(p.player_id)!=32||!p.player_name[0])r.ok=false;
+    for(const char* s=p.player_name;*s;++s)if(uint8_t(*s)<32||uint8_t(*s)>126)r.ok=false;
+    const uint8_t online=r.byte();if(online>1)r.ok=false;p.online=online!=0;return r.ok;}
+}
+struct PcNetworkServer{
+    Socket listener=invalid;uint16_t port=0;std::atomic<bool> stop{false};std::thread worker;
+    std::map<std::string,Room> rooms;std::vector<std::unique_ptr<ServerPeer>> peers;
+    std::unique_ptr<RoomStore> store;bool storage_failed=false;
+    ~PcNetworkServer(){stop=true;if(worker.joinable())worker.join();pc_net::close(listener);}
+    void reject(ServerPeer& p,const char* reason){Bytes b;string(b,reason);if(!p.pipe.queue(Reject,0,b))p.pipe.reset();p.closing=true;}
+    void roster(const std::string& room){Bytes b;unsigned count=0;for(const auto& p:peers)if(p->joined&&!p->closing&&p->room==room)++count;
+        put16(b,uint16_t(count));for(const auto& p:peers)if(p->joined&&!p->closing&&p->room==room)presence(b,p->info);
+        for(auto& p:peers)if(p->joined&&!p->closing&&p->room==room&&!p->pipe.queue(Roster,0,b))p->closing=true;}
+    void hello(ServerPeer& p,const Frame& f){
+        if(storage_failed){reject(p,"Durable room storage unavailable");return;}
+        Reader r{f.body};PcNetworkConfig c{};std::strcpy(c.server,"127.0.0.1");c.port=port;
+        if(!identity(r,c.compatibility)||!r.text(c.room,sizeof c.room)||!r.text(c.player_id,sizeof c.player_id)||
+            !r.text(c.player_name,sizeof c.player_name)||!r.text(c.room_password,sizeof c.room_password)){reject(p,"Malformed handshake");return;}
+        const uint8_t create=r.byte();c.create_room=create!=0;
+        if(create>1||!r.done()||f.sequence||!pc_network_config_valid(&c,nullptr,0)){reject(p,"Invalid Wind Waker handshake");return;}
+        auto found=rooms.find(c.room);
+        if(found==rooms.end()){
+            if(rooms.size()>=16){reject(p,"Server room limit reached");return;}
+            Room room;bool saved=false;std::string error;
+            if(store&&!store->load(c.compatibility,c.room,room,saved,error)){storage_failed=true;reject(p,"Durable room storage unavailable");return;}
+            if(!saved){
+                if(!c.create_room){reject(p,"Room does not exist; host it first");return;}
+                room.name=c.room;room.compatibility=c.compatibility;room.id=nonce();room_set_credential(room,c.room_password);
+            }
+            found=rooms.emplace(c.room,std::move(room)).first;
+        }
+        Room& room=found->second;
+        if(!same(room.compatibility,c.compatibility)){reject(p,"Native game/schema/rules compatibility mismatch");return;}
+        if(!room_credential_matches(room,c.room_password)){reject(p,"Room password mismatch");return;}
+        if(!room.clients.count(c.player_id)&&room.clients.size()>=128){reject(p,"Room player identity limit reached");return;}
+        /* Joining admits a stable replay identity. Persist it before Welcome,
+         * including initial room creation; never ACK an unsaved identity. */
+        if(!room.clients.count(c.player_id)){
+            Room next=room;next.clients.emplace(c.player_id,RoomClientHistory{});std::string error;
+            if(store&&!store->save(next,error)){storage_failed=true;reject(p,"Cannot persist room identity");return;}
+            room=std::move(next);
+        }
+        if(store){StoredRoom persisted;bool saved=false;std::string error;
+            if(!store->load(room.compatibility,room.name.c_str(),persisted,saved,error)||!saved||persisted.id!=room.id||persisted.revision!=room.revision){
+                storage_failed=true;reject(p,"Durable room storage unavailable");return;}}
+        /* A reconnect with the same stable identity replaces its prior socket,
+         * preventing one identity from generating two concurrent sequences. */
+        for(auto& other:peers)if(other.get()!=&p&&other->joined&&other->room==c.room&&std::strcmp(other->info.player_id,c.player_id)==0){other->closing=true;other->pipe.reset();}
+        p.room=c.room;copy(p.info.player_id,33,c.player_id);copy(p.info.player_name,33,c.player_name);p.info.online=true;p.joined=true;
+        Bytes b;identity(b,room.compatibility);string(b,room.id.c_str());put64(b,room.revision);put64(b,room.clients[c.player_id].sequence);
+        unsigned count=0;for(uint32_t v:room.progress.values)if(v)++count;put16(b,uint16_t(count));
+        for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(room.progress.values[key])delta(b,{key,room.progress.values[key]});
+        if(!p.pipe.queue(Welcome,0,b)){p.closing=true;return;}roster(p.room);
+    }
+    void handle(ServerPeer& p,const Frame& f){
+        if(!p.joined){if(f.type==Hello)hello(p,f);else reject(p,"Handshake required");return;}
+        Room& room=rooms.at(p.room);
+        if(f.type==Delta){Reader r{f.body};const auto d=delta(r);
+            if(storage_failed){reject(p,"Durable room storage unavailable");return;}
+            if(!r.done()||!pc_network_fact_valid(d)||!f.sequence){reject(p,"Invalid permanent progression delta");return;}
+            auto& history=room.clients.at(p.info.player_id);uint64_t& last=history.sequence;
+            if(last>=UINT64_MAX-1||f.sequence>last+1){reject(p,"Client sequence gap or exhaustion");return;}
+            const bool fresh=f.sequence==last+1;
+            if(!fresh){const auto old=std::find_if(history.recent.begin(),history.recent.end(),[&](const Receipt& x){return x.sequence==f.sequence;});
+                if(old==history.recent.end()||old->delta.key!=d.key||old->delta.value!=d.value){reject(p,"Replay payload mismatch or expired sequence");return;}
+                if(store){StoredRoom persisted;bool saved=false;std::string error;
+                    if(!store->load(room.compatibility,room.name.c_str(),persisted,saved,error)||!saved){storage_failed=true;reject(p,"Durable room storage unavailable");return;}}}
+            bool changed=false;
+            if(fresh){
+                Room next=room;changed=pc_network_fact_merge(&next.progress,d);
+                if(changed&&next.revision==UINT64_MAX-1){reject(p,"Room revision exhaustion");return;}
+                auto& next_history=next.clients.at(p.info.player_id);next_history.sequence=f.sequence;
+                next_history.recent.push_back({f.sequence,d});if(next_history.recent.size()>PC_NETWORK_QUEUE)next_history.recent.pop_front();
+                if(changed)++next.revision;
+                std::string error;if(store&&!store->save(next,error)){storage_failed=true;reject(p,"Cannot persist room progression");return;}
+                room=std::move(next);
+            }
+            Bytes b;string(b,p.info.player_id);put64(b,f.sequence);put64(b,room.revision);delta(b,{d.key,room.progress.values[d.key]});
+            if(changed){for(auto& other:peers)if(other->joined&&!other->closing&&other->room==p.room&&!other->pipe.queue(Commit,0,b))other->closing=true;}
+            else if(!p.pipe.queue(Commit,0,b))p.closing=true;
+        }else if(f.type==Ping){if(!f.body.empty()||!p.pipe.queue(Pong,f.sequence,{}))p.closing=true;}
+        else if(f.type==Leave){p.closing=true;}else reject(p,"Unexpected client packet");
+    }
+    void run(){
+        while(!stop){
+            for(unsigned tries=0;tries<8;++tries){Socket s=::accept(listener,nullptr,nullptr);if(s==invalid)break;
+                if(peers.size()>=PC_NETWORK_PEERS||!nonblocking(s)){pc_net::close(s);continue;}
+                auto p=std::make_unique<ServerPeer>();p->pipe.socket=s;peers.push_back(std::move(p));}
+            for(auto& p:peers){
+                if(p->pipe.socket==invalid)continue;
+                if(!p->pipe.pump()){p->closing=true;p->pipe.reset();continue;}
+                if(!p->closing)for(unsigned n=0;n<8;++n){Frame f;int result=p->pipe.next(f);if(result==0)break;
+                    if(result<0){reject(*p,"Malformed or oversized protocol frame");break;}handle(*p,f);if(p->closing)break;
+                    // Each durable Delta can block on a real flush. Yield to
+                    // other peers, then pump its ACK before the next receipt;
+                    // a full replay backlog must not hide ACKs/heartbeats.
+                    if(store&&f.type==Delta)break;}
+                const auto now=Clock::now();
+                if(p->pipe.eof||(!p->joined&&now-p->accepted>std::chrono::seconds(5))||now-p->pipe.activity>std::chrono::seconds(30)){p->closing=true;p->pipe.reset();}
+                if(p->closing&&p->pipe.output.empty())p->pipe.reset();
+            }
+            std::vector<std::string> changed;
+            peers.erase(std::remove_if(peers.begin(),peers.end(),[&](auto& p){if(p->pipe.socket!=invalid)return false;if(p->joined)changed.push_back(p->room);return true;}),peers.end());
+            for(const auto& room:changed)roster(room);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+};
+struct Pending{PcNetworkFact delta;uint64_t sequence;bool sent=false;};
+struct PcNetworkSession{
+    std::mutex mutex;std::atomic<bool> stop{false};std::thread worker;PcNetworkConfig config{};
+    PcNetworkSnapshot status{};std::deque<Pending> outgoing;std::deque<PcNetworkUpdate> incoming;
+    uint64_t next_sequence=1;
+    ~PcNetworkSession(){leave();}
+    void leave(){stop=true;if(worker.joinable())worker.join();std::lock_guard<std::mutex> lock(mutex);
+        outgoing.clear();incoming.clear();status.status=PC_NETWORK_OFFLINE;status.peer_count=0;copy(status.message,128,"Offline");next_sequence=1;}
+    void state(PcNetworkStatus value,const char* message){std::lock_guard<std::mutex> lock(mutex);status.status=value;copy(status.message,128,message);}
+    bool received(const Frame& f,bool& welcome,bool& rejected){
+        Reader r{f.body};std::lock_guard<std::mutex> lock(mutex);
+        if(f.type==Reject){char message[128];if(!r.text(message,sizeof message)||!r.done())return false;
+            status.status=PC_NETWORK_REJECTED;copy(status.message,128,message);rejected=true;return true;}
+        if(f.type==Welcome){PcNetworkCompatibility c{};char room_id[33];
+            if(welcome||!identity(r,c)||!same(c,config.compatibility)||!r.text(room_id,sizeof room_id))return false;
+            const uint64_t revision=r.qword(),ack=r.qword();const unsigned count=r.word();if(count>PC_NETWORK_QUEUE)return false;
+            if(ack==UINT64_MAX||std::strlen(room_id)!=32||std::strspn(room_id,"0123456789abcdef")!=32)return false;
+            std::deque<PcNetworkUpdate> fresh;std::array<bool,PC_NETWORK_FACTS> keys{};
+            for(unsigned i=0;i<count;++i){const auto d=delta(r);if(!pc_network_fact_valid(d)||keys[d.key])return false;keys[d.key]=true;
+                fresh.push_back({d,revision,status.generation+1,true});}if(!r.done())return false;
+            const bool changed=status.room_identity[0]&&std::strcmp(status.room_identity,room_id);
+            if(changed){uint64_t seq=ack+1;for(auto& p:outgoing){p.sequence=seq++;p.sent=false;}next_sequence=seq;}
+            else {while(!outgoing.empty()&&outgoing.front().sequence<=ack)outgoing.pop_front();next_sequence=std::max(next_sequence,ack+1);for(auto& p:outgoing)p.sent=false;}
+            incoming.swap(fresh);copy(status.room_identity,33,room_id);status.server_revision=revision;++status.generation;
+            status.status=PC_NETWORK_CONNECTED;copy(status.message,128,"Connected; isolated native permanent progress");welcome=true;return true;
+        }
+        if(!welcome)return false;
+        if(f.type==Commit){char origin[33];if(!r.text(origin,sizeof origin))return false;const uint64_t sequence=r.qword(),revision=r.qword();const auto d=delta(r);
+            if(!r.done()||!sequence||std::strlen(origin)!=32||std::strspn(origin,"0123456789abcdef")!=32||!pc_network_fact_valid(d))return false;
+            if(std::strcmp(origin,config.player_id)==0){while(!outgoing.empty()&&outgoing.front().sequence<=sequence)outgoing.pop_front();}
+            if(revision<=status.server_revision)return true;
+            if(revision!=status.server_revision+1||incoming.size()>=PC_NETWORK_QUEUE)return false;
+            incoming.push_back({d,revision,status.generation,false});status.server_revision=revision;++status.received;return true;
+        }
+        if(f.type==Roster){const unsigned count=r.word();if(count>PC_NETWORK_PEERS)return false;std::array<PcNetworkPeer,PC_NETWORK_PEERS> peers{};
+            for(unsigned i=0;i<count;++i){if(!presence(r,peers[i]))return false;
+                for(unsigned j=0;j<i;++j)if(!std::strcmp(peers[i].player_id,peers[j].player_id))return false;}if(!r.done())return false;
+            status.peer_count=count;for(unsigned i=0;i<count;++i)status.peers[i]=peers[i];return true;}
+        if(f.type==Pong)return f.body.empty();return false;
+    }
+    void run(){
+        bool ever=false;
+        while(!stop){state(ever?PC_NETWORK_RECONNECTING:PC_NETWORK_CONNECTING,ever?"Reconnecting; queued progress retained":"Connecting");
+            Pipe pipe;pipe.socket=pc_net::connect(config.server,config.port);
+            if(pipe.socket==invalid){for(unsigned i=0;i<40&&!stop;++i)std::this_thread::sleep_for(std::chrono::milliseconds(25));continue;}
+            Bytes hello;identity(hello,config.compatibility);string(hello,config.room);string(hello,config.player_id);string(hello,config.player_name);string(hello,config.room_password);hello.push_back(config.create_room?1:0);
+            pipe.queue(Hello,0,hello);bool welcome=false,rejected=false;auto ping=Clock::now(),began=Clock::now();
+            while(!stop){
+                if(!pipe.pump())break;bool valid=true;
+                for(unsigned i=0;i<128;++i){Frame f;const int result=pipe.next(f);if(result==0)break;if(result<0||!received(f,welcome,rejected)){valid=false;break;}if(rejected)break;}
+                if(!valid||rejected||pipe.eof)break;
+                if(welcome){
+                    std::lock_guard<std::mutex> lock(mutex);
+                    for(auto& p:outgoing)if(!p.sent){Bytes b;delta(b,p.delta);if(!pipe.queue(Delta,p.sequence,b)){valid=false;break;}p.sent=true;++status.sent;}
+                }
+                if(!valid)break;
+                const auto now=Clock::now();if(!welcome&&now-began>std::chrono::seconds(5))break;
+                if(now-pipe.activity>std::chrono::seconds(15))break;
+                if(now-ping>std::chrono::seconds(2)){pipe.queue(Ping,0,{});ping=now;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            if(stop){pipe.queue(Leave,0,{});pipe.pump();break;}
+            if(rejected)return;
+            if(welcome){ever=true;std::lock_guard<std::mutex> lock(mutex);++status.reconnects;for(auto& p:outgoing)p.sent=false;}
+            for(unsigned i=0;i<20&&!stop;++i)std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+    }
+};
+namespace {
+PcNetworkServer* start_server(const char* bind,uint16_t port,const char* directory,char* error,unsigned error_size){
+    const auto failure=[&](const char* text){if(error&&error_size)std::snprintf(error,error_size,"%s",text);return static_cast<PcNetworkServer*>(nullptr);};
+    if(!bind||!init())return nullptr;
+    try {
+    auto server=std::make_unique<PcNetworkServer>();server->listener=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+    if(server->listener==invalid||!nonblocking(server->listener))return failure("Cannot initialize dedicated server socket");
+#ifndef _WIN32
+    /* Rebind an owned listener after server-initiated disconnects leave TCP
+     * TIME_WAIT records. This does not permit concurrent listening servers;
+     * persistent writers additionally require the exclusive store lease. */
+    const int reuse=1;
+    if(setsockopt(server->listener,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof reuse)!=0)return failure("Cannot configure dedicated server socket");
+#endif
+    sockaddr_in address{};address.sin_family=AF_INET;address.sin_port=htons(port);
+    if(inet_pton(AF_INET,bind,&address.sin_addr)!=1||::bind(server->listener,reinterpret_cast<sockaddr*>(&address),sizeof address)!=0||listen(server->listener,8)!=0)return failure("Cannot bind dedicated server");
+#ifdef _WIN32
+    int size=sizeof address;
+#else
+    socklen_t size=sizeof address;
+#endif
+    if(getsockname(server->listener,reinterpret_cast<sockaddr*>(&address),&size)!=0)return failure("Cannot determine dedicated server port");
+    if(directory){server->store=std::make_unique<RoomStore>();std::string detail;
+        if(!server->store->open(directory,detail))return failure(detail.c_str());}
+    server->port=ntohs(address.sin_port);server->worker=std::thread([pointer=server.get()]{pointer->run();});return server.release();
+    }catch(...){return failure("Cannot start dedicated server worker");}
+}
+}
+extern "C" PcNetworkServer* pc_network_server_start(const char* bind,uint16_t port){return start_server(bind,port,nullptr,nullptr,0);}
+extern "C" PcNetworkServer* pc_network_server_start_persistent(const char* bind,uint16_t port,const char* directory,char* error,unsigned error_size){
+    if(!directory||!*directory){if(error&&error_size)std::snprintf(error,error_size,"%s","Missing durable server directory");return nullptr;}
+    if(error&&error_size)*error=0;return start_server(bind,port,directory,error,error_size);
+}
+extern "C" uint16_t pc_network_server_port(PcNetworkServer* s){return s?s->port:0;}
+extern "C" void pc_network_server_stop(PcNetworkServer* s){delete s;}
+extern "C" PcNetworkSession* pc_network_create(){try{return new PcNetworkSession;}catch(...){return nullptr;}}
+extern "C" void pc_network_destroy(PcNetworkSession* s){delete s;}
+extern "C" void pc_network_leave(PcNetworkSession* s){if(s)s->leave();}
+extern "C" bool pc_network_join(PcNetworkSession* s,const PcNetworkConfig* c){
+    char message[128];if(!s||!pc_network_config_valid(c,message,sizeof message))return false;s->leave();
+    {std::lock_guard<std::mutex> lock(s->mutex);s->config=*c;s->status={};s->status.status=PC_NETWORK_CONNECTING;
+        s->stop=false;}
+    try{s->worker=std::thread([s]{s->run();});return true;}catch(...){s->state(PC_NETWORK_FAILED,"Cannot start connection worker");return false;}
+}
+extern "C" bool pc_network_submit(PcNetworkSession* s,PcNetworkFact d){
+    if(!s||!pc_network_fact_valid(d))return false;std::lock_guard<std::mutex> lock(s->mutex);
+    if((s->status.status!=PC_NETWORK_CONNECTED&&s->status.status!=PC_NETWORK_RECONNECTING)||s->outgoing.size()>=PC_NETWORK_QUEUE||s->next_sequence==UINT64_MAX)return false;
+    s->outgoing.push_back({d,s->next_sequence++,false});return true;
+}
+extern "C" bool pc_network_poll(PcNetworkSession* s,PcNetworkUpdate* out){if(!s||!out)return false;std::lock_guard<std::mutex> lock(s->mutex);
+    if(s->incoming.empty())return false;*out=s->incoming.front();s->incoming.pop_front();return true;}
+extern "C" void pc_network_status(PcNetworkSession* s,PcNetworkSnapshot* out){if(!out)return;if(!s){*out={};return;}
+    std::lock_guard<std::mutex> lock(s->mutex);*out=s->status;out->pending_outgoing=unsigned(s->outgoing.size());out->pending_incoming=unsigned(s->incoming.size());}

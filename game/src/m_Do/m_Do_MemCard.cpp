@@ -11,6 +11,7 @@
 #include "dolphin/card.h"
 #if TARGET_PC
 #include "cos_card_extras.h" // CARD_ERROR_* (Aurora spells them CARD_RESULT_*)
+#include "pc/pc_progression.h"
 #include "dolphin/dvd/dvd.h" // DVDGetCurrentDiskID, for CARDInit below
 #endif
 #include "global.h"
@@ -218,6 +219,9 @@ void mDoMemCd_Ctrl_c::save(void* data, u32 size, u32 offset) {
         mCommand = CARD_STORE;
         OSUnlockMutex(&mMutex);
         OSSignalCond(&mCond);
+#if TARGET_PC
+        pc_progress_card_request(1);
+#endif
     }
 }
 
@@ -227,6 +231,9 @@ void mDoMemCd_Ctrl_c::load() {
         mCommand = CARD_RESTORE;
         OSUnlockMutex(&mMutex);
         OSSignalCond(&mCond);
+#if TARGET_PC
+        pc_progress_card_request(0);
+#endif
     }
 }
 
@@ -244,6 +251,9 @@ s32 mDoMemCd_Ctrl_c::LoadSync(void* dst, u32 size, u32 offset) {
         }
         OSUnlockMutex(&mMutex);
     }
+#if TARGET_PC
+    pc_progress_card_result(0, ret);
+#endif
     return ret;
 }
 
@@ -263,6 +273,9 @@ s32 mDoMemCd_Ctrl_c::SaveSync() {
         }
         OSUnlockMutex(&mMutex);
     }
+#if TARGET_PC
+    pc_progress_card_result(1, ret);
+#endif
     return ret;
 }
 

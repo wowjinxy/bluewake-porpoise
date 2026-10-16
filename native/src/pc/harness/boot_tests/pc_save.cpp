@@ -464,6 +464,16 @@ void checkGci(u32 saveCount) {
 
 } // namespace
 
+void prepareRunCardAt(const char* directory, bool bothChannels) {
+    if (directory == nullptr || directory[0] == '\0' ||
+        snprintf(sCardBase, sizeof(sCardBase), "%s/", directory) >= (int)sizeof(sCardBase) ||
+        snprintf(sGciPath, sizeof(sGciPath), "%sUSA/Card A/01-GZLE-%s.gci", sCardBase, kSaveFile) >= (int)sizeof(sGciPath)) {
+        writef(STDERR_FILENO, "[cos] invalid or overlong explicit memory-card directory\n");
+        pc_exit(PC_EXIT_USAGE);
+    }
+    CARDSetBasePath(sCardBase, bothChannels ? -1 : 0);
+}
+
 void prepareRunCard(const char* who) {
     const char* cardDir = getenv("COS_CARD_DIR");
     if ((cardDir == nullptr || cardDir[0] == '\0') && gConfig.runDir == nullptr) {
@@ -473,13 +483,12 @@ void prepareRunCard(const char* who) {
     }
     // A trailing slash: CARDSetBasePath keeps a path with no file name as the base directory.
     // COS_CARD_DIR: another card folder (the save/load sweep loads the card a save-sweep run wrote).
-    if (cardDir != nullptr && cardDir[0] != '\0') {
-        snprintf(sCardBase, sizeof(sCardBase), "%s/", cardDir);
-    } else {
-        snprintf(sCardBase, sizeof(sCardBase), "%s/card/", gConfig.runDir);
-    }
-    snprintf(sGciPath, sizeof(sGciPath), "%sUSA/Card A/01-GZLE-%s.gci", sCardBase, kSaveFile);
-    CARDSetBasePath(sCardBase, 0);
+    char selected[sizeof(sCardBase)];
+    const int length = cardDir != nullptr && cardDir[0] != '\0'
+        ? snprintf(selected, sizeof selected, "%s", cardDir)
+        : snprintf(selected, sizeof selected, "%s/card", gConfig.runDir);
+    if (length < 0 || length >= (int)sizeof selected) pc_exit(PC_EXIT_USAGE);
+    prepareRunCardAt(selected, false);
     writef(STDERR_FILENO, "[cos] %s: memory card A is the folder %s%s\n", who, sCardBase,
            cardDir != nullptr && cardDir[0] != '\0' ? " (COS_CARD_DIR)" : " (empty at start)");
 }

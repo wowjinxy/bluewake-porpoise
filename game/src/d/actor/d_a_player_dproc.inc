@@ -26,6 +26,9 @@
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_graphic.h"
 #include "JSystem/J3DGraphLoader/J3DAnmLoader.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 
 /* 8012CD60-8012CDD4       .text getDemoLookActor__9daPy_lk_cFv */
 fopAc_ac_c* daPy_lk_c::getDemoLookActor() {
@@ -808,6 +811,9 @@ BOOL daPy_lk_c::dProcGetItem() {
                     J3DTransformInfo* pJVar2 = m_old_fdata->getOldFrameTransInfo(0);
                     pJVar2->mTranslate.x *= -1.0f;
                     pJVar2->mTranslate.z *= -1.0f;
+#if TARGET_PC
+                    pc_progress_item_message_completed(fpcM_GetID(item), item->getItemNo());
+#endif
                     dComIfGp_evmng_cutEnd(mStaffIdx);
                     item->dead();
                     mProcVar7.m3574 = 1;

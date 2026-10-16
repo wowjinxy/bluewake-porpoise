@@ -154,6 +154,8 @@ void prepareSaveSmoke();
 // e.g. the card a COS_SMOKE=save-sweep run wrote). runCardGciPath: the game's save file
 // in that folder, nullptr when prepareRunCard was not called.
 void prepareRunCard(const char* who);
+// Explicit validated startup route. Room mode redirects both CARD channels.
+void prepareRunCardAt(const char* directory, bool bothChannels);
 const char* runCardGciPath();
 // pc_dzb.cpp: COS_SMOKE=dzb-sweep.
 [[noreturn]] void smokeDzbSweep();
@@ -339,6 +341,8 @@ void stageHopFrame(unsigned int frames);
 void cameraInvertFrame(unsigned int frames);
 // COS_SMOKE=quick-items: native equipment shortcuts with unchanged X/Y/Z slots.
 void quickItemsFrame(unsigned int frames);
+// Native room pilot: genuine gift, independent receiver, and saved offline observer.
+void networkProgressFrame(unsigned int frames);
 
 // pc_shot.cpp: parses COS_SHOT / COS_SHOT_EVERY (exit PC_EXIT_USAGE if malformed); without
 // them the screenshots stay off. Returns whether any frame will be captured.
