@@ -56,7 +56,8 @@ if (WIN32)
     get_filename_component(_cos_linker_name "${CMAKE_LINKER}" NAME)
     string(TOLOWER "${_cos_linker_name}" _cos_linker_name)
     if (_cos_linker_name STREQUAL "lld-link.exe" OR _cos_linker_name STREQUAL "lld-link")
-        # No manifest is generated above, so the MSVC manifest wrapper is unnecessary.
+        # lld-link handles any target-owned embedded manifest itself; CMake's external
+        # MSVC manifest wrapper is unnecessary. Other targets keep /MANIFEST:NO.
         # CMake's vs_link_exe expands objects.rsp before launching the linker, exceeding
         # Windows' command-line limit for the whole game. Let lld-link read the response
         # files itself, preserving the canonical link rule and the explicit object order.

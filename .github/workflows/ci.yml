@@ -264,18 +264,20 @@ jobs:
             -DTRACY_ENABLE=OFF
           if ($LASTEXITCODE -ne 0) { throw 'Windows runtime-assets configure failed' }
           Assert-FreeSpace
-          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke --parallel 2
+          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke cos_windows_long_paths --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Windows game compile/link failed' }
           $binary = Get-Item -LiteralPath 'build/ci-win-game/switchwaker.exe'
           if ($binary.Length -eq 0) { throw 'Linked game executable is empty' }
           $hash = (Get-FileHash -LiteralPath $binary.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Output ("Compile/link output: switchwaker.exe bytes={0} sha256={1}" -f $binary.Length, $hash)
           Assert-FreeSpace
-          # These two helper programs need no disc, game window or GPU. This is not gameplay proof.
+          # These helper programs need no disc, game window or GPU. This is not gameplay proof.
           & './build/ci-win-game/cos_pc_tests.exe'
           if ($LASTEXITCODE -ne 0) { throw 'Native PC helper tests failed' }
           & './build/ci-win-game/cos_sdk_smoke.exe'
           if ($LASTEXITCODE -ne 0) { throw 'Headless SDK smoke tests failed' }
+          & './build/ci-win-game/cos_windows_long_paths.exe' --root "$env:GITHUB_WORKSPACE/build/ci-win-game/long-path-fixture"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows long-path helper failed' }
       - name: Stage explicitly requested build-only files
         if: ${{ success() && inputs.scope == 'windows-game' && inputs.retain_build }}
         shell: pwsh

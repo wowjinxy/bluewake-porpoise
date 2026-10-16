@@ -106,8 +106,45 @@ The later `bea6a4a0` changes affect transport fixtures only; the native game cod
 is identical to this linked source.
 
 That first job retained logs and an output hash, not a downloadable build.
-Native runtime, real CARD recovery and expanded two-game acceptance remain
-pending. The qualified pilot executable/tester is unchanged.
+The qualified pilot executable/tester is unchanged. The separately retained
+`80489913` build subsequently passed the focused native evidence below; broad
+reward and full multiplayer acceptance remain pending.
+
+## Expanded native checkpoint, 2026-10-16
+
+[Windows run 38961066089](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38961066089)
+compiled/linked `80489913`, ran both headless helpers and retained the source-only
+build. The downloaded archive and all 32 manifest records were verified. Its
+executable is 13,897,216 bytes, SHA-256
+`faf582496f841dfa40231e5b5f6c9f1dea2551bfc392fd68113650c58ab050ac`.
+
+Two actual native processes in different scenes completed Aryll's genuine gift,
+one remote Telescope apply and 12 paused frames of deferral. XYZ selections and
+local resources stayed unchanged. Both native quest saves passed SaveSync and
+comparison with both GCI copies. Two fresh offline processes then selected the
+saved files normally, retained ownership, emitted zero awards/applies and passed
+the packed-state comparison. Source and copied GCI hashes stayed unchanged.
+
+The initial save harness exits after actual CARD completion before the next
+network-frame receipt flush. Read-only decoding confirmed both donor journals
+still had strict slot-0 intents and no receipts. The fresh native loads retired
+those intents and produced recovered receipts with matching actual GCI hashes,
+unchanged canonical revision 1/fact 1 and zero outgoing operations. This
+qualifies the post-CARD/pre-journal-flush recovery window for this reward; it
+does not establish all crash windows or ordinary receipt commit behavior.
+
+An earlier deep-path attempt preserved genuine gift/receive evidence but failed
+its first CARDCreate with SaveSync 2. No GCI was created. The final path was 238
+characters; Aurora's temporary suffix can extend it to 263. The executable
+lacked a long-path manifest. The same binary passed in fresh shorter paths;
+the exact native OS error was not logged, so the path-limit cause remains an
+inference. That failed run and both drained child records are retained.
+
+A Windows-only embedded long-path manifest and a real unprefixed Win32
+create/flush/replace/reopen helper have been added. The helper passed a
+no-output compiler check; linking, execution and a deep native GCI regression
+remain pending. The helper explicitly reports a skip when Windows' existing
+long-path policy is off; no system policy is changed.
 
 ## Dedicated progressive-reward native case
 
@@ -129,9 +166,12 @@ For offline verification use `COS_SMOKE=save-load` with
 
 All four affected translation units passed actual no-output clang-cl checks on
 2026-10-16. Protected build metadata and 2,522 source/header pins stayed
-unchanged. This additional harness has not yet been linked or run; the current
-retention build at `80489913` predates it. The fresh wallet fixture has zero
-rupees and does not qualify over-capacity resource corrections or ammo fairies.
+unchanged. The full Windows build including this harness passed in
+[run 38962853385](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38962853385)
+at `9fefbc9e`; the downloaded executable is 13,935,616 bytes, SHA-256
+`ad823408e8c1c600a2eef93793c55f5d16b59e3e1155605e03734c61b2870838`.
+Its native fairy run remains pending. The fresh wallet fixture has zero rupees
+and does not qualify over-capacity resource corrections or ammo fairies.
 
 ## Next implementation boundaries
 

@@ -15,6 +15,24 @@
 # - Needs Aurora (cos_sdk) and every module; skipped otherwise. Not part of `all`.
 include_guard(GLOBAL)
 
+if (WIN32)
+    # Keep CMake's direct lld-link rule: its vs_link_exe wrapper expands the
+    # game's large response file. The later target option overrides the global
+    # /MANIFEST:NO without changing other executables or requiring an RC unit.
+    function(cos_windows_long_path_manifest target)
+        set(_manifest "${COS_NATIVE_ROOT}/windows/switchwaker.manifest")
+        target_link_options(${target} PRIVATE "/MANIFEST:EMBED" "/MANIFESTINPUT:${_manifest}")
+        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${_manifest}")
+    endfunction()
+
+    # Headless Win32 I/O proof for the same manifest as the actual application.
+    # No game headers, disc data, SDL, renderer or system-policy changes.
+    add_executable(cos_windows_long_paths EXCLUDE_FROM_ALL "${COS_NATIVE_ROOT}/check/windows_long_paths.cpp")
+    target_compile_features(cos_windows_long_paths PRIVATE cxx_std_17)
+    target_link_libraries(cos_windows_long_paths PRIVATE advapi32)
+    cos_windows_long_path_manifest(cos_windows_long_paths)
+endif ()
+
 # The run harness (docs/NATIVE_PORT_PHASE4_6.md, step 6.0): native/src/pc/**/pc_*.cpp (runtime/,
 # features/, harness/...; native/src/pc/README.md), globbed recursively into the static library
 # cos_pc (API: native/include/pc/pc_harness.h). Compiled like the game units
@@ -193,6 +211,7 @@ set_target_properties(switchwaker PROPERTIES
         # Relink when the response file changes (objects are already dependencies via add_dependencies)
         LINK_DEPENDS "${_exe_rsp}")
 if (WIN32)
+    cos_windows_long_path_manifest(switchwaker)
     aurora_copy_runtime_dlls(switchwaker)
 endif ()
 
