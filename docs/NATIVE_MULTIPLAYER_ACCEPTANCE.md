@@ -109,6 +109,30 @@ That first job retained logs and an output hash, not a downloadable build.
 Native runtime, real CARD recovery and expanded two-game acceptance remain
 pending. The qualified pilot executable/tester is unchanged.
 
+## Dedicated progressive-reward native case
+
+The off-by-default `network-fairy` harness now provides two genuine wallet-fairy
+transactions in `Fairy01`. The receiver first obtains wallet tier 1 remotely,
+then claims its own same authored fairy, whose native choice is the tier-2 item.
+Acceptance requires one authored receipt, unchanged room revision, final tier 1,
+real event/presentation completion, actual native quest saves with both GCI
+copies compared, and fresh offline file-select loads of both players. Private
+peer markers coordinate timing; each process must independently qualify.
+
+Select `COS_SMOKE=network-fairy`, `COS_NETWORK_FAIRY_CASE=gift|duplicate`,
+`COS_BOOT_STAGE=Fairy01:0:0:-1` and `COS_TARGET_FPS=30`; omit other boot grants
+and network diagnostics. Both profiles and all writable paths must be under an
+explicit `COS_NETWORK_FAIRY_PRIVATE_ROOT` with opt-in marker
+`network-fairy.allow` containing exactly `BlueWake.Native.Fairy.Private.v1\n`.
+For offline verification use `COS_SMOKE=save-load` with
+`COS_NETWORK_FAIRY_CASE=observe` and no boot stage.
+
+All four affected translation units passed actual no-output clang-cl checks on
+2026-10-16. Protected build metadata and 2,522 source/header pins stayed
+unchanged. This additional harness has not yet been linked or run; the current
+retention build at `80489913` predates it. The fresh wallet fixture has zero
+rupees and does not qualify over-capacity resource corrections or ammo fairies.
+
 ## Next implementation boundaries
 
 These are source-backed design constraints, not implemented or qualified

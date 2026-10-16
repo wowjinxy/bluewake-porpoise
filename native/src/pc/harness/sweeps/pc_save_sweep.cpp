@@ -34,6 +34,7 @@
 // of the packed save (memory_to_card's order). native/tools/save_sweep.py runs both and diffs them.
 #include "pc_internal.h"
 #include "../smokes/pc_network_recovery_smoke.h"
+#include "../smokes/pc_network_fairy_smoke.h"
 #include "pc/pc_progression.h"
 
 #include "d/d_com_inf_game.h"
@@ -333,6 +334,7 @@ void saveFrame(unsigned int frames) {
         }
         mDoMemCdRWm_SetCheckSumGameData(sDataBuf, slot);
         networkRecoveryBeforeCardWrite();
+        networkFairyBeforeCardWrite();
         pc_progress_arm_quest_save(slot);
         mDoMemCd_Save(sDataBuf, sizeof(sDataBuf), 0);
         sState = kSaveWait;
@@ -396,6 +398,7 @@ void saveFrame(unsigned int frames) {
         writef(STDERR_FILENO, "[cos] %s: PASS saved file %d on %s (return place %s room %d point %d) at frame %u\n",
                sWho, slot + 1, dComIfGp_getStartStageName(), sReturnName, sReturnRoom, sReturnPoint, frames);
         if (networkRecoverySaveComplete(frames)) { sState = kDone; return; }
+        if (networkFairySaveComplete(frames)) { sState = kDone; return; }
         pc_exit(PC_EXIT_REACHED);
     }
     default:
@@ -490,6 +493,7 @@ void loadFrame(unsigned int frames) {
         writef(STDERR_FILENO, "[cos] save-load: PASS loaded %s room %d point %d\n", sReturnName, sReturnRoom,
                sReturnPoint);
         if (networkRecoveryLoadComplete(frames)) { sState = kDone; return; }
+        if (networkFairyLoadComplete(frames)) { sState = kDone; return; }
         pc_exit(PC_EXIT_REACHED);
     }
 }

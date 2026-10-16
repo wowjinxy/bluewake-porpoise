@@ -33,6 +33,7 @@
 #include "pc_internal.h"
 #include "pc/pc_network_game.h"
 #include "harness/smokes/pc_network_recovery_smoke.h"
+#include "harness/smokes/pc_network_fairy_smoke.h"
 #include "pc/pc_gpu_opts.h"
 #include "pc/pc_dynres.h"
 #include "pc/pc_hd_textures.h"
@@ -1113,6 +1114,7 @@ void pc_frame_end(void) {
     itemSweepFrame(frames);
     networkProgressFrame(frames);
     networkRecoveryFrame(frames);
+    networkFairyFrame(frames);
     saveSweepFrame(frames);
     eventSweepFrame(frames);
     eventWatchFrame(frames);

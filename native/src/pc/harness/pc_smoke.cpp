@@ -354,6 +354,7 @@ const Smoke kSmokes[] = {
     {"camera-invert", kInGame},
     {"quick-items", kInGame},
     {"network-progress", kInGame},
+    {"network-fairy", kInGame},
     {"picto-box", kInGame},
     {"stage-hop", kInGame},
     {"event-sweep", kInGame},
