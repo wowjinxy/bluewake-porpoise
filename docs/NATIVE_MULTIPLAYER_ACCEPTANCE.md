@@ -9,8 +9,8 @@ remain separate columns.
 The accepted model is independent exploration with shared permanent progress
 over an owned TCP service. Each player keeps local movement, camera, cutscenes
 and ordinary consumable counts. Steam and public Anchor services are not used.
-Visible players in a shared area are included in the working scope, pending the
-user's optional clarification. Presence must not control another simulation.
+Visible players in a shared area are included in the working scope. Presence
+must not control another simulation.
 
 ## Requirements and current evidence
 
@@ -25,7 +25,7 @@ user's optional clarification. Presence must not control another simulation.
 | Durable player saves and receipts | Pilot qualifies native saves and fresh offline loads of both Telescope room cards; server durability is separate | Persistent outgoing claims, client receipt journal, interrupted save/receipt recovery, native read/write failures and retry; offline persistence after host loss |
 | Reconnect and host restoration | Pilot standalone transport/replay and restarted host with a fresh native receiver | Native owning-quest reconnect, retained unsent rewards, late join, duplicate delivery, host termination, explicit rejoin and server state reconciliation |
 | Save/room isolation | Pilot routes both CARD slots before initialization and rejects unsafe routes/configuration | Expanded manifest/store compatibility, populated multi-slot/photo preservation, personal/other-room isolation across failure and recovery |
-| Remote player presence | No native implementation or game proof | Bounded transient presence, scene/room filtering, expiry/disconnect, rendering/animation/interpolation and actual two-game visual acceptance; no remote authority over local actions |
+| Remote player presence | Feature branch has copied-pose transport source; no native rendering or game proof | Bounded transient presence, scene/room filtering, expiry/disconnect, rendering/animation/interpolation and actual two-game visual acceptance; no remote authority over local actions |
 | Player-facing multiplayer UI | Pilot Network tab; Telescope-only status and room setup | Broader shared-progress status, canonical pending effects vs transport queues, save/recovery errors, presence and honest compatibility messages |
 | Build, regression and tester provenance | Qualified EF84 pilot and 34-entry tester at `8636102f` | Build expanded source with named Windows targets, run relevant standalone and native cases, preserve failures, verify packaged title and archive contents before replacing the tester |
 
@@ -38,8 +38,8 @@ retained. None of that evidence qualifies newly edited source automatically.
 ## Current implementation work
 
 The feature branch `multiplayer/native-standard-20261016` contains the following
-source work. It has compiled and linked in Windows CI; native runtime
-qualification remains pending.
+progression foundation, which has compiled and linked in Windows CI. Native
+results and newer uncompiled work are identified separately below.
 
 - Sparse permanent facts cover tools/bags, camera and bow ranks, six songs,
   wallet/magic/ammo capacities, pearls and shards. Native authored chest, fairy
@@ -272,6 +272,43 @@ item-effect/completion/ledger/save requirements remain unchanged. That correctio
 and its improved event observations passed the compiler checks above and need
 a full build and fresh native run;
 the failed host and receiver evidence is preserved.
+
+The corrected source at `7d418a51` compiled and linked successfully in
+[Windows run 38971340449](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38971340449),
+including the SDK and long-path helpers. Its source-only artifact is retained by
+CI. This is build evidence; fresh native CARD-retry and fairy runs are pending.
+The earlier negative runs and playable pilot remain preserved.
+
+## Transient player-pose transport
+
+The feature branch adds a copied 42-joint pose channel with explicit finite and
+range checks. The server assigns each joined player's origin and connection
+epoch. Per-origin sequences reject old samples; roster changes, local context
+changes, hidden poses, disconnect and one-second expiry remove visible rows.
+The receiving API filters by stage, room and layer. No game pointer or movement
+authority enters the transport.
+
+A newly ready peer receives a still-fresh existing sample even when its source
+has not published again. The replay retains the original sequence/connection
+epoch and obeys the same relay period. A loopback regression covers this
+late-join boundary; it remains unexecuted with the rest of the new suite.
+
+Each worker publishes at most ten poses per second. Bounded replace-latest
+slots and one partial TCP frame remain separate from reliable progression
+queues, acknowledgements, room revisions, journals and storage flushes. Initial
+Welcome, reward-ledger pages and roster must drain before transient delivery.
+
+Wire protocol 4 deliberately rejects older sockets. Durable storage protocol 3,
+schema 2, semantic/rules digests, profile format and isolated-card route hashing
+remain unchanged. Literal independently serialized v3 room/journal/profile
+fixtures cover this compatibility boundary in the proposed eighth standalone
+suite. Its remaining cases exercise malformed/spoofed samples, expiry,
+reconnection, real socket backpressure and reliable reward traffic during pose
+publication. These new tests have not run yet.
+
+There is no native pose adapter, remote model, interpolation or visual result
+yet. A private-resource renderer and actual same-area two-game acceptance are
+still required; transport source alone does not qualify visible multiplayer.
 
 ## Next implementation boundaries
 

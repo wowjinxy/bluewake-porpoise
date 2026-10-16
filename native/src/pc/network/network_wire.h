@@ -47,7 +47,7 @@ inline bool nonblocking(Socket s){
 #endif
 using Bytes=std::vector<uint8_t>;
 using Clock=std::chrono::steady_clock;
-enum Type:uint16_t{Hello=1,Welcome,Reject,Delta,Commit,Snapshot,Roster,Ping,Pong,Leave,Award};
+enum Type:uint16_t{Hello=1,Welcome,Reject,Delta,Commit,Snapshot,Roster,Ping,Pong,Leave,Award,Pose};
 constexpr size_t max_body=4096,max_buffer=65536,header_size=20;
 inline void put16(Bytes& b,uint16_t n){b.push_back(uint8_t(n>>8));b.push_back(uint8_t(n));}
 inline void put32(Bytes& b,uint32_t n){put16(b,uint16_t(n>>16));put16(b,uint16_t(n));}
@@ -78,27 +78,55 @@ inline PcNetworkReward reward(Reader& r){PcNetworkReward d{};d.reward_id=r.qword
 inline bool same_reward(PcNetworkReward a,PcNetworkReward b){return a.reward_id==b.reward_id&&a.key==b.key&&a.operation==b.operation&&a.value==b.value;}
 struct Pipe{
     Socket socket=invalid;Bytes input;std::deque<Bytes> output;size_t sent=0;bool eof=false;Clock::time_point activity=Clock::now();
+    // Separate replace-latest slots. Never consume the durable256-frame queue.
+    // A partially sent frame must finish before another frame can begin on TCP.
+    std::array<Bytes,PC_NETWORK_PEERS> latest{};
+    Bytes transient;size_t transient_sent=0;unsigned transient_slot=0,round_robin=0,durable_burst=0;
+    bool has_latest()const{for(const auto& bytes:latest)if(!bytes.empty())return true;return false;}
+    unsigned latest_count()const{unsigned count=!transient.empty();for(const auto& bytes:latest)count+=!bytes.empty();return count;}
+    void drop_latest(unsigned slot){if(slot>=latest.size())return;latest[slot].clear();
+        if(transient_slot==slot&&transient_sent==0)transient.clear();}
+    void drop_latest(){for(unsigned slot=0;slot<latest.size();++slot)drop_latest(slot);}
+    bool queue_latest(unsigned slot,Type type,uint64_t sequence,const Bytes& body){
+        if(slot>=latest.size()||body.size()>max_body||type!=Pose)return false;
+        drop_latest(slot);latest[slot]=frame(type,sequence,body);return true;}
+    void select_latest(){for(unsigned n=0;n<latest.size();++n){const unsigned slot=(round_robin+n)%unsigned(latest.size());
+        if(latest[slot].empty())continue;transient.swap(latest[slot]);transient_sent=0;transient_slot=slot;
+        round_robin=(slot+1)%unsigned(latest.size());return;}}
     Pipe()=default;Pipe(const Pipe&)=delete;Pipe& operator=(const Pipe&)=delete;
-    Pipe(Pipe&& p)noexcept:socket(p.socket),input(std::move(p.input)),output(std::move(p.output)),sent(p.sent),eof(p.eof),activity(p.activity){p.socket=invalid;}
+    Pipe(Pipe&& p)noexcept:socket(p.socket),input(std::move(p.input)),output(std::move(p.output)),sent(p.sent),eof(p.eof),activity(p.activity),
+        latest(std::move(p.latest)),transient(std::move(p.transient)),transient_sent(p.transient_sent),transient_slot(p.transient_slot),
+        round_robin(p.round_robin),durable_burst(p.durable_burst){p.socket=invalid;}
     ~Pipe(){close(socket);}
-    void reset(){close(socket);socket=invalid;input.clear();output.clear();sent=0;eof=false;activity=Clock::now();}
+    void reset(){close(socket);socket=invalid;input.clear();output.clear();sent=0;eof=false;activity=Clock::now();
+        for(auto& bytes:latest)bytes.clear();transient.clear();transient_sent=0;round_robin=durable_burst=0;}
     bool queue(Type t,uint64_t n,const Bytes& b){if(b.size()>max_body||output.size()>=256)return false;output.push_back(frame(t,n,b));return true;}
     bool pump(){
         if(socket==invalid)return false;
-        while(!output.empty()){
-            const Bytes& b=output.front();
+        for(unsigned completed=0;completed<16;){
+            // At most four complete durable frames before one transient frame;
+            // durable traffic is never behind more than one bounded pose.
+            if(transient.empty()&&sent==0&&has_latest()&&(output.empty()||durable_burst>=4))select_latest();
+            const bool is_transient=!transient.empty();
+            if(!is_transient&&output.empty())break;
+            const Bytes& b=is_transient?transient:output.front();
+            size_t& offset=is_transient?transient_sent:sent;
 #ifdef _WIN32
-            const int n=::send(socket,reinterpret_cast<const char*>(b.data()+sent),int(b.size()-sent),0);
+            const int n=::send(socket,reinterpret_cast<const char*>(b.data()+offset),int(b.size()-offset),0);
 #else
 #ifdef MSG_NOSIGNAL
             const int flags=MSG_NOSIGNAL;
 #else
             const int flags=0;
 #endif
-            const int n=int(::send(socket,b.data()+sent,b.size()-sent,flags));
+            const int n=int(::send(socket,b.data()+offset,b.size()-offset,flags));
 #endif
-            if(n<0){if(again())break;return false;}if(n==0)return false;sent+=size_t(n);activity=Clock::now();
-            if(sent==b.size()){output.pop_front();sent=0;}
+            if(n<0){if(again())break;return false;}if(n==0)return false;offset+=size_t(n);activity=Clock::now();
+            if(offset==b.size()){
+                if(is_transient){transient.clear();transient_sent=0;durable_burst=0;}
+                else{output.pop_front();sent=0;durable_burst=std::min(4u,durable_burst+1);}
+                ++completed;
+            }
         }
         for(unsigned tries=0;tries<16;++tries){uint8_t bytes[4096];
             // Stop filling at the bound and let next() drain complete frames.
@@ -114,7 +142,7 @@ struct Pipe{
         if(std::memcmp(input.data(),"BWNN",4)!=0)return -1;
         Bytes header(input.begin()+4,input.begin()+header_size);Reader r{header};
         const unsigned version=r.word(),type=r.word(),size=r.dword();f.sequence=r.qword();
-        if(version!=PC_NETWORK_PROTOCOL||type<Hello||type>Award||size>max_body)return -1;
+        if(version!=PC_NETWORK_PROTOCOL||type<Hello||type>Pose||size>max_body)return -1;
         if(input.size()<header_size+size)return 0;
         f.type=Type(type);f.body.assign(input.begin()+header_size,input.begin()+header_size+size);
         input.erase(input.begin(),input.begin()+header_size+size);return 1;

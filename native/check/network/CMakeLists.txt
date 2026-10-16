@@ -15,6 +15,7 @@ message(STATUS "Standalone network synthetic fixtures: ${_fixture_root}")
 set(_network_tests
     cos_network_schema_tests
     cos_network_transport_tests
+    cos_network_presence_tests
     cos_network_store_tests
     cos_network_profile_tests
     cos_progression_logic_tests

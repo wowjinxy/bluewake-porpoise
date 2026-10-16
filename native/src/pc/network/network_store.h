@@ -18,7 +18,7 @@ struct StoredRoom {
     std::map<std::string,RoomClientHistory> clients;
     std::map<uint64_t,PcNetworkReward> rewards;
 };
-/* File schema is independent of the unchanged wire protocol. Only validated
+/* File schema and persistent identity are independent of wire framing. Only validated
  * permanent facts and replay receipts enter it; never CARD/guest memory.
  * Single server-worker owner, protected by an exclusive cross-process lease.
  * Each accepted mutation is flushed and atomically published before its ACK.

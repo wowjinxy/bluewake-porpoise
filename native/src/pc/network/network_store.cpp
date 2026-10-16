@@ -73,13 +73,13 @@ Bytes encode(const StoredRoom& room){
         // The immutable room ledger owns the operation, so receipts need only
         // its ID. This keeps128*128 receipts+4096 claims within512KiB.
         for(const auto& receipt:client.second.recent){put64(body,receipt.sequence);delta(body,receipt.delta);put64(body,receipt.reward.reward_id);}}
-    Bytes file={'B','N','R','S'};put32(file,RoomStore::version);put32(file,PC_NETWORK_PROTOCOL);put32(file,PC_NETWORK_SCHEMA);put32(file,uint32_t(body.size()));file.insert(file.end(),body.begin(),body.end());
+    Bytes file={'B','N','R','S'};put32(file,RoomStore::version);put32(file,PC_NETWORK_STORAGE_PROTOCOL);put32(file,PC_NETWORK_SCHEMA);put32(file,uint32_t(body.size()));file.insert(file.end(),body.begin(),body.end());
     const auto checksum=digest(std::string(file.begin(),file.end()));file.insert(file.end(),checksum.begin(),checksum.end());return file;
 }
 bool decode(const Bytes& file,StoredRoom& out){
     if(file.size()<84||file.size()>RoomStore::max_file_bytes||std::memcmp(file.data(),"BNRS",4))return false;
     Bytes header(file.begin()+4,file.begin()+20);Reader hr{header};
-    if(hr.dword()!=RoomStore::version||hr.dword()!=PC_NETWORK_PROTOCOL||hr.dword()!=PC_NETWORK_SCHEMA||hr.dword()!=file.size()-84||!hr.done())return false;
+    if(hr.dword()!=RoomStore::version||hr.dword()!=PC_NETWORK_STORAGE_PROTOCOL||hr.dword()!=PC_NETWORK_SCHEMA||hr.dword()!=file.size()-84||!hr.done())return false;
     const auto checksum=digest(std::string(file.begin(),file.end()-64));
     if(!std::equal(checksum.begin(),checksum.end(),file.end()-64))return false;
     Bytes body(file.begin()+20,file.end()-64);Reader r{body};StoredRoom fresh;char name[33],id[33],salt[33],proof[65];

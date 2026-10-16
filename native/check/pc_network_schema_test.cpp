@@ -18,7 +18,7 @@ int main() {
     CHECK(facts.values[0] == 0 && facts.values[1] == 1 && !pc_network_fact_merge(&facts,{1,1}));
     CHECK(!pc_network_fact_merge(&facts,{0,1}) && !pc_network_fact_merge(nullptr,{1,1}));
     pc_network_fact_clear(&facts); CHECK(facts.values[1] == 0);
-    CHECK(PC_NETWORK_PROTOCOL==3&&PC_NETWORK_SCHEMA==2&&PC_NETWORK_FACTS==128);
+    CHECK(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==2&&PC_NETWORK_FACTS==128);
     for(uint16_t key=0;key<128;++key){
         CHECK(!pc_network_fact_valid({key,0}));
         if(pc_network_fact_valid({key,1})){CHECK(pc_network_fact_merge(&facts,{key,1}));CHECK(!pc_network_fact_merge(&facts,{key,1}));}
@@ -67,7 +67,7 @@ int main() {
     Bytes awardBytes;const PcNetworkReward claim{source,50,PC_PERMANENT_STEP,1};reward(awardBytes,claim);
     Reader awardReader{awardBytes};CHECK(same_reward(reward(awardReader),claim)&&awardReader.done()&&awardBytes.size()==16);
     pipe.input=bytes; pipe.input[4]=0xFF; CHECK(pipe.next(parsed)==-1);
-    pipe.input=bytes; pipe.input[5]=2; CHECK(pipe.next(parsed)==-1); // prior native protocol
+    pipe.input=bytes; pipe.input[5]=3; CHECK(pipe.next(parsed)==-1); // prior native protocol
     pipe.input=bytes; pipe.input[8]=1; CHECK(pipe.next(parsed)==-1);
     pipe.input=bytes; std::memcpy(pipe.input.data(),"BWPN",4); CHECK(pipe.next(parsed)==-1);
     pipe.input=bytes; pipe.input[7]=255; CHECK(pipe.next(parsed)==-1);

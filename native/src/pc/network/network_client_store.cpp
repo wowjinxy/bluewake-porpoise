@@ -156,12 +156,12 @@ Bytes encode(const PcNetworkClientState& state){
     for(const auto& receipt:state.receipts){b.push_back(receipt.valid?1:0);if(receipt.valid){b.push_back(receipt.recovered?1:0);b.push_back(receipt.provisional?1:0);b.push_back(receipt.reconciled?1:0);
         put16(b,uint16_t(receipt.quest_slot));put64(b,receipt.token);put64(b,receipt.revision);string(b,receipt.gci_sha256);put_facts(b,receipt.facts);
         put16(b,uint16_t(receipt.pending_count));for(unsigned i=0;i<receipt.pending_count;++i)reward(b,receipt.pending[i]);}}
-    Bytes file={'B','N','C','J'};put32(file,kVersion);put32(file,PC_NETWORK_PROTOCOL);put32(file,PC_NETWORK_SCHEMA);put32(file,uint32_t(b.size()));file.insert(file.end(),b.begin(),b.end());
+    Bytes file={'B','N','C','J'};put32(file,kVersion);put32(file,PC_NETWORK_STORAGE_PROTOCOL);put32(file,PC_NETWORK_SCHEMA);put32(file,uint32_t(b.size()));file.insert(file.end(),b.begin(),b.end());
     const auto hash=digest(std::string(file.begin(),file.end()));file.insert(file.end(),hash.begin(),hash.end());return file;
 }
 bool decode(const Bytes& bytes,PcNetworkClientState& state){
     if(bytes.size()<84||bytes.size()>PC_NETWORK_CLIENT_MAX_FILE||std::memcmp(bytes.data(),"BNCJ",4))return false;
-    Bytes header(bytes.begin()+4,bytes.begin()+20);Reader h{header};if(h.dword()!=kVersion||h.dword()!=PC_NETWORK_PROTOCOL||h.dword()!=PC_NETWORK_SCHEMA||h.dword()!=bytes.size()-84||!h.done())return false;
+    Bytes header(bytes.begin()+4,bytes.begin()+20);Reader h{header};if(h.dword()!=kVersion||h.dword()!=PC_NETWORK_STORAGE_PROTOCOL||h.dword()!=PC_NETWORK_SCHEMA||h.dword()!=bytes.size()-84||!h.done())return false;
     auto hash=digest(std::string(bytes.begin(),bytes.end()-64));if(!std::equal(hash.begin(),hash.end(),bytes.end()-64))return false;
     Bytes body(bytes.begin()+20,bytes.end()-64);Reader r{body};PcNetworkClientState next{};
     if(!identity(r,next.compatibility)||!r.text(next.profile_identity,65)||!r.text(next.room_identity,33))return false;

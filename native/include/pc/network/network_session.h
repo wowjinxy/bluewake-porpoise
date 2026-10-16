@@ -8,7 +8,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define PC_NETWORK_PROTOCOL 3u
+#define PC_NETWORK_PROTOCOL 4u
+/* Persistent progression identity is deliberately independent of wire framing.
+ * Presence changes no permanent fact, producer, journal or CARD meaning. */
+#define PC_NETWORK_STORAGE_PROTOCOL 3u
 #define PC_NETWORK_NAMESPACE "BlueWake.Native.GZLE01.Permanent"
 #define PC_NETWORK_SCHEMA 2u
 #define PC_NETWORK_FACTS PC_PERMANENT_FACT_COUNT
@@ -17,8 +20,8 @@ extern "C" {
 #define PC_NETWORK_QUEUE 128u
 #define PC_NETWORK_REWARDS 4096u
 
-/* Only copied permanent facts enter this module. Scene timing, positions,
- * consumables, selections, reward-suppressing flags and game pointers do not. */
+/* Durable copied facts and transient render-only poses use separate channels.
+ * Consumables, selections, simulation authority and game pointers never enter. */
 typedef struct PcNetworkFact { uint16_t key; uint32_t value; } PcNetworkFact;
 typedef struct PcNetworkFacts { uint32_t values[PC_NETWORK_FACTS]; } PcNetworkFacts;
 bool pc_network_fact_valid(PcNetworkFact fact);
@@ -54,7 +57,10 @@ typedef enum PcNetworkStatus {
     PC_NETWORK_OFFLINE, PC_NETWORK_CONNECTING, PC_NETWORK_CONNECTED,
     PC_NETWORK_RECONNECTING, PC_NETWORK_REJECTED, PC_NETWORK_FAILED
 } PcNetworkStatus;
-typedef struct PcNetworkPeer { char player_id[33], player_name[33]; bool online; } PcNetworkPeer;
+typedef struct PcNetworkPeer {
+    char player_id[33], player_name[33]; bool online;
+    uint64_t connection_epoch; /* server-assigned, never durable */
+} PcNetworkPeer;
 typedef struct PcNetworkSnapshot {
     PcNetworkStatus status;
     char message[128], room_identity[33];
@@ -96,6 +102,45 @@ bool pc_network_copy_state(PcNetworkSession*, PcNetworkFacts*, PcNetworkReward*,
     unsigned capacity, unsigned* count, PcNetworkSnapshot*);
 /* -1 unavailable,0 absent,1 exact known producer (out optional). */
 int pc_network_reward_known(PcNetworkSession*, uint64_t reward_id, PcNetworkReward* out);
+
+#define PC_NETWORK_POSE_JOINTS 42u
+#define PC_NETWORK_POSE_PERIOD_MS 100u
+#define PC_NETWORK_POSE_EXPIRY_MS 1000u
+/* Final native J3D joint matrices already include world/base transformation.
+ * The eventual render adapter must never apply root a second time. Base scale
+ * and root are retained separately for model bounds/modes, not simulation.
+ * Model/pose version1 is GZLE01 rev0 Link's42-joint hierarchy only. */
+typedef struct PcNetworkPose {
+    uint8_t active; /*0 canonical hidden,1 visible; no other value */
+    char stage[9]; /*1..8 ASCII letters/digits/underscore */
+    uint16_t room, layer; /*room0..63,layer0..15 */
+    uint64_t quest_generation; /*nonzero local quest activation, not authority */
+    float root[12], base_scale[3];
+    float joints[PC_NETWORK_POSE_JOINTS][12];
+    uint8_t joint_scale[PC_NETWORK_POSE_JOINTS]; /*native flags0/1 */
+} PcNetworkPose;
+typedef struct PcNetworkRemotePose {
+    char player_id[33]; /*server assigns from authenticated joined peer */
+    uint64_t connection_epoch, sequence;
+    unsigned age_ms;
+    PcNetworkPose pose;
+} PcNetworkRemotePose;
+typedef struct PcNetworkPresenceSnapshot {
+    uint64_t generation, sent, received, coalesced, stale, expired;
+    unsigned count, pending;
+    PcNetworkRemotePose peers[PC_NETWORK_PEERS];
+} PcNetworkPresenceSnapshot;
+/* Validate/copy on caller's game thread. Hidden ignores stale matrix/scene
+ * fields and sends the one-byte canonical zero representation. Visible input
+ * must be fresh each frame; the worker sends <=10Hz and hides stale local data.
+ * Reconnect/Leave drops every pose; caller must publish again after Connected.
+ * No durable sequence, ACK, revision, fact queue or journal is used. */
+bool pc_network_pose_valid(const PcNetworkPose*);
+bool pc_network_publish_pose(PcNetworkSession*, const PcNetworkPose*);
+/* One mutex-owned copy, filtered to caller's current published stage/room/layer.
+ * Local hidden/quest/area changes clear old rows. Remote changes replace the
+ * complete row; interpolation must reset on epoch/quest/scene changes. */
+bool pc_network_copy_presence(PcNetworkSession*, PcNetworkPresenceSnapshot*);
 
 /* Explicit owned IPv4 bind. Port zero selects an ephemeral port. Durable
  * startup exclusively leases the supplied directory and ACKs only after an

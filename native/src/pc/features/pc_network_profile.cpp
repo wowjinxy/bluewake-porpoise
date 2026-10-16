@@ -186,7 +186,7 @@ bool canonical(const PcNetworkProfile* source, PcNetworkProfile& copy) {
 std::string routeIdentity(const PcNetworkProfile& p) {
     std::string data;
     const auto& c = p.config;
-    frame(data, PC_NETWORK_NAMESPACE); frame(data, std::to_string(PC_NETWORK_PROTOCOL));
+    frame(data, PC_NETWORK_NAMESPACE); frame(data, std::to_string(PC_NETWORK_STORAGE_PROTOCOL));
     frame(data, "directory-gci-route-v1"); frame(data, c.compatibility.game_id);
     frame(data, std::to_string(c.compatibility.disc_revision)); frame(data, c.compatibility.build_id);
     frame(data, std::to_string(c.compatibility.progression_schema));
