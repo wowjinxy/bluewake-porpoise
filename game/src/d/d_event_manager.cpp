@@ -6,6 +6,9 @@
 #include "d/dolzel.h" // IWYU pragma: keep
 #include "d/d_event_manager.h"
 #include "d/d_com_inf_game.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 
 enum {
     ACT_WAIT,
@@ -320,8 +323,13 @@ void dEvent_manager_c::mainProc() {
 
         for (i = 0; i < mList.mHeaderP->eventNum; i++) {
             event = &mList.mEventP[i];
-            if (event->mEventState == dEvDtEvent_c::PLAY_e && event->finish_check())
+            if (event->mEventState == dEvDtEvent_c::PLAY_e && event->finish_check()) {
+#if TARGET_PC
+                // Natural finish only: forced endProc/closeProc is cancellation.
+                pc_progress_native_event_completed(i);
+#endif
                 closeProc(event);
+            }
         }
 
         for (i = 0; i < mList.mHeaderP->eventNum; i++) {

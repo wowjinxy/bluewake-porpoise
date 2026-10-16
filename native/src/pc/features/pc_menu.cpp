@@ -1044,7 +1044,7 @@ std::string rowNote(const Row& r) {
 
 std::string rowHelp(const Row& r) {
     switch (r.kind) {
-    case RowKind::NetworkHost: return "Start your own persistent room host. Both players explore independently; Telescope ownership is the current sharing pilot.";
+    case RowKind::NetworkHost: return "Start your own persistent room host. Players explore independently and share supported permanent progress.";
     case RowKind::NetworkJoin: return "Connect to the mounted room. Room/server/player changes require saving the profile and restarting.";
     case RowKind::NetworkLeave: return "Disconnect this client and stop this process's host. The room save directory stays mounted.";
     case RowKind::EditMode:
@@ -1086,9 +1086,18 @@ void drawNetwork() {
     ImGui::Text("%s | %s", status.room_mode ? "Isolated room saves" : "Personal saves", state < 6 ? names[state] : "Unknown");
     ImGui::TextWrapped("%s", status.message);
     if (status.session.message[0]) ImGui::TextWrapped("%s", status.session.message);
-    ImGui::Text("Pending: %u outgoing / %u incoming", status.session.pending_outgoing, status.session.pending_incoming);
+    ImGui::Text("Network queue: %u outgoing / %u incoming", status.session.pending_outgoing, status.session.pending_incoming);
+    if (status.pending_remote) ImGui::TextColored(kWarn, "Shared progress is waiting for a safe game state.");
+    if (status.room_mode && !status.authorized)
+        ImGui::TextWrapped("Sharing is paused while the native quest or card is loading.");
     if (status.unsaved_remote) ImGui::TextColored(kWarn, "Received progress is unsaved. Use the game's save screen.");
-    ImGui::TextWrapped("Experimental sharing: Telescope ownership only. Scenes, controls and resource counts stay local.");
+    if (status.progress.pending_claims)
+        ImGui::TextColored(kWarn, "Permanent rewards are awaiting room confirmation.");
+    if (status.provisional_save)
+        ImGui::TextWrapped("Saved locally with queued rewards; room confirmation is still pending.");
+    if (status.progress.recovery_required)
+        ImGui::TextColored(kWarn, "A previous reward needs recovery. Keep this room's saves and reconnect.");
+    ImGui::TextWrapped("Experimental shared tools, songs and permanent upgrades. Scenes, controls and resource counts stay local.");
     for (unsigned i = 0; i < status.session.peer_count && i < PC_NETWORK_PEERS; ++i)
         ImGui::Text("%s%s", status.session.peers[i].player_name, status.session.peers[i].online ? " (online)" : "");
     ImGui::Separator();

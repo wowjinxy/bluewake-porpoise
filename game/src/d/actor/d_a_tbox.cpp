@@ -5,6 +5,9 @@
 
 #include "d/dolzel_rel.h" // IWYU pragma: keep
 #include "d/actor/d_a_tbox.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 #include "d/d_npc.h"
 #include "res/Object/Dalways.h"
 #include "JSystem/JUtility/JUTAssert.h"
@@ -960,6 +963,9 @@ BOOL daTbox_c::actionOpenWait() {
 
         if (itemPID != fpcM_ERROR_PROCESS_ID_e) {
             dComIfGp_event_setItemPartnerId(itemPID);
+#if TARGET_PC
+            pc_progress_chest_item(fpcM_GetID(this), itemPID, itemNo, getTboxNo(), mRoomNo);
+#endif
         }
 
         if (getShapeType() != 0) {

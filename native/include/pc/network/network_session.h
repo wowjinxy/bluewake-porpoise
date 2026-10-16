@@ -4,16 +4,18 @@
 #define PC_NATIVE_NETWORK_SESSION_H
 #include <stdbool.h>
 #include <stdint.h>
+#include "pc/permanent_facts.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define PC_NETWORK_PROTOCOL 2u
+#define PC_NETWORK_PROTOCOL 3u
 #define PC_NETWORK_NAMESPACE "BlueWake.Native.GZLE01.Permanent"
-#define PC_NETWORK_SCHEMA 1u
-#define PC_NETWORK_FACTS 2u
-#define PC_NETWORK_FACT_TELESCOPE 1u
+#define PC_NETWORK_SCHEMA 2u
+#define PC_NETWORK_FACTS PC_PERMANENT_FACT_COUNT
+#define PC_NETWORK_FACT_TELESCOPE PC_PERMANENT_TELESCOPE
 #define PC_NETWORK_PEERS 8u
 #define PC_NETWORK_QUEUE 128u
+#define PC_NETWORK_REWARDS 4096u
 
 /* Only copied permanent facts enter this module. Scene timing, positions,
  * consumables, selections, reward-suppressing flags and game pointers do not. */
@@ -23,6 +25,15 @@ bool pc_network_fact_valid(PcNetworkFact fact);
 bool pc_network_fact_merge(PcNetworkFacts* state, PcNetworkFact fact);
 void pc_network_fact_clear(PcNetworkFacts* state);
 const char* pc_network_fact_name(uint16_t key);
+/* One authored producer -> one immutable operation. IDs contain a producer
+ * kind in the high byte and a deterministic authored identity in the low56;
+ * never process IDs, memory addresses, local epochs or connection sequences. */
+typedef struct PcNetworkReward {
+    uint64_t reward_id;
+    uint16_t key, operation;
+    uint32_t value;
+} PcNetworkReward;
+bool pc_network_reward_valid(PcNetworkReward reward);
 
 typedef struct PcNetworkCompatibility {
     char game_id[7];
@@ -56,6 +67,7 @@ typedef struct PcNetworkUpdate {
     PcNetworkFact delta;
     uint64_t server_revision, generation;
     bool snapshot;
+    PcNetworkReward reward; /* zero for canonical-only reconciliation/snapshot */
 } PcNetworkUpdate;
 typedef struct PcNetworkSession PcNetworkSession;
 typedef struct PcNetworkServer PcNetworkServer;
@@ -71,8 +83,19 @@ void pc_network_destroy(PcNetworkSession*);
 bool pc_network_join(PcNetworkSession*, const PcNetworkConfig*);
 void pc_network_leave(PcNetworkSession*);
 bool pc_network_submit(PcNetworkSession*, PcNetworkFact);
+/* Raw canonical submissions reject server-authoritative STEP keys. Genuine
+ * awards use submit_reward; failure retains caller ownership. Duplicate exact
+ * producer operations are acknowledged without another step or revision. */
+bool pc_network_submit_reward(PcNetworkSession*, PcNetworkReward);
 bool pc_network_poll(PcNetworkSession*, PcNetworkUpdate*);
 void pc_network_status(PcNetworkSession*, PcNetworkSnapshot*);
+/* Copies one complete validated connected state at a single generation and
+ * revision. On insufficient capacity returns false and reports needed count;
+ * never publishes a partial facts/ledger snapshot. No game calls on workers. */
+bool pc_network_copy_state(PcNetworkSession*, PcNetworkFacts*, PcNetworkReward*,
+    unsigned capacity, unsigned* count, PcNetworkSnapshot*);
+/* -1 unavailable,0 absent,1 exact known producer (out optional). */
+int pc_network_reward_known(PcNetworkSession*, uint64_t reward_id, PcNetworkReward* out);
 
 /* Explicit owned IPv4 bind. Port zero selects an ephemeral port. Durable
  * startup exclusively leases the supplied directory and ACKs only after an

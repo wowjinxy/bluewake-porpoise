@@ -33,6 +33,8 @@
 // bytes>", "status <life> <max life> <rupees> <magic>", then "region <name> <hex>" for every part
 // of the packed save (memory_to_card's order). native/tools/save_sweep.py runs both and diffs them.
 #include "pc_internal.h"
+#include "../smokes/pc_network_recovery_smoke.h"
+#include "pc/pc_progression.h"
 
 #include "d/d_com_inf_game.h"
 #include "d/d_save.h"
@@ -106,6 +108,7 @@ enum State {
     kMakeWait,  // memCardMakeGameFile
     kLoadWait,  // memCardDataLoadWait
     kSave,      // memCardDataSave + dataWrite
+    kSaveRetry, // explicitly owned diagnostic: re-pack a failed write without swapping recollection twice
     kSaveWait,  // memCardDataSaveWait
     kTitle,     // save-load: START until the name scene
     kName,      // A until the PLAY scene
@@ -271,6 +274,7 @@ void saveFrame(unsigned int frames) {
         } else if (status == mDoMemCd_Ctrl_c::CARD_STAT_CREATE) {
             writef(STDERR_FILENO, "[cos] %s: frame %u: loading the card's game file\n", sWho, frames);
             mDoMemCd_setPictDataPtr(NULL);
+            networkRecoveryBeforeCardRead();
             mDoMemCd_Load();
             sState = kLoadWait;
             sSince = 0;
@@ -295,11 +299,14 @@ void saveFrame(unsigned int frames) {
         return;
     }
     case kLoadWait: {
+        if (!networkRecoveryReadMayPoll()) return;
         const u32 r = mDoMemCd_LoadSync(sDataBuf, sizeof(sDataBuf), 0);
         if (r == 1) {
+            networkRecoveryCardReadResult(r);
             sState = kSave;
             sSince = 0;
         } else if (r == 2) {
+            if (networkRecoveryCardReadResult(r)) { sSince = 0; return; }
             failExit("loading the game file: LoadSync 2");
         } else if (sSince > kCardFrames) {
             failExit("loading the game file: no result after %u frames", sSince);
@@ -325,6 +332,22 @@ void saveFrame(unsigned int frames) {
             failExit("dComIfGs_setMemoryToCard: the save is too large");
         }
         mDoMemCdRWm_SetCheckSumGameData(sDataBuf, slot);
+        networkRecoveryBeforeCardWrite();
+        pc_progress_arm_quest_save(slot);
+        mDoMemCd_Save(sDataBuf, sizeof(sDataBuf), 0);
+        sState = kSaveWait;
+        sSince = 0;
+        return;
+    }
+    case kSaveRetry: {
+        if (!networkRecoveryWriteMayRetry()) return;
+        // A failed SaveSync already consumed the prepared request. Repack the
+        // same active quest for a real new request, retaining the original
+        // save-screen recollection swap until its normal successful finish.
+        if (dComIfGs_setMemoryToCard(sDataBuf, slot) == -1)
+            failExit("retry memory_to_card: the save is too large");
+        mDoMemCdRWm_SetCheckSumGameData(sDataBuf, slot);
+        pc_progress_arm_quest_save(slot);
         mDoMemCd_Save(sDataBuf, sizeof(sDataBuf), 0);
         sState = kSaveWait;
         sSince = 0;
@@ -339,8 +362,10 @@ void saveFrame(unsigned int frames) {
             return;
         }
         if (r != 1) {
+            if (networkRecoveryCardWriteResult(r)) { sState = kSaveRetry; sSince = 0; return; }
             failExit("writing the save: SaveSync %d", (int)r);
         }
+        networkRecoveryCardWriteResult(r);
         dComIfGs_exchangePlayerRecollectionData();
         dComIfGs_setMemCardCheckID(mDoMemCd_getCardSerialNo());
         dComIfGs_setNewFile(0);
@@ -370,6 +395,7 @@ void saveFrame(unsigned int frames) {
         }
         writef(STDERR_FILENO, "[cos] %s: PASS saved file %d on %s (return place %s room %d point %d) at frame %u\n",
                sWho, slot + 1, dComIfGp_getStartStageName(), sReturnName, sReturnRoom, sReturnPoint, frames);
+        if (networkRecoverySaveComplete(frames)) { sState = kDone; return; }
         pc_exit(PC_EXIT_REACHED);
     }
     default:
@@ -463,6 +489,7 @@ void loadFrame(unsigned int frames) {
         }
         writef(STDERR_FILENO, "[cos] save-load: PASS loaded %s room %d point %d\n", sReturnName, sReturnRoom,
                sReturnPoint);
+        if (networkRecoveryLoadComplete(frames)) { sState = kDone; return; }
         pc_exit(PC_EXIT_REACHED);
     }
 }

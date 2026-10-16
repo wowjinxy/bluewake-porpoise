@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <array>
 #include <thread>
 using namespace std::chrono_literals;
 static unsigned checks=0;
@@ -60,6 +61,102 @@ static void replay_and_rejection(unsigned port){using namespace pc_net;auto c=co
     c.compatibility.rules_digest[0]^=1;CHECK(incompatible.queue(Hello,0,hello(c)));receive(incompatible,Reject);
     Pipe oversized;oversized.socket=connect("127.0.0.1",uint16_t(port));CHECK(oversized.socket!=invalid);
     oversized.output.push_back(frame(Hello,0,Bytes(max_body+1,0)));receive(oversized,Reject);
+}
+static unsigned discard(PcNetworkSession* s){PcNetworkUpdate update{};unsigned n=0;while(pc_network_poll(s,&update)){
+    CHECK(pc_network_fact_valid(update.delta));if(update.reward.reward_id)CHECK(pc_network_reward_valid(update.reward));++n;}return n;}
+static void operations_and_ledger(){
+    auto server=pc_network_server_start("127.0.0.1",0);CHECK(server);const auto port=pc_network_server_port(server);
+    auto host=session(),guest=session();auto a=config(port,'a',true),b=config(port,'b');std::strcpy(a.room,"operations");std::strcpy(b.room,"operations");
+    CHECK(pc_network_join(host.get(),&a));connected(host.get());CHECK(pc_network_join(guest.get(),&b));connected(guest.get());
+    CHECK(!pc_network_submit(host.get(),{48,1})&&!pc_network_submit(host.get(),{50,99})&&!pc_network_submit(host.get(),{51,60}));
+    const PcNetworkReward first{UINT64_C(3)<<56|1,50,PC_PERMANENT_STEP,1};
+    CHECK(pc_network_reward_known(guest.get(),first.reward_id,nullptr)==0);
+    CHECK(pc_network_submit_reward(host.get(),first));CHECK(until([&]{return status(host.get()).pending_outgoing==0&&status(guest.get()).server_revision==1;}));
+    PcNetworkFacts facts{};std::array<PcNetworkReward,8> claims{};unsigned count=0;PcNetworkSnapshot snapshot{};
+    CHECK(pc_network_copy_state(guest.get(),&facts,claims.data(),unsigned(claims.size()),&count,&snapshot));
+    CHECK(count==1&&facts.values[50]==60&&snapshot.server_revision==1&&pc_net::same_reward(claims[0],first));
+    PcNetworkFacts unchanged{};unchanged.values[0]=123;
+    CHECK(!pc_network_copy_state(guest.get(),&unchanged,nullptr,0,&count,&snapshot)&&count==1&&unchanged.values[0]==123);
+    CHECK(pc_network_submit_reward(guest.get(),first));CHECK(until([&]{return status(guest.get()).pending_outgoing==0;}));
+    CHECK(status(guest.get()).server_revision==1&&pc_network_reward_known(guest.get(),first.reward_id,&claims[0])==1);
+    CHECK(pc_network_submit_reward(guest.get(),{UINT64_C(3)<<56|2,50,PC_PERMANENT_STEP,1}));
+    CHECK(until([&]{return status(host.get()).server_revision==2&&status(guest.get()).pending_outgoing==0;}));
+    CHECK(pc_network_copy_state(host.get(),&facts,claims.data(),unsigned(claims.size()),&count,&snapshot)&&count==2&&facts.values[50]==99);
+    CHECK(pc_network_submit_reward(host.get(),first));CHECK(until([&]{return status(host.get()).pending_outgoing==0;}));CHECK(status(host.get()).server_revision==2);
+    CHECK(pc_network_submit_reward(host.get(),{UINT64_C(2)<<56|1,9,PC_PERMANENT_MAX,1}));
+    CHECK(pc_network_submit_reward(host.get(),{UINT64_C(2)<<56|2,9,PC_PERMANENT_MAX,2}));
+    CHECK(until([&]{return status(guest.get()).server_revision==4&&status(host.get()).pending_outgoing==0;}));
+    CHECK(pc_network_copy_state(guest.get(),&facts,claims.data(),unsigned(claims.size()),&count,&snapshot)&&count==4&&facts.values[9]==2);
+    // Same authored producer with another valid payload is explicitly refused.
+    CHECK(pc_network_submit_reward(guest.get(),{UINT64_C(2)<<56|1,9,PC_PERMANENT_MAX,2}));
+    CHECK(until([&]{return status(guest.get()).status==PC_NETWORK_REJECTED;}));CHECK(status(host.get()).server_revision==4);
+    pc_network_leave(guest.get());pc_network_leave(host.get());pc_network_server_stop(server);
+}
+static void malformed_paged_snapshot(){using namespace pc_net;
+    Socket listener=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);CHECK(listener!=invalid&&nonblocking(listener));
+    sockaddr_in address{};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+    CHECK(::bind(listener,reinterpret_cast<sockaddr*>(&address),sizeof address)==0&&listen(listener,1)==0);
+#ifdef _WIN32
+    int length=sizeof address;
+#else
+    socklen_t length=sizeof address;
+#endif
+    CHECK(getsockname(listener,reinterpret_cast<sockaddr*>(&address),&length)==0);
+    // Exercise the real client decoder: exhausted revisions and an impossible
+    // empty/nonempty canonical state must fail before any Welcome publication.
+    for(unsigned fixture=0;fixture<3;++fixture){
+        auto invalidClient=session();auto invalidConfig=config(ntohs(address.sin_port),'b');CHECK(pc_network_join(invalidClient.get(),&invalidConfig));
+        Pipe invalidPipe;CHECK(until([&]{invalidPipe.socket=::accept(listener,nullptr,nullptr);return invalidPipe.socket!=invalid;}));
+        CHECK(nonblocking(invalidPipe.socket));receive(invalidPipe,Hello);
+        const uint64_t revision=fixture==0?UINT64_MAX:(fixture==1?0:1);const unsigned keys=fixture==2?0:1;
+        Bytes invalidWelcome;identity(invalidWelcome,invalidConfig.compatibility);string(invalidWelcome,std::string(32,'a').c_str());
+        put64(invalidWelcome,revision);put64(invalidWelcome,0);put16(invalidWelcome,uint16_t(keys));if(keys)delta(invalidWelcome,{1,1});put16(invalidWelcome,0);
+        CHECK(invalidPipe.queue(Welcome,0,invalidWelcome));CHECK(until([&]{return invalidPipe.pump()&&invalidPipe.output.empty();}));
+        CHECK(until([&]{return !invalidPipe.pump()||invalidPipe.eof;}));
+        CHECK(status(invalidClient.get()).generation==0&&status(invalidClient.get()).status!=PC_NETWORK_CONNECTED);
+        PcNetworkUpdate unpublished{};CHECK(!pc_network_poll(invalidClient.get(),&unpublished));pc_network_leave(invalidClient.get());
+    }
+    auto client=session();auto c=config(ntohs(address.sin_port),'a');CHECK(pc_network_join(client.get(),&c));
+    Pipe pipe;CHECK(until([&]{pipe.socket=::accept(listener,nullptr,nullptr);return pipe.socket!=invalid;}));CHECK(nonblocking(pipe.socket));receive(pipe,Hello);
+    Bytes b;identity(b,c.compatibility);string(b,std::string(32,'a').c_str());put64(b,1);put64(b,0);put16(b,1);delta(b,{1,1});put16(b,1);
+    CHECK(pipe.queue(Welcome,0,b));CHECK(until([&]{return pipe.pump()&&pipe.output.empty();}));
+    // A ping proves the worker received and waited on the incomplete snapshot.
+    // Facts must remain private even though Welcome itself contains a tool.
+    receive(pipe,Ping);PcNetworkFacts facts{};facts.values[0]=123;PcNetworkSnapshot s{};unsigned count=0;PcNetworkReward out{};
+    CHECK(!pc_network_copy_state(client.get(),&facts,&out,1,&count,&s)&&facts.values[0]==123&&s.status!=PC_NETWORK_CONNECTED&&s.generation==0);
+    b.clear();put64(b,1);put16(b,1);put16(b,1);put16(b,1);reward(b,{UINT64_C(2)<<56|1,1,PC_PERMANENT_MAX,1});
+    CHECK(pipe.queue(Snapshot,0,b));CHECK(until([&]{return pipe.pump()&&pipe.output.empty();}));
+    CHECK(until([&]{return !pipe.pump()||pipe.eof;}));
+    CHECK(status(client.get()).generation==0&&status(client.get()).status!=PC_NETWORK_CONNECTED);
+    PcNetworkUpdate update{};CHECK(!pc_network_poll(client.get(),&update));pc_network_leave(client.get());close(listener);
+}
+static void eight_peers_and_paged_bound(){
+    auto server=pc_network_server_start("127.0.0.1",0);CHECK(server);const auto port=pc_network_server_port(server);
+    std::vector<Session> peers;std::vector<PcNetworkConfig> configs;
+    for(unsigned i=0;i<PC_NETWORK_PEERS;++i){peers.push_back(session());auto c=config(port,char('a'+i),i==0);std::strcpy(c.room,"bounded");configs.push_back(c);
+        CHECK(pc_network_join(peers.back().get(),&configs.back()));connected(peers.back().get());}
+    CHECK(until([&]{return status(peers[0].get()).peer_count==PC_NETWORK_PEERS;}));
+    for(unsigned base=0;base<PC_NETWORK_REWARDS;base+=64){
+        for(unsigned i=base;i<base+64;++i)CHECK(pc_network_submit_reward(peers[i%PC_NETWORK_PEERS].get(),{UINT64_C(2)<<56|(i+1),1,PC_PERMANENT_MAX,1}));
+        CHECK(until([&]{bool complete=true;for(auto& peer:peers){discard(peer.get());const auto s=status(peer.get());
+            if(s.status!=PC_NETWORK_CONNECTED||s.server_revision!=base+64||s.pending_outgoing)complete=false;}return complete;}));
+    }
+    std::vector<PcNetworkReward> claims(PC_NETWORK_REWARDS);PcNetworkFacts facts{};PcNetworkSnapshot snapshot{};unsigned count=0;
+    CHECK(pc_network_copy_state(peers[0].get(),&facts,claims.data(),unsigned(claims.size()),&count,&snapshot));
+    CHECK(count==PC_NETWORK_REWARDS&&facts.values[1]==1&&snapshot.server_revision==PC_NETWORK_REWARDS);
+    const auto first=claims.front(),last=claims.back();CHECK(first.reward_id==(UINT64_C(2)<<56|1)&&last.reward_id==(UINT64_C(2)<<56|PC_NETWORK_REWARDS));
+    // Full state spans more than64KiB of pages. Rejoin publishes all claims
+    // atomically together with one canonical fact and one generation.
+    pc_network_leave(peers.back().get());CHECK(until([&]{return status(peers[0].get()).peer_count==PC_NETWORK_PEERS-1;}));
+    CHECK(pc_network_join(peers.back().get(),&configs.back()));connected(peers.back().get());
+    CHECK(pc_network_copy_state(peers.back().get(),&facts,claims.data(),unsigned(claims.size()),&count,&snapshot)&&count==PC_NETWORK_REWARDS);
+    CHECK(snapshot.generation==1&&snapshot.server_revision==PC_NETWORK_REWARDS&&pc_net::same_reward(claims.front(),first)&&pc_net::same_reward(claims.back(),last));
+    CHECK(pc_network_submit_reward(peers.back().get(),first));CHECK(until([&]{return status(peers.back().get()).pending_outgoing==0;}));
+    CHECK(status(peers.back().get()).server_revision==PC_NETWORK_REWARDS); // exact duplicate still allowed at capacity
+    CHECK(pc_network_submit_reward(peers.back().get(),{UINT64_C(2)<<56|(PC_NETWORK_REWARDS+1),1,PC_PERMANENT_MAX,1}));
+    CHECK(until([&]{return status(peers.back().get()).status==PC_NETWORK_REJECTED;}));
+    for(unsigned i=0;i<PC_NETWORK_PEERS-1;++i)CHECK(status(peers[i].get()).status==PC_NETWORK_CONNECTED);
+    for(auto& peer:peers)pc_network_leave(peer.get());pc_network_server_stop(server);
 }
 int main(){
     const auto dir=std::filesystem::temp_directory_path()/("BlueWake-native-transport-"+
@@ -115,6 +212,7 @@ int main(){
     const auto after=status(host.get());CHECK(!std::strcmp(before.room_identity,after.room_identity));
     CHECK(after.server_revision==1&&after.reconnects==before.reconnects+1&&drain(host.get(),true)==1);
     pc_network_leave(host.get());pc_network_leave(guest.get());pc_network_server_stop(server);
+    operations_and_ledger();malformed_paged_snapshot();eight_peers_and_paged_bound();
     std::printf("native network transport/replay/durable-reconnect: PASS checks=%u\n",checks);
     return 0;
 }

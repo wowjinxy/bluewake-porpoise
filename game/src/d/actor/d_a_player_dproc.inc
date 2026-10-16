@@ -797,6 +797,9 @@ BOOL daPy_lk_c::dProcGetItem() {
             if (item != NULL && (fopAcM_GetName(item) == fpcNm_ITEM_e || fopAcM_GetName(item) == fpcNm_Demo_Item_e)) {
                 item->show();
                 if (m3624 == 0 && mProcVar2.m34D4 != -1) {
+#if TARGET_PC
+                    pc_progress_item_presented(fpcM_GetID(item), item->getItemNo());
+#endif
                     if (mProcVar2.m34D4 == 7 && (dComIfGs_getMaxLife() % 4)) {
                         m3624 = (dComIfGs_getMaxLife() % 4) + 0x7b;
                     } else {
@@ -2087,7 +2090,13 @@ BOOL daPy_lk_c::dProcGetDance_init() {
     mGameOverId = fpcM_ERROR_PROCESS_ID_e;
     mProcVar0.m34D0 = 0;
     mProcVar6.m3570 = mDemo.getParam0() + 0xd2;
+#if TARGET_PC
+    pc_progress_song_begin(fpcM_GetID(this), mDemo.getParam0());
+#endif
     dComIfGs_onTact(mDemo.getParam0());
+#if TARGET_PC
+    pc_progress_song_effect(fpcM_GetID(this), mDemo.getParam0());
+#endif
     initShipRideUseItem(iVar2, 0);
     dKy_Itemgetcol_chg_on();
     setTactModel();
@@ -2127,6 +2136,9 @@ BOOL daPy_lk_c::dProcGetDance() {
     }
     fopAcM_getItemEventPartner(this);
     if ((mFrameCtrlUnder[UNDER_MOVE0_e].getRate() < 0.01f) && checkEndMessage(mProcVar6.m3570)) {
+#if TARGET_PC
+        pc_progress_song_message_completed(fpcM_GetID(this), mProcVar6.m3570 - 0xd2);
+#endif
         shape_angle.y += 0x8000;
         current.angle.y = shape_angle.y;
         m34DE = shape_angle.y;

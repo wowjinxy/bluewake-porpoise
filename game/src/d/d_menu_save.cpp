@@ -1,6 +1,7 @@
 #include "d/dolzel.h" // IWYU pragma: keep
 #if TARGET_PC
 #include "pc/pc_aspect.h"
+#include "pc/pc_progression.h"
 #endif
 #include "d/d_menu_save.h"
 #include "d/d_file_error.h"
@@ -1023,6 +1024,9 @@ void dMenu_save_c::dataWrite() {
     JUT_ASSERT(VERSION_SELECT(1789, 1792, 1792, 1803), res != -1);
 
     mDoMemCdRWm_SetCheckSumGameData(dataBuf, dComIfGs_getDataNum());
+#if TARGET_PC
+    pc_progress_arm_quest_save(dComIfGs_getDataNum());
+#endif
     mDoMemCd_Save(dataBuf, sizeof(dataBuf), 0);
 
 #if VERSION >= VERSION_USA

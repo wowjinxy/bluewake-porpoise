@@ -30,8 +30,8 @@ extern "C" void pc_network_native_compatibility(PcNetworkCompatibility* out) {
     std::strcpy(out->build_id, "bluewake-native-gzle01-r0");
     out->progression_schema = PC_NETWORK_SCHEMA;
     out->disc_revision = 0;
-    const auto semantics = pc_net::digest("BlueWake.Native.GZLE01.rev0.CXX.NativeItems.v1");
-    const auto rules = pc_net::digest("permanent-facts:v1;1=Telescope:owned:1;no-resources;no-reward-flags");
+    const auto semantics = pc_net::digest("BlueWake.Native.GZLE01.rev0.CXX.NativeItems.RewardOperations.v2");
+    const auto rules = pc_net::digest("permanent-facts:v2;sparse128;tools1-14,19-21;ranks9:1-2,13:1-3;songs32-37;wallet48:step2;magic49:16,32;arrow50,bomb51:step30,60,99;pearls64-66;shards72-79;producer-ledger4096;no-local-resources-selectors");
     std::strcpy(out->semantic_digest, semantics.c_str());
     std::strcpy(out->rules_digest, rules.c_str());
 }
@@ -80,14 +80,18 @@ extern "C" bool pc_network_config_valid(const PcNetworkConfig* config, char* out
 }
 
 extern "C" bool pc_network_fact_valid(PcNetworkFact fact) {
-    return fact.key == PC_NETWORK_FACT_TELESCOPE && fact.value == 1;
+    return pc_permanent_fact_valid(fact.key,fact.value);
 }
 extern "C" bool pc_network_fact_merge(PcNetworkFacts* state, PcNetworkFact fact) {
-    if (!state || !pc_network_fact_valid(fact) || state->values[fact.key] == 1) return false;
-    state->values[fact.key] = 1;
+    if (!state || !pc_network_fact_valid(fact) || state->values[fact.key] >= fact.value) return false;
+    state->values[fact.key] = fact.value;
     return true;
 }
 extern "C" void pc_network_fact_clear(PcNetworkFacts* state) { if (state) *state = {}; }
 extern "C" const char* pc_network_fact_name(uint16_t key) {
-    return key == PC_NETWORK_FACT_TELESCOPE ? "Telescope" : "Unsupported";
+    return pc_permanent_fact_name(key);
+}
+extern "C" bool pc_network_reward_valid(PcNetworkReward reward) {
+    return pc_permanent_producer_valid(reward.reward_id)&&
+        pc_permanent_operation_valid(reward.key,reward.operation,reward.value);
 }

@@ -11,20 +11,36 @@ The original checkout and its uncommitted work remain untouched.
 These files retain their donor GPL-3.0-or-later license, with the complete license
 in `COPYING`. Native adapters outside this module retain their own licenses.
 
-The extraction intentionally changes the wire magic, namespace, protocol to 2,
+The extraction intentionally changes the wire magic, namespace, protocol to 3,
 store magic, compatibility model and whitelist. It cannot connect to legacy
 BlueWake or a public Anchor service. Canonical compatibility names USA GZLE01
-revision 0, the native semantic implementation, schema 1, and the current rules.
+revision 0, the native semantic implementation, schema 2, and the current rules.
 Cosmetic settings and source commits do not change room identity; changes to the
 meaning of permanent facts require an explicit rules/schema change.
 
-Only Telescope ownership (key 1, value 1) is accepted. The worker owns copied
+The game-free `pc/permanent_facts.h` defines sparse stable IDs and value domains
+for permanent tools, songs, capacities, pearls and shards. Max merge retains
+higher fixed ranks. Wallet, arrow and bomb upgrades are server-authoritative
+STEP operations: a typed, stable authored producer advances the room ladder
+once. Submitting an observed local capacity as a raw fact is rejected, preventing
+the same fairy from repeatedly increasing canonical progress. The immutable
+producer ledger rejects changed operations and acknowledges exact duplicates
+without another step. IDs never contain actor process IDs or memory addresses.
+
+This revision deliberately rejects protocol2/schema1 pilot rooms and store1
+files; there is no silent migration. Store2 receipts refer to the immutable
+producer ledger to retain the existing512KiB bound. A complete ledger is sent
+in ordered pages and published with facts atomically before Connected; partial,
+duplicate, reordered or inconsistent pages never become game-visible state.
+
+The worker owns copied
 configuration, protocol bytes and facts. Native game state is observed/applied
 only by the game thread outside this module. There is no position, scene timing,
 resource, item-selection or reward-suppression synchronization.
 
 Bounds remain 8 connected sockets, 16 rooms, 128 stable client identities per
-room, 128 pending facts/replay receipts, 4 KiB message bodies, 64 KiB receive
+room, 128 pending operations/replay receipts, 4096 authored rewards per room,
+4 KiB message bodies, 64 KiB receive
 buffers, 256 queued wire frames and 512 KiB durable room files. Reconnect retains
 unacknowledged local sequences. Saturation/gaps reconnect for a full snapshot;
 submission failure leaves the fact with its caller. Explicit Leave discards work.

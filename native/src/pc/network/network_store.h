@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 namespace pc_net {
-struct RoomReceipt { uint64_t sequence; PcNetworkFact delta; };
+struct RoomReceipt { uint64_t sequence; PcNetworkFact delta; PcNetworkReward reward{}; };
 struct RoomClientHistory { uint64_t sequence=0; std::deque<RoomReceipt> recent; };
 struct StoredRoom {
     PcNetworkCompatibility compatibility{};
@@ -16,6 +16,7 @@ struct StoredRoom {
     PcNetworkFacts progress{};
     uint64_t revision=0;
     std::map<std::string,RoomClientHistory> clients;
+    std::map<uint64_t,PcNetworkReward> rewards;
 };
 /* File schema is independent of the unchanged wire protocol. Only validated
  * permanent facts and replay receipts enter it; never CARD/guest memory.
@@ -24,7 +25,7 @@ struct StoredRoom {
  * A failed publication stops further durable acknowledgements. */
 class RoomStore {
 public:
-    static constexpr unsigned version=1, max_rooms=16, max_clients=128;
+    static constexpr unsigned version=2, max_rooms=16, max_clients=128;
     static constexpr size_t max_file_bytes=512u*1024u;
     RoomStore();
     ~RoomStore();

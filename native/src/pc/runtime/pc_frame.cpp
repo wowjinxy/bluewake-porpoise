@@ -32,6 +32,7 @@
 // aurora_begin_frame waits and retries instead of skipping the game frame.
 #include "pc_internal.h"
 #include "pc/pc_network_game.h"
+#include "harness/smokes/pc_network_recovery_smoke.h"
 #include "pc/pc_gpu_opts.h"
 #include "pc/pc_dynres.h"
 #include "pc/pc_hd_textures.h"
@@ -1111,6 +1112,7 @@ void pc_frame_end(void) {
     chestFrame(frames);
     itemSweepFrame(frames);
     networkProgressFrame(frames);
+    networkRecoveryFrame(frames);
     saveSweepFrame(frames);
     eventSweepFrame(frames);
     eventWatchFrame(frames);

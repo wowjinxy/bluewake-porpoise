@@ -1938,6 +1938,7 @@ public:
     // Read-only native action/diagnostic access; no actor-layout changes.
     int getPcActionProc() const { return mCurProc; }
     u8 getPcReadyItemButton() const { return mReadyItemBtn; }
+    u16 getPcEquippedItem() const { return mEquipItem; }
 #endif
     
     void checkBothItemEquipAnime() const {}

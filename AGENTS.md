@@ -21,7 +21,9 @@ Controls/menu are first. Preserve LB/Tab + D-pad shortcuts, ordinary D-pad/Down,
 X/Y/Z and conducting directions when implementing them. Co-op means independent
 exploration with shared permanent progress, using an owned TCP service inspired
 by Anchor. A Telescope-only native LAN pilot is implemented and documented in
-docs/NATIVE_NETWORK.md; broader rewards and remote Links remain future work.
+docs/NATIVE_NETWORK.md. Expanded unbuilt work on
+`multiplayer/native-standard-20261016` and full remaining acceptance are tracked
+in docs/NATIVE_MULTIPLAYER_ACCEPTANCE.md; remote Links remain future work.
 It is not public Anchor-compatible. Real native events, safe saves and room
 isolation precede additional shared rewards. Tingle rescue
 wait-skip stays disabled; retain its old work/results and never make it a gate

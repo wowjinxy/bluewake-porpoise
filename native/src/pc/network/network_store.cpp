@@ -35,11 +35,18 @@ bool compatibility(const PcNetworkCompatibility& manifest,const std::string& nam
 }
 bool valid(const StoredRoom& room){
     if(!compatibility(room.compatibility,room.name)||!hex(room.id,32)||!hex(room.salt,32)||!hex(room.credential,64)||
-       room.clients.size()>RoomStore::max_clients||room.revision==UINT64_MAX)return false;
+       room.clients.size()>RoomStore::max_clients||room.rewards.size()>PC_NETWORK_REWARDS||room.revision==UINT64_MAX)return false;
     bool facts=false;unsigned keys=0;
     for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(room.progress.values[key]){
         if(!pc_network_fact_valid({key,room.progress.values[key]}))return false;facts=true;++keys;}
-    if(keys>PC_NETWORK_QUEUE||(room.revision==0&&facts)||(room.revision!=0&&!facts))return false;
+    if(keys>PC_NETWORK_QUEUE||(room.revision==0&&facts)||(room.revision!=0&&!facts)||room.revision<room.rewards.size())return false;
+    PcNetworkFacts steps{};
+    for(const auto& entry:room.rewards){const auto& claim=entry.second;
+        if(entry.first!=claim.reward_id||!pc_network_reward_valid(claim))return false;
+        if(pc_permanent_server_authoritative(claim.key))steps.values[claim.key]=pc_permanent_operation_result(claim.key,steps.values[claim.key],claim.operation,claim.value);
+        else if(room.progress.values[claim.key]<claim.value)return false;
+    }
+    for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(pc_permanent_server_authoritative(key)&&steps.values[key]!=room.progress.values[key])return false;
     uint64_t submissions=0;
     for(const auto& client:room.clients){
         const auto& history=client.second;
@@ -48,6 +55,9 @@ bool valid(const StoredRoom& room){
         uint64_t expected=history.sequence-uint64_t(history.recent.size());
         for(const auto& receipt:history.recent){
             if(receipt.sequence!=++expected||!pc_network_fact_valid(receipt.delta))return false;
+            if(receipt.reward.reward_id){const auto at=room.rewards.find(receipt.reward.reward_id);
+                if(at==room.rewards.end()||!same_reward(at->second,receipt.reward)||receipt.reward.key!=receipt.delta.key)return false;
+            }else if(receipt.reward.key||receipt.reward.operation||receipt.reward.value||pc_permanent_server_authoritative(receipt.delta.key))return false;
             auto canonical=room.progress;if(pc_network_fact_merge(&canonical,receipt.delta))return false;
         }
     }
@@ -57,9 +67,12 @@ Bytes encode(const StoredRoom& room){
     Bytes body;identity(body,room.compatibility);string(body,room.name.c_str());string(body,room.id.c_str());string(body,room.salt.c_str());string(body,room.credential.c_str());put64(body,room.revision);
     unsigned count=0;for(uint32_t value:room.progress.values)if(value)++count;put16(body,uint16_t(count));
     for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(room.progress.values[key])delta(body,{key,room.progress.values[key]});
+    put16(body,uint16_t(room.rewards.size()));for(const auto& entry:room.rewards)reward(body,entry.second);
     put16(body,uint16_t(room.clients.size()));
     for(const auto& client:room.clients){string(body,client.first.c_str());put64(body,client.second.sequence);put16(body,uint16_t(client.second.recent.size()));
-        for(const auto& receipt:client.second.recent){put64(body,receipt.sequence);delta(body,receipt.delta);}}
+        // The immutable room ledger owns the operation, so receipts need only
+        // its ID. This keeps128*128 receipts+4096 claims within512KiB.
+        for(const auto& receipt:client.second.recent){put64(body,receipt.sequence);delta(body,receipt.delta);put64(body,receipt.reward.reward_id);}}
     Bytes file={'B','N','R','S'};put32(file,RoomStore::version);put32(file,PC_NETWORK_PROTOCOL);put32(file,PC_NETWORK_SCHEMA);put32(file,uint32_t(body.size()));file.insert(file.end(),body.begin(),body.end());
     const auto checksum=digest(std::string(file.begin(),file.end()));file.insert(file.end(),checksum.begin(),checksum.end());return file;
 }
@@ -74,10 +87,15 @@ bool decode(const Bytes& file,StoredRoom& out){
     fresh.name=name;fresh.id=id;fresh.salt=salt;fresh.credential=proof;fresh.revision=r.qword();
     const unsigned keys=r.word();if(keys>PC_NETWORK_QUEUE)return false;int previous=-1;
     for(unsigned i=0;i<keys;++i){const auto d=delta(r);if(!r.ok||d.key<=previous||!d.value||!pc_network_fact_valid(d))return false;previous=d.key;fresh.progress.values[d.key]=d.value;}
+    const unsigned claims=r.word();if(claims>PC_NETWORK_REWARDS)return false;uint64_t previous_claim=0;
+    for(unsigned i=0;i<claims;++i){const auto claim=reward(r);if(!r.ok||claim.reward_id<=previous_claim||!pc_network_reward_valid(claim))return false;
+        previous_claim=claim.reward_id;fresh.rewards.emplace(claim.reward_id,claim);}
     const unsigned clients=r.word();if(clients>RoomStore::max_clients)return false;std::string previous_id;
     for(unsigned i=0;i<clients;++i){char player[33];if(!r.text(player,sizeof player)||!hex(player,32)||(!previous_id.empty()&&previous_id>=player))return false;
         previous_id=player;RoomClientHistory history;history.sequence=r.qword();const unsigned recent=r.word();if(recent>PC_NETWORK_QUEUE)return false;
-        for(unsigned j=0;j<recent;++j){const auto sequence=r.qword();const auto d=delta(r);history.recent.push_back({sequence,d});}
+        for(unsigned j=0;j<recent;++j){const auto sequence=r.qword();const auto d=delta(r);const auto reward_id=r.qword();PcNetworkReward claim{};
+            if(reward_id){const auto at=fresh.rewards.find(reward_id);if(at==fresh.rewards.end())return false;claim=at->second;}
+            history.recent.push_back({sequence,d,claim});}
         fresh.clients.emplace(player,std::move(history));}
     if(!r.done()||!valid(fresh))return false;out=std::move(fresh);return true;
 }
@@ -205,11 +223,14 @@ bool RoomStore::save(const StoredRoom& room,std::string& error){
             if(room.id!=prior->second.room.id||room.salt!=prior->second.room.salt||room.credential!=prior->second.room.credential||room.revision<prior->second.room.revision){error="Stale durable room identity or revision";return false;}
             for(const auto& client:prior->second.room.clients){const auto current=room.clients.find(client.first);if(current==room.clients.end()||current->second.sequence<client.second.sequence){error="Stale durable replay history";return false;}}
             for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(prior->second.room.progress.values[key]){auto current=room.progress;if(pc_network_fact_merge(&current,{key,prior->second.room.progress.values[key]})){error="Durable permanent progress cannot regress";return false;}}
+            for(const auto& claim:prior->second.room.rewards){const auto current=room.rewards.find(claim.first);
+                if(current==room.rewards.end()||!same_reward(current->second,claim.second)){error="Acknowledged authored reward changed";return false;}}
         }
         /* Never rewrite an acknowledged receipt, including a lower but valid
          * payload. New canonical facts/revisions must follow new receipts.
          * Production publishes one client's ordered transaction at a time. */
         PcNetworkFacts explained=prior==impl->entries.end()?PcNetworkFacts{}:prior->second.room.progress;
+        std::map<uint64_t,PcNetworkReward> explained_rewards=prior==impl->entries.end()?std::map<uint64_t,PcNetworkReward>{}:prior->second.room.rewards;
         uint64_t explained_revision=prior==impl->entries.end()?0:prior->second.room.revision;
         for(const auto& client:room.clients){
             const RoomClientHistory* old=nullptr;
@@ -217,11 +238,21 @@ bool RoomStore::save(const StoredRoom& room,std::string& error){
             for(const auto& receipt:client.second.recent){
                 if(old&&receipt.sequence<=old->sequence){
                     const auto at=std::find_if(old->recent.begin(),old->recent.end(),[&](const RoomReceipt& r){return r.sequence==receipt.sequence;});
-                    if(at==old->recent.end()||at->delta.key!=receipt.delta.key||at->delta.value!=receipt.delta.value){error="Acknowledged durable replay receipt changed";return false;}
+                    if(at==old->recent.end()||at->delta.key!=receipt.delta.key||at->delta.value!=receipt.delta.value||!same_reward(at->reward,receipt.reward)){error="Acknowledged durable replay receipt changed";return false;}
+                }else if(receipt.reward.reward_id){
+                    const auto& claim=receipt.reward;const auto at=explained_rewards.find(claim.reward_id);
+                    if(at==explained_rewards.end()){
+                        explained.values[claim.key]=pc_permanent_operation_result(claim.key,explained.values[claim.key],claim.operation,claim.value);
+                        explained_rewards.emplace(claim.reward_id,claim);++explained_revision;
+                    }else if(!same_reward(at->second,claim)){error="Conflicting authored reward operation";return false;}
+                    if(receipt.delta.key!=claim.key||receipt.delta.value!=explained.values[claim.key]){error="Authored receipt canonical value mismatch";return false;}
                 }else if(pc_network_fact_merge(&explained,receipt.delta))++explained_revision;
             }
         }
-        if(explained_revision!=room.revision||std::memcmp(&explained,&room.progress,sizeof explained)){
+        bool ledger_matches=explained_rewards.size()==room.rewards.size();
+        if(ledger_matches)for(const auto& entry:explained_rewards){const auto at=room.rewards.find(entry.first);
+            if(at==room.rewards.end()||!same_reward(entry.second,at->second)){ledger_matches=false;break;}}
+        if(!ledger_matches||explained_revision!=room.revision||std::memcmp(&explained,&room.progress,sizeof explained)){
             error="Durable progress or revision is not explained by new receipts";return false;
         }
         const Bytes bytes=encode(room);if(bytes.size()>max_file_bytes){error="Durable room transaction too large";return false;}

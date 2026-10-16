@@ -23,6 +23,11 @@ static StoredRoom room(const char* name="test"){
 }
 static void award(StoredRoom& r){auto& h=r.clients.begin()->second;++h.sequence;h.recent.push_back({h.sequence,{1,1}});
     if(h.recent.size()>PC_NETWORK_QUEUE)h.recent.pop_front();if(pc_network_fact_merge(&r.progress,{1,1}))++r.revision;}
+static void claim(StoredRoom& r,PcNetworkReward reward){auto& h=r.clients.begin()->second;++h.sequence;
+    if(!r.rewards.count(reward.reward_id)){r.rewards.emplace(reward.reward_id,reward);
+        r.progress.values[reward.key]=pc_permanent_operation_result(reward.key,r.progress.values[reward.key],reward.operation,reward.value);++r.revision;}
+    h.recent.push_back({h.sequence,{reward.key,r.progress.values[reward.key]},reward});
+    if(h.recent.size()>PC_NETWORK_QUEUE)h.recent.pop_front();}
 static fs::path file(const fs::path& base,const StoredRoom& r){return base/(room_storage_key(r.compatibility,r.name.c_str())+".bwroom");}
 static Bytes read(const fs::path& path){std::ifstream stream(path,std::ios::binary);CHECK(bool(stream));return Bytes(std::istreambuf_iterator<char>(stream),{});}
 static void write(const fs::path& path,const Bytes& bytes){std::ofstream stream(path,std::ios::binary|std::ios::trunc);CHECK(bool(stream));
@@ -80,13 +85,34 @@ int main(){
     const auto reject=[&](Bytes bytes){const auto dir=base/("invalid-"+std::to_string(++malformed));fs::create_directories(dir);
         write(file(dir,r),bytes);RoomStore store;CHECK(!store.open(dir.u8string().c_str(),error));CHECK(!error.empty());};
     auto invalid=saved;std::memcpy(invalid.data(),"BWRS",4);checksum(invalid);reject(invalid);
-    invalid=saved;invalid[7]=2;checksum(invalid);reject(invalid);
+    invalid=saved;invalid[7]=1;checksum(invalid);reject(invalid); // prior store schema
     invalid=saved;invalid[11]=1;checksum(invalid);reject(invalid); // legacy protocol 1
-    invalid=saved;invalid[15]=2;checksum(invalid);reject(invalid);
+    invalid=saved;invalid[15]=1;checksum(invalid);reject(invalid); // prior fact schema
     invalid=saved;invalid.back()^=1;reject(invalid);
     invalid=saved;invalid.push_back(0);reject(invalid);
     invalid=saved;invalid.resize(80);reject(invalid);
     reject(Bytes(RoomStore::max_file_bytes+1,0));
+    {
+        const auto ledger=base/"authored";auto entry=room("authored");const PcNetworkReward first{UINT64_C(3)<<56|1,50,PC_PERMANENT_STEP,1};
+        RoomStore store;STORE(store.open(ledger.u8string().c_str(),error));STORE(store.save(entry,error));
+        claim(entry,first);STORE(store.save(entry,error));CHECK(entry.progress.values[50]==60&&entry.revision==1&&entry.rewards.size()==1);
+        claim(entry,first);STORE(store.save(entry,error));CHECK(entry.progress.values[50]==60&&entry.revision==1&&entry.rewards.size()==1);
+        claim(entry,{UINT64_C(3)<<56|2,50,PC_PERMANENT_STEP,1});STORE(store.save(entry,error));CHECK(entry.progress.values[50]==99&&entry.revision==2);
+        claim(entry,first);STORE(store.save(entry,error));CHECK(entry.progress.values[50]==99&&entry.revision==2);
+        auto changed=entry;changed.rewards.begin()->second.value=2;CHECK(!store.save(changed,error));
+        changed=entry;changed.rewards.erase(changed.rewards.begin());CHECK(!store.save(changed,error));
+        changed=entry;changed.progress.values[48]=1;++changed.revision;CHECK(!store.save(changed,error)); // no producer, no rank ratchet
+        changed=entry;changed.clients.begin()->second.recent.back().reward={};CHECK(!store.save(changed,error));
+        StoredRoom loaded;bool found=false;STORE(store.load(entry.compatibility,entry.name.c_str(),loaded,found,error));
+        CHECK(found&&loaded.rewards.size()==2&&loaded.progress.values[50]==99&&loaded.revision==2);
+    }
+    {
+        RoomStore reopened;StoredRoom loaded;bool found=false;STORE(reopened.open((base/"authored").u8string().c_str(),error));
+        PcNetworkCompatibility compatibility{};pc_network_native_compatibility(&compatibility);
+        STORE(reopened.load(compatibility,"authored",loaded,found,error));
+        CHECK(found&&loaded.rewards.size()==2&&loaded.progress.values[50]==99&&loaded.revision==2);
+        CHECK(loaded.clients.begin()->second.sequence==4&&loaded.clients.begin()->second.recent.back().reward.reward_id==(UINT64_C(3)<<56|1));
+    }
     {
         const auto bound=base/"bounds";RoomStore store;CHECK(store.open(bound.u8string().c_str(),error));
         for(unsigned i=0;i<RoomStore::max_rooms;++i){auto entry=room(("room"+std::to_string(i)).c_str());CHECK(store.save(entry,error));}

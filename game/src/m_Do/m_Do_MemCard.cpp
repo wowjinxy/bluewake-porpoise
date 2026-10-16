@@ -215,6 +215,16 @@ void mDoMemCd_Ctrl_c::command_format() {
 /* 800191C4-80019238       .text save__15mDoMemCd_Ctrl_cFPvUlUl */
 void mDoMemCd_Ctrl_c::save(void* data, u32 size, u32 offset) {
     if (OSTryLockMutex(&mMutex)) {
+#if TARGET_PC
+        if (!pc_progress_prepare_card_save()) {
+            // Complete the native request as refused, never as committed or as
+            // disk I/O failure. The copied progress event gives the real reason.
+            field_0x1660 = 2;
+            OSUnlockMutex(&mMutex);
+            pc_progress_save_refused();
+            return;
+        }
+#endif
         memcpy(&mData[offset], data, size);
         mCommand = CARD_STORE;
         OSUnlockMutex(&mMutex);
@@ -222,12 +232,19 @@ void mDoMemCd_Ctrl_c::save(void* data, u32 size, u32 offset) {
 #if TARGET_PC
         pc_progress_card_request(1);
 #endif
+    } else {
+#if TARGET_PC
+        pc_progress_cancel_card_save();
+#endif
     }
 }
 
 /* 80019238-80019288       .text load__15mDoMemCd_Ctrl_cFv */
 void mDoMemCd_Ctrl_c::load() {
     if (OSTryLockMutex(&mMutex)) {
+#if TARGET_PC
+        pc_progress_prepare_card_read();
+#endif
         mCommand = CARD_RESTORE;
         OSUnlockMutex(&mMutex);
         OSSignalCond(&mCond);

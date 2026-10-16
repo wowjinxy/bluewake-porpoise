@@ -5,6 +5,9 @@
 
 #include "d/dolzel_rel.h" // IWYU pragma: keep
 #include "d/actor/d_a_npc_hr.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 #include "res/Object/Hr.h"
 #include "d/d_snap.h"
 #include "d/d_kankyo_wether.h"
@@ -461,7 +464,14 @@ BOOL daNpc_Hr_c::demoProcTact0() {
             if (dComIfGp_checkMesgCancelButton()) {
                 setFlag(HR_FLAG_00000200);
             } else {
+#if TARGET_PC
+                const u64 progressInvocation = pc_progress_script_item_begin(
+                    fpcM_GetID(this), dItemNo_WINDS_REQUIEM_e, 0);
+#endif
                 execItemGet(dItemNo_WINDS_REQUIEM_e);
+#if TARGET_PC
+                pc_progress_script_item_effect(progressInvocation);
+#endif
             }
             dComIfGp_evmng_cutEnd(mStaffIdx);
             clrFlag(HR_FLAG_00000002);

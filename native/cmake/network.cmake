@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 add_library(cos_network STATIC
     "${COS_NATIVE_ROOT}/src/pc/network/network_config.cpp"
     "${COS_NATIVE_ROOT}/src/pc/network/network_session.cpp"
+    "${COS_NATIVE_ROOT}/src/pc/network/network_client_store.cpp"
     "${COS_NATIVE_ROOT}/src/pc/network/network_store.cpp")
 set_target_properties(cos_network PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(cos_network PUBLIC "${COS_NATIVE_ROOT}/include"
@@ -27,3 +28,10 @@ target_include_directories(cos_network_profile_tests PRIVATE "${COS_NATIVE_ROOT}
 target_link_libraries(cos_network_profile_tests PRIVATE cos_network)
 add_executable(cos_progression_logic_tests "${COS_NATIVE_ROOT}/check/pc_progression_logic_test.cpp")
 target_include_directories(cos_progression_logic_tests PRIVATE "${COS_NATIVE_ROOT}/include")
+add_executable(cos_network_game_policy_tests "${COS_NATIVE_ROOT}/check/pc_network_game_policy_test.cpp")
+set_target_properties(cos_network_game_policy_tests PROPERTIES CXX_STANDARD 17)
+target_include_directories(cos_network_game_policy_tests PRIVATE "${COS_NATIVE_ROOT}/include")
+add_executable(cos_network_client_store_tests "${COS_NATIVE_ROOT}/check/pc_network_client_store_test.cpp")
+set_target_properties(cos_network_client_store_tests PROPERTIES CXX_STANDARD 17)
+target_include_directories(cos_network_client_store_tests PRIVATE "${COS_NATIVE_ROOT}/src/pc/network")
+target_link_libraries(cos_network_client_store_tests PRIVATE cos_network)

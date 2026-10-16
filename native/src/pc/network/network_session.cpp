@@ -71,32 +71,54 @@ struct PcNetworkServer{
         Bytes b;identity(b,room.compatibility);string(b,room.id.c_str());put64(b,room.revision);put64(b,room.clients[c.player_id].sequence);
         unsigned count=0;for(uint32_t v:room.progress.values)if(v)++count;put16(b,uint16_t(count));
         for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(room.progress.values[key])delta(b,{key,room.progress.values[key]});
-        if(!p.pipe.queue(Welcome,0,b)){p.closing=true;return;}roster(p.room);
+        put16(b,uint16_t(room.rewards.size()));
+        if(!p.pipe.queue(Welcome,0,b)){p.closing=true;return;}
+        // Bounded pages keep each frame below4KiB. The receiver publishes no
+        // Connected state until the entire ledger has passed validation.
+        unsigned offset=0;auto claim=room.rewards.begin();
+        while(claim!=room.rewards.end()){
+            Bytes page;put64(page,room.revision);put16(page,uint16_t(offset));put16(page,uint16_t(room.rewards.size()));
+            const unsigned n=std::min<unsigned>(240,unsigned(room.rewards.size())-offset);put16(page,uint16_t(n));
+            for(unsigned i=0;i<n;++i,++claim)reward(page,claim->second);
+            if(!p.pipe.queue(Snapshot,0,page)){p.closing=true;return;}offset+=n;
+        }
+        roster(p.room);
     }
     void handle(ServerPeer& p,const Frame& f){
         if(!p.joined){if(f.type==Hello)hello(p,f);else reject(p,"Handshake required");return;}
         Room& room=rooms.at(p.room);
-        if(f.type==Delta){Reader r{f.body};const auto d=delta(r);
+        if(f.type==Delta||f.type==Award){Reader r{f.body};PcNetworkReward claim{};PcNetworkFact d{};
+            if(f.type==Award){claim=reward(r);d={claim.key,claim.value};}else d=delta(r);
             if(storage_failed){reject(p,"Durable room storage unavailable");return;}
-            if(!r.done()||!pc_network_fact_valid(d)||!f.sequence){reject(p,"Invalid permanent progression delta");return;}
+            if(!r.done()||!f.sequence||(f.type==Award?!pc_network_reward_valid(claim):
+                (!pc_network_fact_valid(d)||pc_permanent_server_authoritative(d.key)))){reject(p,"Invalid permanent progression operation");return;}
+            if(claim.reward_id){const auto known=room.rewards.find(claim.reward_id);
+                if(known!=room.rewards.end()&&!same_reward(known->second,claim)){reject(p,"Authored reward payload mismatch");return;}
+                if(known==room.rewards.end()&&room.rewards.size()>=PC_NETWORK_REWARDS){reject(p,"Authored reward ledger limit reached");return;}}
             auto& history=room.clients.at(p.info.player_id);uint64_t& last=history.sequence;
             if(last>=UINT64_MAX-1||f.sequence>last+1){reject(p,"Client sequence gap or exhaustion");return;}
             const bool fresh=f.sequence==last+1;
             if(!fresh){const auto old=std::find_if(history.recent.begin(),history.recent.end(),[&](const Receipt& x){return x.sequence==f.sequence;});
-                if(old==history.recent.end()||old->delta.key!=d.key||old->delta.value!=d.value){reject(p,"Replay payload mismatch or expired sequence");return;}
+                if(old==history.recent.end()||!same_reward(old->reward,claim)||
+                    (!claim.reward_id&&(old->delta.key!=d.key||old->delta.value!=d.value))){reject(p,"Replay payload mismatch or expired sequence");return;}
                 if(store){StoredRoom persisted;bool saved=false;std::string error;
                     if(!store->load(room.compatibility,room.name.c_str(),persisted,saved,error)||!saved){storage_failed=true;reject(p,"Durable room storage unavailable");return;}}}
             bool changed=false;
             if(fresh){
-                Room next=room;changed=pc_network_fact_merge(&next.progress,d);
+                Room next=room;
+                if(claim.reward_id){if(!next.rewards.count(claim.reward_id)){
+                    next.progress.values[claim.key]=pc_permanent_operation_result(claim.key,next.progress.values[claim.key],claim.operation,claim.value);
+                    next.rewards.emplace(claim.reward_id,claim);changed=true;
+                }}else changed=pc_network_fact_merge(&next.progress,d);
                 if(changed&&next.revision==UINT64_MAX-1){reject(p,"Room revision exhaustion");return;}
                 auto& next_history=next.clients.at(p.info.player_id);next_history.sequence=f.sequence;
-                next_history.recent.push_back({f.sequence,d});if(next_history.recent.size()>PC_NETWORK_QUEUE)next_history.recent.pop_front();
+                const PcNetworkFact receipt=claim.reward_id?PcNetworkFact{claim.key,next.progress.values[claim.key]}:d;
+                next_history.recent.push_back({f.sequence,receipt,claim});if(next_history.recent.size()>PC_NETWORK_QUEUE)next_history.recent.pop_front();
                 if(changed)++next.revision;
                 std::string error;if(store&&!store->save(next,error)){storage_failed=true;reject(p,"Cannot persist room progression");return;}
                 room=std::move(next);
             }
-            Bytes b;string(b,p.info.player_id);put64(b,f.sequence);put64(b,room.revision);delta(b,{d.key,room.progress.values[d.key]});
+            Bytes b;string(b,p.info.player_id);put64(b,f.sequence);put64(b,room.revision);delta(b,{d.key,room.progress.values[d.key]});reward(b,claim);
             if(changed){for(auto& other:peers)if(other->joined&&!other->closing&&other->room==p.room&&!other->pipe.queue(Commit,0,b))other->closing=true;}
             else if(!p.pipe.queue(Commit,0,b))p.closing=true;
         }else if(f.type==Ping){if(!f.body.empty()||!p.pipe.queue(Pong,f.sequence,{}))p.closing=true;}
@@ -115,7 +137,7 @@ struct PcNetworkServer{
                     // Each durable Delta can block on a real flush. Yield to
                     // other peers, then pump its ACK before the next receipt;
                     // a full replay backlog must not hide ACKs/heartbeats.
-                    if(store&&f.type==Delta)break;}
+                    if(store&&(f.type==Delta||f.type==Award))break;}
                 const auto now=Clock::now();
                 if(p->pipe.eof||(!p->joined&&now-p->accepted>std::chrono::seconds(5))||now-p->pipe.activity>std::chrono::seconds(30)){p->closing=true;p->pipe.reset();}
                 if(p->closing&&p->pipe.output.empty())p->pipe.reset();
@@ -127,39 +149,72 @@ struct PcNetworkServer{
         }
     }
 };
-struct Pending{PcNetworkFact delta;uint64_t sequence;bool sent=false;};
+struct Pending{PcNetworkFact delta;uint64_t sequence;bool sent=false;PcNetworkReward reward{};};
 struct PcNetworkSession{
     std::mutex mutex;std::atomic<bool> stop{false};std::thread worker;PcNetworkConfig config{};
     PcNetworkSnapshot status{};std::deque<Pending> outgoing;std::deque<PcNetworkUpdate> incoming;
+    PcNetworkFacts canonical{};std::map<uint64_t,PcNetworkReward> rewards;
+    struct StagedSnapshot {bool active=false;PcNetworkFacts facts{};std::map<uint64_t,PcNetworkReward> rewards;
+        char room_id[33]{};uint64_t revision=0,ack=0;unsigned expected=0;} staged;
     uint64_t next_sequence=1;
     ~PcNetworkSession(){leave();}
     void leave(){stop=true;if(worker.joinable())worker.join();std::lock_guard<std::mutex> lock(mutex);
-        outgoing.clear();incoming.clear();status.status=PC_NETWORK_OFFLINE;status.peer_count=0;copy(status.message,128,"Offline");next_sequence=1;}
+        outgoing.clear();incoming.clear();canonical={};rewards.clear();staged={};status.status=PC_NETWORK_OFFLINE;status.peer_count=0;copy(status.message,128,"Offline");next_sequence=1;}
     void state(PcNetworkStatus value,const char* message){std::lock_guard<std::mutex> lock(mutex);status.status=value;copy(status.message,128,message);}
+    bool publish_snapshot(bool& welcome){
+        if(staged.rewards.size()!=staged.expected||status.generation==UINT64_MAX)return false;
+        PcNetworkFacts steps{};
+        for(const auto& entry:staged.rewards){const auto& claim=entry.second;
+            if(pc_permanent_server_authoritative(claim.key))steps.values[claim.key]=pc_permanent_operation_result(claim.key,steps.values[claim.key],claim.operation,claim.value);
+            else if(staged.facts.values[claim.key]<claim.value)return false;}
+        for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(pc_permanent_server_authoritative(key)&&steps.values[key]!=staged.facts.values[key])return false;
+        const bool changed=status.room_identity[0]&&std::strcmp(status.room_identity,staged.room_id);
+        if(changed){if(outgoing.size()>=UINT64_MAX-staged.ack)return false;uint64_t seq=staged.ack+1;
+            for(auto& p:outgoing){p.sequence=seq++;p.sent=false;}next_sequence=seq;}
+        else {while(!outgoing.empty()&&outgoing.front().sequence<=staged.ack)outgoing.pop_front();next_sequence=std::max(next_sequence,staged.ack+1);for(auto& p:outgoing)p.sent=false;}
+        std::deque<PcNetworkUpdate> fresh;
+        for(uint16_t key=0;key<PC_NETWORK_FACTS;++key)if(staged.facts.values[key])fresh.push_back({{key,staged.facts.values[key]},staged.revision,status.generation+1,true,{}});
+        canonical=staged.facts;rewards=std::move(staged.rewards);incoming.swap(fresh);
+        copy(status.room_identity,33,staged.room_id);status.server_revision=staged.revision;++status.generation;
+        status.status=PC_NETWORK_CONNECTED;copy(status.message,128,"Connected; shared native permanent progress");staged={};welcome=true;return true;
+    }
     bool received(const Frame& f,bool& welcome,bool& rejected){
         Reader r{f.body};std::lock_guard<std::mutex> lock(mutex);
         if(f.type==Reject){char message[128];if(!r.text(message,sizeof message)||!r.done())return false;
             status.status=PC_NETWORK_REJECTED;copy(status.message,128,message);rejected=true;return true;}
         if(f.type==Welcome){PcNetworkCompatibility c{};char room_id[33];
-            if(welcome||!identity(r,c)||!same(c,config.compatibility)||!r.text(room_id,sizeof room_id))return false;
+            if(welcome||staged.active||f.sequence||!identity(r,c)||!same(c,config.compatibility)||!r.text(room_id,sizeof room_id))return false;
             const uint64_t revision=r.qword(),ack=r.qword();const unsigned count=r.word();if(count>PC_NETWORK_QUEUE)return false;
-            if(ack==UINT64_MAX||std::strlen(room_id)!=32||std::strspn(room_id,"0123456789abcdef")!=32)return false;
-            std::deque<PcNetworkUpdate> fresh;std::array<bool,PC_NETWORK_FACTS> keys{};
+            if(ack==UINT64_MAX||revision==UINT64_MAX||((revision==0)!=(count==0))||
+                std::strlen(room_id)!=32||std::strspn(room_id,"0123456789abcdef")!=32)return false;
+            StagedSnapshot next;next.active=true;next.revision=revision;next.ack=ack;copy(next.room_id,33,room_id);std::array<bool,PC_NETWORK_FACTS> keys{};
             for(unsigned i=0;i<count;++i){const auto d=delta(r);if(!pc_network_fact_valid(d)||keys[d.key])return false;keys[d.key]=true;
-                fresh.push_back({d,revision,status.generation+1,true});}if(!r.done())return false;
-            const bool changed=status.room_identity[0]&&std::strcmp(status.room_identity,room_id);
-            if(changed){uint64_t seq=ack+1;for(auto& p:outgoing){p.sequence=seq++;p.sent=false;}next_sequence=seq;}
-            else {while(!outgoing.empty()&&outgoing.front().sequence<=ack)outgoing.pop_front();next_sequence=std::max(next_sequence,ack+1);for(auto& p:outgoing)p.sent=false;}
-            incoming.swap(fresh);copy(status.room_identity,33,room_id);status.server_revision=revision;++status.generation;
-            status.status=PC_NETWORK_CONNECTED;copy(status.message,128,"Connected; isolated native permanent progress");welcome=true;return true;
+                next.facts.values[d.key]=d.value;}
+            next.expected=r.word();if(!r.done()||next.expected>PC_NETWORK_REWARDS||revision<next.expected)return false;
+            staged=std::move(next);return staged.expected?true:publish_snapshot(welcome);
+        }
+        if(f.type==Snapshot){if(welcome||!staged.active||f.sequence)return false;
+            const auto revision=r.qword();const unsigned offset=r.word(),total=r.word(),count=r.word();
+            if(revision!=staged.revision||total!=staged.expected||offset!=staged.rewards.size()||!count||count>240||count>total-offset)return false;
+            uint64_t previous=staged.rewards.empty()?0:staged.rewards.rbegin()->first;
+            for(unsigned i=0;i<count;++i){const auto claim=reward(r);if(!pc_network_reward_valid(claim)||claim.reward_id<=previous)return false;
+                previous=claim.reward_id;staged.rewards.emplace(claim.reward_id,claim);}
+            if(!r.done())return false;return staged.rewards.size()==staged.expected?publish_snapshot(welcome):true;
         }
         if(!welcome)return false;
-        if(f.type==Commit){char origin[33];if(!r.text(origin,sizeof origin))return false;const uint64_t sequence=r.qword(),revision=r.qword();const auto d=delta(r);
-            if(!r.done()||!sequence||std::strlen(origin)!=32||std::strspn(origin,"0123456789abcdef")!=32||!pc_network_fact_valid(d))return false;
+        if(f.type==Commit){char origin[33];if(!r.text(origin,sizeof origin))return false;const uint64_t sequence=r.qword(),revision=r.qword();const auto d=delta(r);const auto claim=reward(r);
+            if(!r.done()||f.sequence||!sequence||std::strlen(origin)!=32||std::strspn(origin,"0123456789abcdef")!=32||!pc_network_fact_valid(d)||
+                (claim.reward_id?(!pc_network_reward_valid(claim)||claim.key!=d.key):(claim.key||claim.operation||claim.value||pc_permanent_server_authoritative(d.key))))return false;
+            const auto known=claim.reward_id?rewards.find(claim.reward_id):rewards.end();
+            if(known!=rewards.end()&&!same_reward(known->second,claim))return false;
             if(std::strcmp(origin,config.player_id)==0){while(!outgoing.empty()&&outgoing.front().sequence<=sequence)outgoing.pop_front();}
             if(revision<=status.server_revision)return true;
             if(revision!=status.server_revision+1||incoming.size()>=PC_NETWORK_QUEUE)return false;
-            incoming.push_back({d,revision,status.generation,false});status.server_revision=revision;++status.received;return true;
+            if(claim.reward_id){if(known!=rewards.end()||rewards.size()>=PC_NETWORK_REWARDS||
+                    pc_permanent_operation_result(claim.key,canonical.values[claim.key],claim.operation,claim.value)!=d.value)return false;
+                rewards.emplace(claim.reward_id,claim);
+            }else if(canonical.values[d.key]>=d.value)return false;
+            canonical.values[d.key]=d.value;incoming.push_back({d,revision,status.generation,false,claim});status.server_revision=revision;++status.received;return true;
         }
         if(f.type==Roster){const unsigned count=r.word();if(count>PC_NETWORK_PEERS)return false;std::array<PcNetworkPeer,PC_NETWORK_PEERS> peers{};
             for(unsigned i=0;i<count;++i){if(!presence(r,peers[i]))return false;
@@ -170,6 +225,7 @@ struct PcNetworkSession{
     void run(){
         bool ever=false;
         while(!stop){state(ever?PC_NETWORK_RECONNECTING:PC_NETWORK_CONNECTING,ever?"Reconnecting; queued progress retained":"Connecting");
+            {std::lock_guard<std::mutex> lock(mutex);staged={};}
             Pipe pipe;pipe.socket=pc_net::connect(config.server,config.port);
             if(pipe.socket==invalid){for(unsigned i=0;i<40&&!stop;++i)std::this_thread::sleep_for(std::chrono::milliseconds(25));continue;}
             Bytes hello;identity(hello,config.compatibility);string(hello,config.room);string(hello,config.player_id);string(hello,config.player_name);string(hello,config.room_password);hello.push_back(config.create_room?1:0);
@@ -180,7 +236,8 @@ struct PcNetworkSession{
                 if(!valid||rejected||pipe.eof)break;
                 if(welcome){
                     std::lock_guard<std::mutex> lock(mutex);
-                    for(auto& p:outgoing)if(!p.sent){Bytes b;delta(b,p.delta);if(!pipe.queue(Delta,p.sequence,b)){valid=false;break;}p.sent=true;++status.sent;}
+                    for(auto& p:outgoing)if(!p.sent){Bytes b;if(p.reward.reward_id)reward(b,p.reward);else delta(b,p.delta);
+                        if(!pipe.queue(p.reward.reward_id?Award:Delta,p.sequence,b)){valid=false;break;}p.sent=true;++status.sent;}
                 }
                 if(!valid)break;
                 const auto now=Clock::now();if(!welcome&&now-began>std::chrono::seconds(5))break;
@@ -190,7 +247,8 @@ struct PcNetworkSession{
             }
             if(stop){pipe.queue(Leave,0,{});pipe.pump();break;}
             if(rejected)return;
-            if(welcome){ever=true;std::lock_guard<std::mutex> lock(mutex);++status.reconnects;for(auto& p:outgoing)p.sent=false;}
+            if(welcome){ever=true;std::lock_guard<std::mutex> lock(mutex);++status.reconnects;for(auto& p:outgoing)p.sent=false;
+                status.status=PC_NETWORK_RECONNECTING;copy(status.message,128,"Reconnecting; queued progress retained");}
             for(unsigned i=0;i<20&&!stop;++i)std::this_thread::sleep_for(std::chrono::milliseconds(25));
         }
     }
@@ -240,11 +298,29 @@ extern "C" bool pc_network_join(PcNetworkSession* s,const PcNetworkConfig* c){
     try{s->worker=std::thread([s]{s->run();});return true;}catch(...){s->state(PC_NETWORK_FAILED,"Cannot start connection worker");return false;}
 }
 extern "C" bool pc_network_submit(PcNetworkSession* s,PcNetworkFact d){
-    if(!s||!pc_network_fact_valid(d))return false;std::lock_guard<std::mutex> lock(s->mutex);
+    if(!s||!pc_network_fact_valid(d)||pc_permanent_server_authoritative(d.key))return false;std::lock_guard<std::mutex> lock(s->mutex);
     if((s->status.status!=PC_NETWORK_CONNECTED&&s->status.status!=PC_NETWORK_RECONNECTING)||s->outgoing.size()>=PC_NETWORK_QUEUE||s->next_sequence==UINT64_MAX)return false;
     s->outgoing.push_back({d,s->next_sequence++,false});return true;
+}
+extern "C" bool pc_network_submit_reward(PcNetworkSession* s,PcNetworkReward claim){
+    if(!s||!pc_network_reward_valid(claim))return false;std::lock_guard<std::mutex> lock(s->mutex);
+    if((s->status.status!=PC_NETWORK_CONNECTED&&s->status.status!=PC_NETWORK_RECONNECTING)||s->outgoing.size()>=PC_NETWORK_QUEUE||s->next_sequence==UINT64_MAX)return false;
+    s->outgoing.push_back({{claim.key,claim.value},s->next_sequence++,false,claim});return true;
 }
 extern "C" bool pc_network_poll(PcNetworkSession* s,PcNetworkUpdate* out){if(!s||!out)return false;std::lock_guard<std::mutex> lock(s->mutex);
     if(s->incoming.empty())return false;*out=s->incoming.front();s->incoming.pop_front();return true;}
 extern "C" void pc_network_status(PcNetworkSession* s,PcNetworkSnapshot* out){if(!out)return;if(!s){*out={};return;}
     std::lock_guard<std::mutex> lock(s->mutex);*out=s->status;out->pending_outgoing=unsigned(s->outgoing.size());out->pending_incoming=unsigned(s->incoming.size());}
+extern "C" bool pc_network_copy_state(PcNetworkSession* s,PcNetworkFacts* facts,PcNetworkReward* claims,
+    unsigned capacity,unsigned* count,PcNetworkSnapshot* snapshot){
+    if(!s||!facts||!count)return false;std::lock_guard<std::mutex> lock(s->mutex);
+    if(snapshot){*snapshot=s->status;snapshot->pending_outgoing=unsigned(s->outgoing.size());snapshot->pending_incoming=unsigned(s->incoming.size());}
+    *count=unsigned(s->rewards.size());
+    if(s->status.status!=PC_NETWORK_CONNECTED||s->staged.active||capacity<*count||(*count&&!claims))return false;
+    *facts=s->canonical;unsigned i=0;for(const auto& entry:s->rewards)claims[i++]=entry.second;return true;
+}
+extern "C" int pc_network_reward_known(PcNetworkSession* s,uint64_t id,PcNetworkReward* out){
+    if(!s||!pc_permanent_producer_valid(id))return -1;std::lock_guard<std::mutex> lock(s->mutex);
+    if(s->status.status!=PC_NETWORK_CONNECTED||s->staged.active)return -1;
+    const auto at=s->rewards.find(id);if(at==s->rewards.end())return 0;if(out)*out=at->second;return 1;
+}
