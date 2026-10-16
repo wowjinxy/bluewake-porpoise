@@ -1,0 +1,69 @@
+diff --git a/lib/dolphin/card.cpp b/lib/dolphin/card.cpp
+--- a/lib/dolphin/card.cpp
++++ b/lib/dolphin/card.cpp
+@@ -2,6 +2,9 @@
+ 
+ #include <cstring>
+ #include <filesystem>
++#include <string>
++
++#include <SDL3/SDL_error.h>
+ 
+ #include "aurora/card.h"
+ #include "../internal.hpp"
+@@ -429,8 +432,18 @@
+   if (res == aurora::card::ECardResult::READY) {
+     CopyKabuFileHandleToDolphin(chan, handle, fileInfo);
+     res = card->commit();
+-  } else
+-    Log.error("Failed to create file: {}", fileName);
++    if (res != aurora::card::ECardResult::READY) {
++      const std::string sdlLastError = SDL_GetError();
++      Log.error("Failed to create file: {} chan={} phase=commit result={} length={} "
++                "SDL-last-error='{}' (may be stale for logical results)",
++                fileName, chan, static_cast<s32>(res), size, sdlLastError);
++    }
++  } else {
++    const std::string sdlLastError = SDL_GetError();
++    Log.error("Failed to create file: {} chan={} phase=create result={} length={} "
++              "SDL-last-error='{}' (may be stale for logical results)",
++              fileName, chan, static_cast<s32>(res), size, sdlLastError);
++  }
+ 
+   return static_cast<s32>(res);
+ }
+@@ -855,8 +868,12 @@
+   card->seek(handle, offset, aurora::card::SeekOrigin::Begin);
+   auto res = card->fileRead(handle, addr, length);
+ 
+-  if (res != aurora::card::ECardResult::READY)
+-    Log.error("Failed to read {} bytes from card", length);
++  if (res != aurora::card::ECardResult::READY) {
++    const std::string sdlLastError = SDL_GetError();
++    Log.error("Failed to read from card: chan={} file={} phase=read result={} offset={} length={} "
++              "SDL-last-error='{}' (may be stale for logical results)",
++              fileInfo->chan, fileInfo->fileNo, static_cast<s32>(res), offset, length, sdlLastError);
++  }
+ 
+   return static_cast<s32>(res);
+ }
+@@ -884,9 +901,18 @@
+   auto res = card->fileWrite(handle, addr, length);
+ 
+   if (res != aurora::card::ECardResult::READY) {
+-    Log.error("Failed to write {} bytes to card", length);
++    const std::string sdlLastError = SDL_GetError();
++    Log.error("Failed to write to card: chan={} file={} phase=write result={} offset={} length={} "
++              "SDL-last-error='{}' (may be stale for logical results)",
++              fileInfo->chan, fileInfo->fileNo, static_cast<s32>(res), offset, length, sdlLastError);
+   } else {
+     res = card->commit();
++    if (res != aurora::card::ECardResult::READY) {
++      const std::string sdlLastError = SDL_GetError();
++      Log.error("Failed to write to card: chan={} file={} phase=commit result={} offset={} length={} "
++                "SDL-last-error='{}' (may be stale for logical results)",
++                fileInfo->chan, fileInfo->fileNo, static_cast<s32>(res), offset, length, sdlLastError);
++    }
+   }
+ 
+   return static_cast<s32>(res);

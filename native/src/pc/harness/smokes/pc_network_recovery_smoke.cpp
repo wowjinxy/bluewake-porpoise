@@ -186,17 +186,38 @@ void lockGci(bool readFault) {
     need(sLock == INVALID_HANDLE_VALUE, "a controlled GCI lock is already held");
     std::unique_ptr<wchar_t, decltype(&std::free)> path(pc_net_atomic_wide_path(sGci.c_str()), std::free);
     need(path != nullptr, "cannot convert private GCI path");
-    // Read: deny every second opener. Write: allow normal read/write streams,
-    // but omit FILE_SHARE_DELETE so the real atomic replacement must fail.
-    sLock = CreateFileW(path.get(), GENERIC_READ, readFault ? 0 : FILE_SHARE_READ | FILE_SHARE_WRITE,
+    // Read: deny every second opener. Write: pin with no desired access because
+    // SDL opens r+b streams with share0; a retained read handle would block its
+    // readiness probe before atomic publication. Omit FILE_SHARE_DELETE so only
+    // the real replacement fails, then verify bytes through a short-lived reader.
+    sLock = CreateFileW(path.get(), readFault ? GENERIC_READ : 0,
+                        readFault ? 0 : FILE_SHARE_READ | FILE_SHARE_WRITE,
                         nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     need(sLock != INVALID_HANDLE_VALUE, "cannot acquire controlled private GCI sharing denial");
     BY_HANDLE_FILE_INFORMATION info{};
     need(GetFileInformationByHandle(sLock, &info) && info.nNumberOfLinks == 1 &&
          !(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
          info.nFileSizeHigh == 0 && info.nFileSizeLow == 98368, "GCI lock target is not one regular native save");
+    HANDLE reader = sLock;
+    if (!readFault) {
+        reader = CreateFileW(path.get(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        need(reader != INVALID_HANDLE_VALUE, "cannot read through the replacement-only GCI pin");
+        BY_HANDLE_FILE_INFORMATION readInfo{};
+        const bool sameFile = GetFileInformationByHandle(reader, &readInfo) &&
+            readInfo.dwVolumeSerialNumber == info.dwVolumeSerialNumber &&
+            readInfo.nFileIndexHigh == info.nFileIndexHigh && readInfo.nFileIndexLow == info.nFileIndexLow &&
+            readInfo.nNumberOfLinks == 1 &&
+            !(readInfo.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
+            readInfo.nFileSizeHigh == 0 && readInfo.nFileSizeLow == 98368;
+        if (!sameFile) CloseHandle(reader);
+        need(sameFile, "verification reader differs from the pinned regular native GCI");
+    }
     std::string bytes(98368, '\0'); DWORD count = 0;
-    need(ReadFile(sLock, bytes.data(), static_cast<DWORD>(bytes.size()), &count, nullptr) && count == bytes.size(),
+    const bool read = ReadFile(reader, bytes.data(), static_cast<DWORD>(bytes.size()), &count, nullptr) &&
+                      count == bytes.size();
+    const bool closed = readFault || CloseHandle(reader);
+    need(read && closed,
          "cannot verify the locked private GCI bytes");
     need(pc_net::digest(bytes) == (readFault ? sReadHash : sWriteHash), "GCI changed while acquiring controlled lock");
 #else

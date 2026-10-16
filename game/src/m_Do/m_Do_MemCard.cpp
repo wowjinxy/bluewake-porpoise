@@ -498,8 +498,11 @@ void mDoMemCd_Ctrl_c::setCardState(s32 state) {
     case CARD_ERROR_ENCODING:
         field_0x1660 = 6;
         break;
-#if VERSION == VERSION_PAL
+#if VERSION == VERSION_PAL || TARGET_PC
     case CARD_ERROR_NOFILE:
+        // Aurora also reports this when an existing GCI cannot be opened.
+        // Finish the native operation as failed instead of leaving state 1
+        // reporting a busy SaveSync forever. Original console paths stay PAL-only.
         field_0x1660 = 2;
         break;
 #endif

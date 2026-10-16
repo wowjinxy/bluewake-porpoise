@@ -97,11 +97,18 @@ std::string utf8(const fs::path& path) {
 }
 fs::path absolute(const char* value) {
     if (!value || !*value || std::strlen(value) >= 1024) usage("bounded explicit private paths required");
-    return fs::absolute(fs::u8path(value)).lexically_normal();
+    auto path = fs::absolute(fs::u8path(value)).lexically_normal();
+    path.make_preferred();
+    // Mounted directories may carry a trailing separator. weakly_canonical
+    // removes it; that spelling difference is not a linked ancestor.
+    while (path.has_relative_path() && path.filename().empty()) path = path.parent_path();
+    return path;
 }
 bool samePart(const fs::path& a, const fs::path& b) {
 #ifdef _WIN32
-    return _wcsicmp(a.c_str(), b.c_str()) == 0;
+    auto left = a, right = b;
+    left.make_preferred(); right.make_preferred();
+    return _wcsicmp(left.c_str(), right.c_str()) == 0;
 #else
     return a == b;
 #endif
@@ -138,8 +145,14 @@ void validatePrivate() {
     const auto mounted = absolute(pc_network_game_card_base());
     if (!inside(run, root) || !inside(storage, root) || !inside(prefs, root) || !inside(mounted, storage))
         usage("run/profile/storage/mounted CARD must be beneath the explicit private root");
-    for (const auto& path : {run, storage, prefs, mounted})
-        if (!samePart(fs::weakly_canonical(path), path)) usage("private paths must have no linked ancestors");
+    for (const auto& path : {run, storage, prefs, mounted}) {
+        const auto canonical = fs::weakly_canonical(path);
+        if (!samePart(canonical, path)) {
+            writef(STDERR_FILENO, "[cos] network-fairy: private-path expected=%s canonical=%s\n",
+                   utf8(path).c_str(), utf8(canonical).c_str());
+            usage("private paths must have no linked ancestors");
+        }
+    }
     const char* card = std::getenv("COS_CARD_DIR");
     if (card && *card) usage("room diagnostic refuses a personal CARD override");
     sGci = utf8(mounted / "USA" / "Card A" / "01-GZLE-gczelda.gci");

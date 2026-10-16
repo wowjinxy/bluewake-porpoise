@@ -72,7 +72,8 @@ qualification remains pending.
   and post-load rejoin both use the owned listener's configured bind address.
 - Failure diagnostics exercise actual isolated native CARD read/replace
   failures and retry, plus actual owning-host native quest load. They remain
-  off by default and have not been run on the expanded source.
+  off by default. Host loading passed; the first CARD retry attempt failed and
+  its write-fault fixture/error handling are corrected below, pending rerun.
 
 Source review and no-output clang-cl semantic checks are useful intermediate
 evidence only. At `bea6a4a0`, all 22 changed translation units passed no-output
@@ -146,6 +147,28 @@ no-output compiler check; linking, execution and a deep native GCI regression
 remain pending. The helper explicitly reports a skip when Windows' existing
 long-path policy is off; no system policy is changed.
 
+The owned-host case also passed actual file selection and native quest loading
+with bind `127.0.0.2` distinct from public endpoint `127.0.0.1`. It reconnected
+to the same owned room, retained its unchanged GCI and emitted no new award or
+remote effect.
+
+The first controlled CARD retry attempt restored authorization after a real
+LoadSync 2/read denial and successful retry. Its write probe then blocked SDL's
+`r+b` readiness open rather than atomic replacement: a retained read handle is
+incompatible with SDL's exclusive writer. Aurora returned NOFILE; the native
+non-PAL controller did not map that terminal result and kept SaveSync busy.
+The PC path now reuses the existing PAL NOFILE state mapping. The write probe
+uses a zero-access pin without delete sharing, verifies its exact file through
+a separate reader, then closes that reader before native writing. Three
+affected translation units passed no-output compiler checks; actual retry
+acceptance remains pending.
+
+The unfaulted sender in that attempt separately failed while writing its second
+blank-save copy. Its short path rules out the earlier deep-path explanation;
+its exact backend error was not logged. A diagnostic-only Aurora patch now
+records failure phase, result, offset/length and copied last SDL error. It does
+not change I/O, callbacks or retries. The sender's cause remains unresolved.
+
 ## Dedicated progressive-reward native case
 
 The off-by-default `network-fairy` harness now provides two genuine wallet-fairy
@@ -170,8 +193,12 @@ unchanged. The full Windows build including this harness passed in
 [run 38962853385](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38962853385)
 at `9fefbc9e`; the downloaded executable is 13,935,616 bytes, SHA-256
 `ad823408e8c1c600a2eef93793c55f5d16b59e3e1155605e03734c61b2870838`.
-Its native fairy run remains pending. The fresh wallet fixture has zero rupees
-and does not qualify over-capacity resource corrections or ammo fairies.
+Its first native fairy attempt exited at the private-path guard before
+reward gameplay: equivalent Windows directory spellings were compared as raw
+strings. Separator and trailing-directory normalization are now corrected,
+with mismatched spellings logged, and passed the compiler check above. The
+retry remains pending. The fresh wallet fixture has zero rupees and does not
+qualify over-capacity resource corrections or ammo fairies.
 
 ## Next implementation boundaries
 
