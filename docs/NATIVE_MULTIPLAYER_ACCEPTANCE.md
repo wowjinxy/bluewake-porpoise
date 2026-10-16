@@ -38,7 +38,8 @@ retained. None of that evidence qualifies newly edited source automatically.
 ## Current implementation work
 
 The feature branch `multiplayer/native-standard-20261016` contains the following
-source work. It has not produced a new executable or runtime qualification.
+source work. It has compiled and linked in Windows CI; native runtime
+qualification remains pending.
 
 - Sparse permanent facts cover tools/bags, camera and bow ranks, six songs,
   wallet/magic/ammo capacities, pearls and shards. Native authored chest, fairy
@@ -74,20 +75,84 @@ source work. It has not produced a new executable or runtime qualification.
   off by default and have not been run on the expanded source.
 
 Source review and no-output clang-cl semantic checks are useful intermediate
-evidence only. An earlier 2026-10-16 snapshot passed 22 translation-unit semantic
-checks. Remote Windows clang-cl 19.1.5 then built the seven standalone suites at
-`899f0529`; schema, store, profile, progression logic, game policy and client
-journal suites passed. The transport suite failed its malformed-frame fixture's
-strict pump assertion after an expected connection reset. That failure is
-retained in [run 38956661533](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38956661533).
-The fixture correction still requires a new run; it retains full-send,
-prompt-closure and no-publication requirements.
+evidence only. At `bea6a4a0`, all 22 changed translation units passed no-output
+clang-cl semantic checks; protected build metadata across 8,509 files stayed
+identical and no temporary outputs remained. The same source passed all seven
+standalone suites on Windows with clang-cl 19.1.5 in
+[run 38958492489](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38958492489):
+schema, transport, store, profile, progression logic, game policy and client
+journal. Actual CTest elapsed time was 15.68 seconds.
+
+Earlier failed runs remain available:
+[38956661533](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38956661533)
+exposed the malformed-frame fixture's strict pump assertion after an expected
+connection reset; [38957726940](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38957726940)
+then exposed queued reconnects contaminating a shared fake-server listener.
+The corrected fixtures require full send, prompt closure, exact Hello identity
+and no publication. Each case owns a listener; all eight peer identities satisfy
+the hexadecimal contract. Production rejection requirements were retained.
 
 None of these checks proves native saving, recovery or multiplayer behavior.
 Local builds require at least 8 GiB free on C:, which remains unavailable.
-The manual CI workflow now provides separate standalone-network and source-only
-Windows game compile/link scopes. Full integration compile/link and actual game
-acceptance remain pending. The qualified pilot executable/tester is unchanged.
+The manual CI workflow provides separate standalone-network and source-only
+Windows game compile/link scopes. The full Windows job at `80227854` passed in
+[run 38957731060](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38957731060),
+building the named `switchwaker` target plus `cos_pc_tests` and `cos_sdk_smoke`.
+Both headless helpers exited successfully; their documented POSIX fork/wait
+death/exit checks were skipped on Windows. The linked executable was 13,897,216
+bytes, SHA-256
+`f04ae930f5cd4b5eaa568c6dcfdf8beb835057a7be22372758bc158e60c1018c`.
+The later `bea6a4a0` changes affect transport fixtures only; the native game code
+is identical to this linked source.
+
+That first job retained logs and an output hash, not a downloadable build.
+Native runtime, real CARD recovery and expanded two-game acceptance remain
+pending. The qualified pilot executable/tester is unchanged.
+
+## Next implementation boundaries
+
+These are source-backed design constraints, not implemented or qualified
+features. Their fact/operation formats require an intentional compatibility
+change before use.
+
+- **Permanent gear:** sword ranks, shield ranks and bracelets need native collect
+  bits plus selected equipment. Defer held-sword, guarding and lifting changes
+  until the native models can refresh safely. Preserve recollection/minigame
+  guards and the authored first-Forsaken-Fortress stolen-sword sequence. Master
+  Sword cutscenes call `execItemGet` directly; catalogue entries alone miss those
+  genuine producers. The dropped recovery sword is not a newly earned reward.
+- **Health:** once-only authored heart pieces add one quarter unit; containers
+  add four, with capacity capped at 80. Observed maximum life cannot identify
+  overlapping earned sources. Native item functions also heal and their queued
+  effects settle later in the meter. A permanent-only remote effect needs a HUD
+  refresh that preserves current health and pending damage/heal queues. Bind
+  first-drop and respawn boss hearts to one boss save identity, including the
+  sea/Forsaken-Fortress alias. Salvage and NPC rewards need their originating
+  authored identity; position and item-box parameters are insufficient.
+- **World rewards:** a chest sets its opened flag before award completion, and
+  boss defeat differs from heart collection. Persist reward/dependency bundles
+  atomically; apply the reward entitlement before its suppressing flag. Local
+  cancelled presentations also need reconciliation before saving opened flags.
+  Defer live actors/events to safe boundaries. Stage-aware setters must update
+  saved data and the active bank; never replace the active stage bank merely to
+  update another dungeon.
+- **Dungeon keys:** keep unique key-source and unlocked-door ledgers. A new door
+  consumes one canonical key atomically; the same door consumes none on replay.
+  Two different doors competing for one key need host authorization or reserved
+  key tokens. An initial policy can authorize new unlocks online while retaining
+  already unlocked doors offline; key sharing remains in scope. Raw key counts
+  cannot merge by maximum or bitwise OR.
+- **Story:** whitelist named milestones and their prerequisites. Save switches
+  include reversible/resettable states, and event bytes include multibit
+  registers. Neither persistence nor a set bit alone establishes monotonic
+  shared progress.
+- **Visible players:** use a render-only capsule with private archive bytes,
+  model data/materials and heap; a second player actor would replace local
+  singleton state. Final 42-joint body poses fit the bounded transient packet,
+  but skinning, equipment/hand/face rendering, interpolation, expiry, scene/room/
+  layer filtering and safe render-heap retirement need actual qualification.
+  Presence must remain separate from durable rewards and local simulation
+  authority.
 
 Protocol/schema/store changes must intentionally reject incompatible pilot
 rooms. Keep the previous build playable while preparing a new checkpoint.

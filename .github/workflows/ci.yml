@@ -17,9 +17,8 @@
 # Manual only (Actions tab, "Run workflow"): full retains the jobs below; network runs only the
 # standalone Windows network tests without Aurora, SDK/game code or disc-derived data.
 # windows-game compiles and links the Windows game from source-only runtime asset stubs.
-# Runs spend the account's Actions minutes, while the real game check is the local
-# regression (native/tools/regress.sh) with the disc. Put push/pull_request back once CI can build
-# the whole game (docs/RUNTIME_ASSETS.md).
+# The local game regression (native/tools/regress.sh) still requires the player's disc.
+# Optional build retention is off by default and carries no gameplay qualification.
 name: ci
 
 on:
@@ -34,6 +33,11 @@ on:
           - full
           - network
           - windows-game
+      retain_build:
+        description: Retain Windows EXE/DLL build-only artifact for one day (public)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -272,3 +276,236 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native PC helper tests failed' }
           & './build/ci-win-game/cos_sdk_smoke.exe'
           if ($LASTEXITCODE -ne 0) { throw 'Headless SDK smoke tests failed' }
+      - name: Stage explicitly requested build-only files
+        if: ${{ success() && inputs.scope == 'windows-game' && inputs.retain_build }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = (Resolve-Path -LiteralPath $env:GITHUB_WORKSPACE).ProviderPath.TrimEnd('\')
+          $workspacePrefix = $workspace + '\'
+          function Resolve-OwnedPath([string] $path) {
+            $resolved = (Resolve-Path -LiteralPath $path).ProviderPath
+            if ($resolved -ne $workspace -and
+                !$resolved.StartsWith($workspacePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Build retention path escapes the workspace'
+            }
+            $cursor = $resolved
+            while ($true) {
+              $node = Get-Item -LiteralPath $cursor -Force
+              if ($node.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Build retention refuses linked paths'
+              }
+              if ($cursor -eq $workspace) { break }
+              $cursor = [IO.Path]::GetDirectoryName($cursor)
+              if (!$cursor) { throw 'Build retention path has no workspace ancestor' }
+            }
+            return $resolved
+          }
+          $build = Resolve-OwnedPath (Join-Path $workspace 'build/ci-win-game')
+          $source = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $source -notmatch '^[0-9a-f]{40}$' -or $source -ne $env:GITHUB_SHA) {
+            throw 'Build retention source commit does not match the workflow commit'
+          }
+          $exe = Get-Item -LiteralPath (Join-Path $build 'switchwaker.exe')
+          $dlls = @(Get-ChildItem -LiteralPath $build -File -Filter '*.dll')
+          if ($dlls.Count -eq 0) { throw 'No post-build runtime DLLs were found' }
+          $files = @($exe) + $dlls
+          $total = [int64] 0
+          foreach ($file in $files) {
+            $resolved = Resolve-OwnedPath $file.FullName
+            if ($file.PSIsContainer -or [IO.Path]::GetDirectoryName($resolved) -ne $build -or $file.Length -le 0) {
+              throw 'Build retention accepts only nonempty top-level EXE/runtime DLL files'
+            }
+            $stream = [IO.File]::OpenRead($resolved)
+            try {
+              if ($stream.ReadByte() -ne 0x4d -or $stream.ReadByte() -ne 0x5a) {
+                throw 'Build retention input is not a PE executable or library'
+              }
+            } finally { $stream.Dispose() }
+            $total += $file.Length
+          }
+          if ($total -gt 256MB) { throw 'Build-only files exceed the 256 MiB limit' }
+          $stage = Join-Path $build ("build-only-" + $source)
+          if (Test-Path -LiteralPath $stage) { throw 'Build-only staging directory must be fresh' }
+          [void] [IO.Directory]::CreateDirectory($stage)
+          $stage = Resolve-OwnedPath $stage
+          $records = @()
+          foreach ($file in $files) {
+            $sourceHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $destination = Join-Path $stage $file.Name
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+            $copy = Get-Item -LiteralPath (Resolve-OwnedPath $destination)
+            $copyHash = (Get-FileHash -LiteralPath $copy.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($copy.Length -ne $file.Length -or $copyHash -ne $sourceHash) {
+              throw 'Build-only staging hash or size mismatch'
+            }
+            $records += [ordered] @{ name = $file.Name; bytes = $copy.Length; sha256 = $copyHash;
+              component = 'windows-runtime'; source_path = "build/ci-win-game/$($file.Name)" }
+          }
+          # Retain actual credited texts byte-for-byte, not source trees or asset directories.
+          $licenseBytes = [int64] 0
+          function Hash-Bytes([byte[]] $bytes) {
+            $sha = [Security.Cryptography.SHA256]::Create()
+            try { return [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() }
+            finally { $sha.Dispose() }
+          }
+          function Add-LicenseBytes([byte[]] $bytes, [string] $relative, [string] $component, [hashtable] $origin) {
+            if (!$bytes.Length -or $bytes.Length -gt 1MB -or $bytes -contains 0) { throw 'Invalid or oversized license text' }
+            [void] [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+            $script:licenseBytes += $bytes.Length
+            if ($script:licenseBytes -gt 8MB) { throw 'License texts exceed the 8 MiB limit' }
+            $hash = Hash-Bytes $bytes
+            if ($origin.ContainsKey('expected_sha256') -and $hash -ne $origin.expected_sha256) {
+              throw 'Pinned primary license hash mismatch'
+            }
+            $destination = [IO.Path]::GetFullPath((Join-Path $stage $relative))
+            if (!$destination.StartsWith($stage + '\', [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'License destination escapes build-only staging'
+            }
+            if (Test-Path -LiteralPath $destination) { throw 'License destination must be fresh' }
+            [void] [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination))
+            [void] (Resolve-OwnedPath ([IO.Path]::GetDirectoryName($destination)))
+            [IO.File]::WriteAllBytes($destination, $bytes)
+            if ((Get-FileHash -LiteralPath (Resolve-OwnedPath $destination) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) {
+              throw 'Retained license hash mismatch'
+            }
+            $entry = [ordered] @{ name = $relative.Replace('\', '/'); bytes = $bytes.Length;
+              sha256 = $hash; component = $component; source_sha256 = $hash }
+            foreach ($key in $origin.Keys) { $entry[$key] = $origin[$key] }
+            $script:records += $entry
+          }
+          function Add-LicenseFile([string] $path, [string] $relative, [string] $component) {
+            $path = Resolve-OwnedPath $path
+            if ((Get-Item -LiteralPath $path).Length -gt 1MB) { throw 'License text exceeds 1 MiB' }
+            Add-LicenseBytes ([IO.File]::ReadAllBytes($path)) $relative $component @{
+              source_path = [IO.Path]::GetRelativePath($workspace, $path).Replace('\', '/') }
+          }
+          $licenseRoots = [ordered] @{
+            project = '.'; game = 'game'; 'dsp-adapter' = 'native/dsp_hle';
+            recompcore = 'ref/recompcore'; 'native-network' = 'native/src/pc/network'
+          }
+          $dependencyRoots = [ordered] @{
+            aurora = 'aurora-src'; dawn = 'dawn_prebuilt-src'; nod = 'nod_prebuilt-src'; SDL = 'sdl3_prebuilt-src';
+            zlib = 'zlib-src'; png = 'png-src'; abseil = 'abseil-cpp-src'; fmt = 'fmt-src';
+            freetype = 'freetype-src'; imgui = 'imgui-src'; sqlite = 'sqlite3-src'; tracy = 'tracy-src';
+            xxhash = 'xxhash-src'; zstd = 'zstd-src'
+          }
+          foreach ($label in $dependencyRoots.Keys) {
+            $licenseRoots[$label] = 'build/ci-win-game/_deps/' + $dependencyRoots[$label]
+          }
+          $localLicenseCounts = @{}
+          foreach ($label in $licenseRoots.Keys) {
+            $root = Resolve-OwnedPath (Join-Path $workspace $licenseRoots[$label])
+            $candidates = if ($label -in @('dawn', 'nod', 'SDL')) {
+              Get-ChildItem -LiteralPath $root -File -Recurse
+            } else { Get-ChildItem -LiteralPath $root -File }
+            $candidates = @($candidates | Where-Object Name -Match '^(LICENSE|COPYING|NOTICE|PROVENANCE)' | Sort-Object FullName)
+            $localLicenseCounts[$label] = $candidates.Count
+            if ($label -in @('project', 'game', 'dsp-adapter', 'recompcore', 'native-network') -and !$candidates.Count) {
+              throw "Required component license text is missing: $label"
+            }
+            foreach ($file in $candidates) {
+              $relative = [IO.Path]::GetRelativePath($root, $file.FullName).Replace('\', '/')
+              Add-LicenseFile $file.FullName ("licenses/$label/$relative") $label
+            }
+          }
+          foreach ($name in @('FTL.TXT', 'GPLv2.TXT')) {
+            Add-LicenseFile (Join-Path $build "_deps/freetype-src/docs/$name") "licenses/freetype/docs/$name" 'freetype'
+          }
+          foreach ($required in @('licenses/project/LICENSE', 'licenses/game/LICENSE', 'licenses/dsp-adapter/LICENSE',
+              'licenses/recompcore/COPYING', 'licenses/native-network/COPYING', 'licenses/native-network/PROVENANCE.md')) {
+            if ($required -notin @($records | ForEach-Object { $_.name })) { throw "Required license/provenance text missing: $required" }
+          }
+          # SQLite supplies this public-domain notice in its header, not a standalone license file.
+          $sqlite = Resolve-OwnedPath (Join-Path $build '_deps/sqlite3-src/sqlite3.h')
+          if ((Get-Item -LiteralPath $sqlite).Length -gt 4MB) { throw 'Unexpected SQLite notice source size' }
+          $header = [IO.File]::ReadAllBytes($sqlite)
+          $headerText = [Text.Encoding]::UTF8.GetString($header)
+          $end = $headerText.IndexOf('*/') + 2
+          if (!$headerText.StartsWith('/*') -or $end -lt 2 -or
+              !$headerText.Substring(0, $end).Contains('The author disclaims copyright to this source code.')) {
+            throw 'SQLite initial license comment did not match'
+          }
+          $noticeLength = [Text.Encoding]::UTF8.GetByteCount($headerText.Substring(0, $end))
+          $notice = [byte[]]::new($noticeLength)
+          [Array]::Copy($header, $notice, $noticeLength)
+          Add-LicenseBytes $notice 'licenses/sqlite/PUBLIC-DOMAIN.txt' 'sqlite' @{
+            source_path = 'build/ci-win-game/_deps/sqlite3-src/sqlite3.h'; source_sha256 = (Hash-Bytes $header);
+            source_slice = @{ offset = 0; bytes = $noticeLength; description = 'Unmodified initial block comment' }
+          }
+          # The pinned Dawn/nod binary packages omit standalone license texts. Only these
+          # reviewed primary-source URLs may supply a missing component's fallback notices.
+          $fallbacks = @(
+            @{ component = 'dawn'; name = 'LICENSE';
+              url = 'https://raw.githubusercontent.com/encounter/dawn/1155e0ed531126f33a1279afa029349651ca1c93/LICENSE';
+              sha256 = '0493f897193af1796d5054659f45ec7d4c5af648fa67a99f01d30e55cc805abc' },
+            @{ component = 'nod'; name = 'LICENSE-APACHE';
+              url = 'https://raw.githubusercontent.com/encounter/nod/v2.0.0-alpha.12/LICENSE-APACHE';
+              sha256 = 'fd363f1eb5135402a2e66f4a6173e6eff06daabe79d150acd7c669d33b985b4e' },
+            @{ component = 'nod'; name = 'LICENSE-MIT';
+              url = 'https://raw.githubusercontent.com/encounter/nod/v2.0.0-alpha.12/LICENSE-MIT';
+              sha256 = '544ffe9befaefa6b59ab1fdde58789069ba7c1b65432bdea273a16b2117909b7' }
+          )
+          $http = [Net.Http.HttpClient]::new()
+          $http.Timeout = [TimeSpan]::FromSeconds(30)
+          $http.MaxResponseContentBufferSize = 1MB
+          try {
+            foreach ($fallback in $fallbacks) {
+              if ($localLicenseCounts[$fallback.component]) { continue }
+              $response = $http.GetAsync($fallback.url).GetAwaiter().GetResult()
+              try {
+                [void] $response.EnsureSuccessStatusCode()
+                $bytes = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+                Add-LicenseBytes $bytes ("licenses/" + $fallback.component + '/' + $fallback.name) $fallback.component @{
+                  source_url = $fallback.url; expected_sha256 = $fallback.sha256 }
+              } finally { $response.Dispose() }
+            }
+          } finally { $http.Dispose() }
+          $licenseSources = @()
+          foreach ($label in $licenseRoots.Keys) {
+            $licenseSources += [ordered] @{ component = $label; source_root = $licenseRoots[$label];
+              retained_files = @($records | Where-Object { $_.component -eq $label }).Count }
+          }
+          $manifest = [ordered] @{
+            kind = 'build-only'
+            source_repository = $env:GITHUB_REPOSITORY
+            source_commit = $source
+            build_mode = 'runtime-assets'
+            configuration = 'Release'
+            qualification = 'compile-link-and-headless-helper-tests-only'
+            gameplay_qualified = $false
+            license_scope = 'Retained credited license/provenance texts; no legal clearance claim'
+            license_sources = $licenseSources
+            created_utc = [DateTime]::UtcNow.ToString('o')
+            files = $records
+          } | ConvertTo-Json -Depth 5
+          if ([Text.Encoding]::UTF8.GetByteCount($manifest) -gt 64KB) { throw 'Build provenance manifest is too large' }
+          [IO.File]::WriteAllText((Join-Path $stage 'build-provenance.json'), $manifest, [Text.UTF8Encoding]::new($false))
+          $staged = @(Get-ChildItem -LiteralPath $stage -Force -File -Recurse)
+          $expectedNames = @($records | ForEach-Object { $_.name }) + 'build-provenance.json'
+          $actualNames = @($staged | ForEach-Object { [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/') })
+          if (@(Compare-Object $expectedNames $actualNames).Count -ne 0) {
+            throw 'Unexpected build-only staging contents'
+          }
+          foreach ($node in Get-ChildItem -LiteralPath $stage -Force -Recurse) {
+            [void] (Resolve-OwnedPath $node.FullName)
+            if ($node.PSIsContainer -and $node.FullName -ne (Join-Path $stage 'licenses') -and
+                !$node.FullName.StartsWith((Join-Path $stage 'licenses') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Unexpected build-only staging directory'
+            }
+          }
+          if (($staged | Measure-Object -Property Length -Sum).Sum -gt 256MB) {
+            throw 'Build-only artifact including provenance exceeds 256 MiB'
+          }
+          Write-Output ("Build-only retention: files={0} bytes={1}; gameplay remains unqualified" -f
+            $staged.Count, ($staged | Measure-Object -Property Length -Sum).Sum)
+      - name: Retain explicitly requested build-only artifact
+        if: ${{ success() && inputs.scope == 'windows-game' && inputs.retain_build }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-only-${{ github.sha }}
+          path: build/ci-win-game/build-only-${{ github.sha }}/
+          retention-days: 1
+          if-no-files-found: error
+          include-hidden-files: false
+          overwrite: false
