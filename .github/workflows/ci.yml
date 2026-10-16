@@ -207,10 +207,10 @@ jobs:
             "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_LINKER=$linker"
           if ($LASTEXITCODE -ne 0) { throw 'Standalone remote-body asset configure failed' }
           Assert-FreeSpace
-          cmake --build build/ci-remote-body --parallel 2
+          cmake --build build/ci-remote-body --target cos_remote_body_asset_tests cos_network_body_policy_tests --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Standalone remote-body asset build failed' }
           Assert-FreeSpace
-          ctest --test-dir build/ci-remote-body --output-on-failure --timeout 60 --no-tests=error
+          ctest --test-dir build/ci-remote-body --output-on-failure --timeout 60 --no-tests=error -R "^(remote_body_assets|network_body_policy)$"
           if ($LASTEXITCODE -ne 0) { throw 'Standalone remote-body asset checks failed' }
       - name: Stage explicitly requested owned host helper
         if: ${{ success() && inputs.retain_build }}
@@ -318,7 +318,7 @@ jobs:
             -DTRACY_ENABLE=OFF
           if ($LASTEXITCODE -ne 0) { throw 'Windows runtime-assets configure failed' }
           Assert-FreeSpace
-          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke cos_windows_long_paths cos_remote_body_asset_tests --parallel 2
+          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke cos_windows_long_paths cos_remote_body_asset_tests cos_network_body_policy_tests --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Windows game compile/link failed' }
           $binary = Get-Item -LiteralPath 'build/ci-win-game/switchwaker.exe'
           if ($binary.Length -eq 0) { throw 'Linked game executable is empty' }
@@ -332,6 +332,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Headless SDK smoke tests failed' }
           & './build/ci-win-game/cos_remote_body_asset_tests.exe'
           if ($LASTEXITCODE -ne 0) { throw 'Remote-body asset bounds failed' }
+          & './build/ci-win-game/cos_network_body_policy_tests.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Network-body copied policy checks failed' }
           & './build/ci-win-game/cos_windows_long_paths.exe' --root "$env:GITHUB_WORKSPACE/build/ci-win-game/long-path-fixture"
           if ($LASTEXITCODE -ne 0) { throw 'Windows long-path helper failed' }
       - name: Stage explicitly requested build-only files

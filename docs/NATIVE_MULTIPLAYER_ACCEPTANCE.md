@@ -275,9 +275,23 @@ the failed host and receiver evidence is preserved.
 
 The corrected source at `7d418a51` compiled and linked successfully in
 [Windows run 38971340449](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38971340449),
-including the SDK and long-path helpers. Its source-only artifact is retained by
-CI. This is build evidence; fresh native CARD-retry and fairy runs are pending.
-The earlier negative runs and playable pilot remain preserved.
+including the SDK and long-path helpers. Fresh isolated native tests of that
+exact executable now pass the CARD-retry and fairy transactions. CARD read and
+replacement denial each produced real status 8 and failed sync result 2 without
+changing the original GCI. A genuine controller read restored authorization;
+the retry committed both native save copies without a duplicate application.
+The receiver's ordinary durable receipt hashes the final GCI. The sender's
+immediate diagnostic exit retained a post-CARD intent, so ordinary sender
+completion and its fresh restart recovery remain separate qualifications.
+
+Both fairy participants completed the real event. The receiver first gained
+wallet tier 1 remotely, then the same fairy's actual tier-2 item was reconciled
+back to tier 1. The external ledger remained revision 1 with exactly one
+authored reward. Both native saves and ordinary durable receipts passed. Fresh
+offline native file-select loads then retained tier 1 for both players without
+changing their GCIs. These outcomes do not cover
+over-capacity resources or ammo fairies. Earlier negative evidence and the
+playable pilot remain preserved.
 
 ## Ordinary Save-menu recovery source
 
@@ -358,7 +372,19 @@ draw lists and restores CPU graphics state. One 4 MiB model heap is retained;
 archive decoding temporarily requests another 12 MiB from Zelda's small pool.
 Actual allocation success, visual/material isolation and GPU lifetime remain
 unverified. The prototype omits eye/brow multipasses, hands, equipment, shadows
-and clothes variants, and has no interpolation or network adapter yet.
+and clothes variants, and has no interpolation yet.
+
+The separate off-by-default `network-body` case now has an actual-room adapter.
+It publishes copied final native poses through the authorized mounted room and
+selects one authenticated same-area peer. Connection/quest generations, roster
+epochs, sequence, age and scene changes control visibility and reset history.
+It applies no local diagnostic offset or second world transform. A one-shot
+Zelda-heap preflight guards the existing 4 MiB graph plus 12 MiB decode scratch;
+seven graphs still require a measured dedicated pool. Independent copied-value
+policy tests are wired into both CI scopes. All five affected native translation
+units passed no-output clang-cl checks, with 2,539 source/header pins and all
+protected build metadata unchanged. Full linking, pure policy execution, real
+networked rendering and complete remote models remain pending.
 
 Independent asset-bound tests passed in
 [network run 38975421604](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38975421604)

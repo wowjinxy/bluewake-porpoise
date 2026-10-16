@@ -33,6 +33,10 @@ void hide();
 void before_p1(const PcRemoteBodyPose& receiver_scene);
 }
 
+// Read-only native context/final-pose capture shared by the two opt-in diagnostics.
+bool pc_remote_body_capture_native(J3DModel*, daPy_lk_c*, PcRemoteBodyPose*);
+bool pc_remote_body_context_native(PcRemoteBodyPose*);
+
 // Narrow diagnostic controls, separate from the renderer. No player-facing
 // settings, input injection, network session or multiplayer authority.
 void pc_remote_body_diagnostic_capture(J3DModel*, daPy_lk_c*);

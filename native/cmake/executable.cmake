@@ -112,6 +112,11 @@ if (TARGET cos_sdk)
     target_compile_features(cos_remote_body_asset_tests PRIVATE cxx_std_17)
     add_test(NAME remote_body_assets COMMAND cos_remote_body_asset_tests)
 
+    add_executable(cos_network_body_policy_tests "${COS_NATIVE_ROOT}/check/pc_network_body_policy_test.cpp")
+    target_include_directories(cos_network_body_policy_tests PRIVATE "${COS_NATIVE_ROOT}/include")
+    target_compile_features(cos_network_body_policy_tests PRIVATE cxx_std_17)
+    add_test(NAME network_body_policy COMMAND cos_network_body_policy_tests)
+
     add_executable(cos_pc_tests "${COS_NATIVE_ROOT}/check/pc_tests.cpp"
             "${COS_ROOT}/src/SSystem/SComponent/c_sxyz.cpp")
     target_link_libraries(cos_pc_tests PRIVATE cos_game_headers cos_pc cos_sdk)

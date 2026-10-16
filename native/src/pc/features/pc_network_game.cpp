@@ -562,3 +562,47 @@ extern "C" void pc_network_game_snapshot(PcNetworkGameSnapshot* copy) {
     pendingView();
     *copy = s.view;
 }
+
+namespace {
+bool nativePoseAuthorized(uint64_t quest = 0) {
+    if (!s.prepared || !s.mounted.enabled || !s.session || s.view.failed || s.view.restart_pending ||
+        !s.readAuthorization.authorized()) return false;
+    PcProgressSnapshot current{};
+    pc_progress_capture(&current);
+    const char* mounted = pc_network_profile_mounted_identity();
+    return current.facts_valid && current.identity.quest_generation && current.identity.session_id &&
+        current.identity.quest_slot >= 0 && current.identity.quest_slot < 3 && mounted &&
+        !std::strcmp(current.identity.profile_id, mounted) &&
+        current.identity.quest_generation == s.view.progress.identity.quest_generation &&
+        current.identity.session_id == s.view.progress.identity.session_id &&
+        current.identity.quest_slot == s.view.progress.identity.quest_slot &&
+        (!quest || quest == current.identity.quest_generation);
+}
+}
+extern "C" bool pc_network_game_publish_pose(const PcNetworkPose* pose) {
+    JKRPcHostAllocScope allocation;
+    if (!pose || !s.prepared || !s.mounted.enabled || !s.session) return false;
+    // Canonical hide is permitted even when native authorization was revoked.
+    if (!pose->active) return pc_network_publish_pose(s.session, pose);
+    if (!pc_network_pose_valid(pose) || !nativePoseAuthorized(pose->quest_generation)) {
+        const PcNetworkPose hidden{};
+        pc_network_publish_pose(s.session, &hidden);
+        return false;
+    }
+    return pc_network_publish_pose(s.session, pose);
+}
+extern "C" bool pc_network_game_copy_presence(PcNetworkPresenceSnapshot* out) {
+    if (!out) return false;
+    *out = {};
+    JKRPcHostAllocScope allocation;
+    if (!nativePoseAuthorized()) return false;
+    PcNetworkSnapshot before{}, after{};
+    PcNetworkPresenceSnapshot copy{};
+    pc_network_status(s.session, &before);
+    if (before.status != PC_NETWORK_CONNECTED || !pc_network_copy_presence(s.session, &copy)) return false;
+    pc_network_status(s.session, &after);
+    if (after.status != PC_NETWORK_CONNECTED || !after.generation || before.generation != after.generation ||
+        copy.generation != after.generation || copy.count > PC_NETWORK_PEERS) return false;
+    *out = copy;
+    return true;
+}

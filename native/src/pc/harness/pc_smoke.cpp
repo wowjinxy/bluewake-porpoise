@@ -357,6 +357,7 @@ const Smoke kSmokes[] = {
     {"network-fairy", kInGame},
     {"network-save-ui", kInGame},
     {"remote-body", kInGame}, // Local-only private CL offset diagnostic; no visual PASS oracle.
+    {"network-body", kInGame}, // Real configured room, one diagnostic body; no visual PASS oracle.
     {"picto-box", kInGame},
     {"stage-hop", kInGame},
     {"event-sweep", kInGame},

@@ -34,6 +34,7 @@
 #include "pc/pc_network_game.h"
 #include "harness/smokes/pc_network_recovery_smoke.h"
 #include "harness/smokes/pc_network_fairy_smoke.h"
+#include "pc/pc_network_body.h"
 #include "harness/smokes/pc_network_save_ui_smoke.h"
 #include "pc/pc_gpu_opts.h"
 #include "pc/pc_dynres.h"
@@ -1116,6 +1117,7 @@ void pc_frame_end(void) {
     networkProgressFrame(frames);
     networkRecoveryFrame(frames);
     networkFairyFrame(frames);
+    pc_network_body_diagnostic_frame();
     networkSaveUiFrame(frames);
     saveSweepFrame(frames);
     eventSweepFrame(frames);

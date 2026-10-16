@@ -33,6 +33,9 @@ bool pc_network_game_start(bool host);
 void pc_network_game_leave(void);
 void pc_network_game_frame(void);
 void pc_network_game_snapshot(PcNetworkGameSnapshot*);
+// Game-thread copied presence only; no session pointer or native object escapes.
+bool pc_network_game_publish_pose(const PcNetworkPose*);
+bool pc_network_game_copy_presence(PcNetworkPresenceSnapshot*);
 #ifdef __cplusplus
 }
 #endif

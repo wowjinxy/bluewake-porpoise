@@ -2,6 +2,7 @@
 // There is no PAD driver, game-effect call, network session or player-facing row.
 #include "d/dolzel.h" // IWYU pragma: keep
 #include "pc/pc_remote_body.h"
+#include "pc/pc_network_body.h"
 #include "pc_internal.h"
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "JSystem/J3DGraphAnimator/J3DModelData.h"
@@ -53,11 +54,32 @@ bool receiver_scene(PcRemoteBodyPose& pose, daPy_lk_c* expected = nullptr) {
 }
 } // namespace
 
+bool pc_remote_body_context_native(PcRemoteBodyPose* pose) {
+    return pose && receiver_scene(*pose);
+}
+
+bool pc_remote_body_capture_native(J3DModel* model, daPy_lk_c* player, PcRemoteBodyPose* out) {
+    if (!out) return false;
+    *out = {};
+    if (!model || !model->getModelData() || model->getModelData()->getJointNum() != 42 ||
+        model->getMtxCalcMode() != 0 || !receiver_scene(*out, player)) return false;
+    std::memcpy(out->base, model->getBaseTRMtx(), sizeof out->base);
+    const Vec* scale = model->getBaseScale();
+    out->base_scale[0] = scale->x; out->base_scale[1] = scale->y; out->base_scale[2] = scale->z;
+    for (int i = 0; i < PC_REMOTE_BODY_JOINTS; ++i) {
+        std::memcpy(out->joints[i], model->getAnmMtx(i), sizeof out->joints[i]);
+        out->scale_flags[i] = model->getScaleFlag(i);
+    }
+    return true; // Final world pose, without any diagnostic/remote offset.
+}
+
 void pc_remote_body_diagnostic_capture(J3DModel* model, daPy_lk_c* player) {
-    if (!selected()) return; // Default: no actor search, loader, heap or SDL work.
+    if (pc_network_body_diagnostic_selected()) {
+        pc_network_body_diagnostic_capture(model, player); return;
+    }
+    if (!selected()) return;
     PcRemoteBodyPose pose{};
-    if (!model || model->getMtxCalcMode() != 0 || !model->getModelData() || model->getModelData()->getJointNum() != 42 ||
-        !receiver_scene(pose, player)) { pc_remote_body::hide(); return; }
+    if (!pc_remote_body_capture_native(model, player, &pose)) { pc_remote_body::hide(); return; }
     if (!pc_remote_body::prepare_private(model)) {
         static bool reported;
         if (!reported) {
@@ -66,24 +88,16 @@ void pc_remote_body_diagnostic_capture(J3DModel* model, daPy_lk_c* player) {
         }
         return;
     }
-    // The final 42 matrices are already in world space (native model mode 0).
-    // Translate each final joint and the metadata root exactly once, by +150X.
     constexpr float offset = 150.0f;
-    std::memcpy(pose.base, model->getBaseTRMtx(), sizeof(pose.base));
     pose.base[0][3] += offset;
-    const Vec* scale = model->getBaseScale();
-    pose.base_scale[0] = scale->x; pose.base_scale[1] = scale->y; pose.base_scale[2] = scale->z;
-    for (int i = 0; i < PC_REMOTE_BODY_JOINTS; ++i) {
-        std::memcpy(pose.joints[i], model->getAnmMtx(i), sizeof(pose.joints[i]));
-        pose.joints[i][0][3] += offset;
-        pose.scale_flags[i] = model->getScaleFlag(i);
-    }
+    for (int i = 0; i < PC_REMOTE_BODY_JOINTS; ++i) pose.joints[i][0][3] += offset;
     pc_remote_body::stage(pose);
 }
 
 void pc_remote_body_diagnostic_before_p1() {
+    if (pc_network_body_diagnostic_selected()) { pc_network_body_diagnostic_before_p1(); return; }
     if (!selected()) return;
     PcRemoteBodyPose receiver{};
-    if (!receiver_scene(receiver)) { pc_remote_body::hide(); return; }
+    if (!pc_remote_body_context_native(&receiver)) { pc_remote_body::hide(); return; }
     pc_remote_body::before_p1(receiver);
 }
