@@ -320,9 +320,15 @@ void observeProducer(const PcNetworkGameSnapshot& view, daPy_lk_c* player, daBig
     if (dComIfGp_event_runCheck()) {
         auto* control = g_dComIfG_gameInfo.play.getEvent();
         auto* data = control->mEventId >= 0 ? dComIfGp_getPEvtManager()->getEventData(control->mEventId) : nullptr;
-        if (actor && actor->eventInfo.checkCommandDemoAccrpt() && control->getPt1() == actor &&
-            control->getPt2() == player && data && !std::strcmp(data->getName(), "BIGELF_ARRIVAL")) {
-            if (!sAccepted) writef(STDERR_FILENO, "[cos] network-fairy: accepted actual BIGELF_ARRIVAL fairy=%u type=0 slot=3020\n", sFairyId);
+        // hunt() orders OTHER with NOPARTNER. demoCheck commands both actual
+        // actors, then afterFlagProc deliberately clears Pt2. The authored
+        // fairy remains Pt1/PtT; requiring a retained player partner would
+        // reject this genuine event and spend its budget in Approach.
+        if (actor && player && actor->eventInfo.checkCommandDemoAccrpt() &&
+            player->eventInfo.checkCommandDemoAccrpt() && control->getPt1() == actor &&
+            control->getPtT() == actor && control->getPt2() == nullptr &&
+            data && !std::strcmp(data->getName(), "BIGELF_ARRIVAL")) {
+            if (!sAccepted) writef(STDERR_FILENO, "[cos] network-fairy: accepted actual BIGELF_ARRIVAL fairy=%u type=0 slot=3020 NOPARTNER=1 both-native-demo-commands=1\n", sFairyId);
             sAccepted = true;
         }
     }
@@ -371,6 +377,7 @@ void diagnostics(const PcNetworkGameSnapshot& view, daPy_lk_c* player) {
     auto* event = g_dComIfG_gameInfo.play.getEvent();
     auto* data = dComIfGp_event_runCheck() && event->mEventId >= 0 ?
         dComIfGp_getPEvtManager()->getEventData(event->mEventId) : nullptr;
+    auto* actor = fairy();
     writef(STDERR_FILENO, "[cos] network-fairy: frame=%u case=%s step=%d age=%u session=%d revision=%llu peers=%u "
            "wallet=%u native=%u flag=%u awards=%llu applies=%llu claims=%u pending=%d/%d/%u/%u event=%d/%s msg=%u "
            "pos=%.1f/%.1f/%.1f\n", sFrame, caseName(), static_cast<int>(sStep), sSince, view.session.status,
@@ -380,6 +387,10 @@ void diagnostics(const PcNetworkGameSnapshot& view, daPy_lk_c* player) {
            view.progress.pending_claims, view.pending_local, view.pending_remote, view.session.pending_outgoing,
            view.session.pending_incoming, event->mEventId, data ? data->getName() : "none", dComIfGp_getMesgStatus(),
            player ? player->current.pos.x : 0, player ? player->current.pos.y : 0, player ? player->current.pos.z : 0);
+    if (data && !sAccepted)
+        writef(STDERR_FILENO, "[cos] network-fairy: event observation Pt1-fairy=%d PtT-fairy=%d Pt2-null=%d fairy-command=%d player-command=%d\n",
+               actor && event->getPt1() == actor, actor && event->getPtT() == actor, event->getPt2() == nullptr,
+               actor && actor->eventInfo.checkCommandDemoAccrpt(), player && player->eventInfo.checkCommandDemoAccrpt());
 }
 void complete(const PcNetworkGameSnapshot& view) {
     need(sSaveCompared && sAccepted && sItemSeen && sClaimSeen && sSeenPeer && settled(view),

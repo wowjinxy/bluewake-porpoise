@@ -209,6 +209,26 @@ its exact backend error was not logged. A diagnostic-only Aurora patch now
 records failure phase, result, offset/length and copied last SDL error. It does
 not change I/O, callbacks or retries. The sender's cause remains unresolved.
 
+The corrected source at `36f17db9` compiled and linked in
+[Windows run 38967772328](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38967772328),
+including both SDK helpers and the actual long-path helper. All 32 downloaded
+manifest records matched. Its 13,947,904-byte executable SHA-256 is
+`f8d1f689131d7b0abec57a60399aee6542e1f971b6f2f49bc1d2b7ec62d205fa`.
+The fresh CARD case preserved the genuine remote award and native blank-file
+creation, then failed its strict terminal-status check after a real read denial.
+Aurora logged IOERROR -5 at offset 8192/length 8192, establishing the corrected
+backend classification. Native `restore()` had discarded that returned error
+and passed the earlier successful CARDOpen result to `setCardState` instead.
+The PC source now propagates the actual restore result; the strict check is
+unchanged and reports the observed status on failure. The corrected controller
+and both diagnostics passed scoped no-output clang-cl checks; the final fairy
+diagnostic revision passed separately afterward. All 2,523 input pins matched,
+8,509 protected build files stayed unchanged and temporary outputs were empty.
+Full linking and another native retry remain pending. The sender was drained when
+the receiver failed, before its save, so this run does not resolve the earlier
+unfaulted second-copy write failure. Both negative process records and the
+unchanged source ISO are retained.
+
 ## Dedicated progressive-reward native case
 
 The off-by-default `network-fairy` harness now provides two genuine wallet-fairy
@@ -239,6 +259,19 @@ strings. Separator and trailing-directory normalization are now corrected,
 with mismatched spellings logged, and passed the compiler check above. The
 retry remains pending. The fresh wallet fixture has zero rupees and does not
 qualify over-capacity resource corrections or ammo fairies.
+
+The next fairy run, using the `36f17db9` executable above, passed the corrected
+private-path guard and naturally entered `BIGELF_ARRIVAL`. It did not qualify a
+reward: the harness expected a retained Pt2 player pointer, but the actor orders
+the event with `NOPARTNER`, and native event acceptance deliberately clears Pt2
+after commanding both actors. The harness consequently remained in its approach
+phase until that phase's bound expired. The source correction requires the
+actual fairy in Pt1/PtT, null Pt2, both native demo commands, the exact event name
+and the unchanged player/quest identity. Existing approach/event bounds and all
+item-effect/completion/ledger/save requirements remain unchanged. That correction
+and its improved event observations passed the compiler checks above and need
+a full build and fresh native run;
+the failed host and receiver evidence is preserved.
 
 ## Next implementation boundaries
 

@@ -76,6 +76,14 @@ void unlock() {
     pc_exit(PC_EXIT_USAGE);
 }
 void need(bool condition, const char* reason) { if (!condition) fail(reason); }
+void needIoErrorStatus(u32 status, const char* operation) {
+    if (status == kNativeIoErrorStatus) return;
+    char reason[192];
+    std::snprintf(reason, sizeof reason,
+        "existing GCI %s denial was not reported as native I/O error: public-status=%u expected=%u",
+        operation, static_cast<unsigned>(status), static_cast<unsigned>(kNativeIoErrorStatus));
+    fail(reason);
+}
 std::string utf8(const fs::path& path) { const auto s = path.u8string(); return {s.begin(), s.end()}; }
 fs::path absolute(const char* value) {
     if (!value || !*value || std::strlen(value) >= 1024) usage("explicit bounded private paths required");
@@ -391,8 +399,7 @@ bool networkRecoveryReadMayPoll() {
     if (sStep == Step::ReadLocked) {
         const u32 status = mDoMemCd_getStatus(0);
         if (status == 14) return false; // request queued or worker still holds its mutex
-        need(status == kNativeIoErrorStatus,
-             "existing GCI read denial was not reported as native I/O error");
+        needIoErrorStatus(status, "read");
         sReadIoErrorObserved = true;
         writef(STDERR_FILENO, "[cos] network-recovery: existing GCI read denial terminal-status=8 before LoadSync; missing-file=0\n");
     }
@@ -433,8 +440,7 @@ bool networkRecoveryWriteMayPoll() {
     if (!selected() || sCase != Case::CardRetry || sStep != Step::WriteLocked) return true;
     const u32 status = mDoMemCd_getStatus(0);
     if (status == 14) return false;
-    need(status == kNativeIoErrorStatus,
-         "existing GCI replacement denial was not reported as native I/O error");
+    needIoErrorStatus(status, "replacement");
     sWriteIoErrorObserved = true;
     writef(STDERR_FILENO, "[cos] network-recovery: existing GCI replacement denial terminal-status=8 before SaveSync; missing-file=0\n");
     return true;

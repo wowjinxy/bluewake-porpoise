@@ -165,7 +165,13 @@ void mDoMemCd_Ctrl_c::restore() {
     CARDFileInfo cardInfo;
     s32 ret = CARDOpen(mCardSlot, "gczelda", &cardInfo);
     if (ret == CARD_ERROR_READY) {
+#if TARGET_PC
+        // Classify the actual read failure, not the earlier successful open.
+        ret = mDoMemCdRWm_Restore(&cardInfo, mData, sizeof(mData));
+        if (ret == CARD_ERROR_READY) {
+#else
         if (!mDoMemCdRWm_Restore(&cardInfo, mData, sizeof(mData))) {
+#endif
             field_0x1660 = 3;
         } else {
             setCardState(ret);
