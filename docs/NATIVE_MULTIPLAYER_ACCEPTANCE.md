@@ -436,6 +436,17 @@ unchanged and the hook returns immediately with diagnostics disabled. The
 correction still needs a full build and actual native visual qualification;
 the earlier `a1e51826` visual diagnostic was held after this finding.
 
+Read-only inspection of the original archive then exposed two further admission
+errors before a body test ran. The CL model has 270 draw-matrix entries; the
+prototype's 256-entry ceiling rejected that valid table. The native table and
+ConcatView indices use 16-bit entries, so the bounded ceiling is now 512.
+The archive buffer remains aligned, while its DVD request and result comparison
+now use logical file length. The PC partition-file reader returns only bytes
+through logical EOF; expecting aligned padding made this archive read fail.
+The 4 MiB retained and 12 MiB scratch budgets, heap admission, lighting and
+pointer-isolation guards remain unchanged. These are source/asset-metadata
+corrections; native allocation and visual acceptance are still pending.
+
 ## Power Bracelets source checkpoint
 
 The native catalogue now includes item `0x28` as permanent MAX fact 24.

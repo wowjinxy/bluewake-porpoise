@@ -132,7 +132,7 @@ bool fresh_cl_binary(JKRSolidHeap* scratch) {
     if (length < 0x40 || u32(length) > kArchiveStoredMax) return false;
     const u32 aligned = (u32(length) + 31) & ~31u;
     u8* stored = static_cast<u8*>(scratch->alloc(aligned, 32));
-    if (!stored || DVDReadPrio(file.getFileInfo(), stored, aligned, 0, 2) != s32(aligned)) return false;
+    if (!stored || DVDReadPrio(file.getFileInfo(), stored, length, 0, 2) != length) return false;
     pc_remote_asset::Bytes arc{stored, size_t(length)};
     if (std::memcmp(stored, "Yaz0", 4) == 0) {
         const u32 expanded = pc_remote_asset::be32(stored + 4);
@@ -241,7 +241,7 @@ bool initialize() {
     CurrentHeap current(sHeap);
     sData = J3DModelLoaderDataBase::loadBinaryDisplayList(sBinary, 0x00002020);
     if (!sData || sData->getJointNum() != 42 || sData->getMaterialNum() > 64 ||
-        sData->getShapeNum() > 64 || sData->getDrawMtxNum() > 256 || sData->getWEvlpMtxNum() > 128) return false;
+        sData->getShapeNum() > 64 || sData->getDrawMtxNum() > 512 || sData->getWEvlpMtxNum() > 128) return false;
     sData->getJointTree().setBasicMtxCalc(nullptr);
     for (u16 i = 0; i < 42; ++i) {
         J3DJoint* joint = sData->getJointNodePointer(i);
