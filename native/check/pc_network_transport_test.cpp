@@ -105,7 +105,7 @@ static void operations_and_ledger(){
     CHECK(until([&]{return status(guest.get()).status==PC_NETWORK_REJECTED;}));CHECK(status(host.get()).server_revision==4);
     pc_network_leave(guest.get());pc_network_leave(host.get());pc_network_server_stop(server);
 }
-static void malformed_paged_snapshot(){using namespace pc_net;
+static pc_net::Socket fixture_listener(uint16_t& port){using namespace pc_net;
     Socket listener=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);CHECK(listener!=invalid&&nonblocking(listener));
     sockaddr_in address{};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
     CHECK(::bind(listener,reinterpret_cast<sockaddr*>(&address),sizeof address)==0&&listen(listener,1)==0);
@@ -115,21 +115,31 @@ static void malformed_paged_snapshot(){using namespace pc_net;
     socklen_t length=sizeof address;
 #endif
     CHECK(getsockname(listener,reinterpret_cast<sockaddr*>(&address),&length)==0);
+    port=ntohs(address.sin_port);return listener;
+}
+static void malformed_paged_snapshot(){using namespace pc_net;
     // Exercise the real client decoder: exhausted revisions and an impossible
     // empty/nonempty canonical state must fail before any Welcome publication.
     for(unsigned fixture=0;fixture<3;++fixture){
-        auto invalidClient=session();auto invalidConfig=config(ntohs(address.sin_port),'b');CHECK(pc_network_join(invalidClient.get(),&invalidConfig));
+        // Rejection triggers automatic reconnect. Give each case a listener of
+        // its own so a stopped case's queued reconnect cannot impersonate the
+        // next case on a shared accept backlog.
+        uint16_t port=0;const Socket listener=fixture_listener(port);
+        auto invalidClient=session();auto invalidConfig=config(port,char('b'+fixture));CHECK(pc_network_join(invalidClient.get(),&invalidConfig));
         Pipe invalidPipe;CHECK(until([&]{invalidPipe.socket=::accept(listener,nullptr,nullptr);return invalidPipe.socket!=invalid;}));
-        CHECK(nonblocking(invalidPipe.socket));receive(invalidPipe,Hello);
+        CHECK(nonblocking(invalidPipe.socket));const auto greeting=receive(invalidPipe,Hello);
+        CHECK(greeting.sequence==0&&greeting.body==hello(invalidConfig));
         const uint64_t revision=fixture==0?UINT64_MAX:(fixture==1?0:1);const unsigned keys=fixture==2?0:1;
         Bytes invalidWelcome;identity(invalidWelcome,invalidConfig.compatibility);string(invalidWelcome,std::string(32,'a').c_str());
         put64(invalidWelcome,revision);put64(invalidWelcome,0);put16(invalidWelcome,uint16_t(keys));if(keys)delta(invalidWelcome,{1,1});put16(invalidWelcome,0);
         send_rejected_frame(invalidPipe,Welcome,invalidWelcome);
         CHECK(status(invalidClient.get()).generation==0&&status(invalidClient.get()).status!=PC_NETWORK_CONNECTED);
-        PcNetworkUpdate unpublished{};CHECK(!pc_network_poll(invalidClient.get(),&unpublished));pc_network_leave(invalidClient.get());
+        PcNetworkUpdate unpublished{};CHECK(!pc_network_poll(invalidClient.get(),&unpublished));pc_network_leave(invalidClient.get());close(listener);
     }
-    auto client=session();auto c=config(ntohs(address.sin_port),'a');CHECK(pc_network_join(client.get(),&c));
-    Pipe pipe;CHECK(until([&]{pipe.socket=::accept(listener,nullptr,nullptr);return pipe.socket!=invalid;}));CHECK(nonblocking(pipe.socket));receive(pipe,Hello);
+    uint16_t port=0;const Socket listener=fixture_listener(port);
+    auto client=session();auto c=config(port,'a');CHECK(pc_network_join(client.get(),&c));
+    Pipe pipe;CHECK(until([&]{pipe.socket=::accept(listener,nullptr,nullptr);return pipe.socket!=invalid;}));CHECK(nonblocking(pipe.socket));
+    const auto greeting=receive(pipe,Hello);CHECK(greeting.sequence==0&&greeting.body==hello(c));
     Bytes b;identity(b,c.compatibility);string(b,std::string(32,'a').c_str());put64(b,1);put64(b,0);put16(b,1);delta(b,{1,1});put16(b,1);
     CHECK(pipe.queue(Welcome,0,b));CHECK(until([&]{return pipe.pump()&&pipe.output.empty();}));
     // A ping proves the worker received and waited on the incomplete snapshot.
@@ -144,7 +154,9 @@ static void malformed_paged_snapshot(){using namespace pc_net;
 static void eight_peers_and_paged_bound(){
     auto server=pc_network_server_start("127.0.0.1",0);CHECK(server);const auto port=pc_network_server_port(server);
     std::vector<Session> peers;std::vector<PcNetworkConfig> configs;
-    for(unsigned i=0;i<PC_NETWORK_PEERS;++i){peers.push_back(session());auto c=config(port,char('a'+i),i==0);std::strcpy(c.room,"bounded");configs.push_back(c);
+    const char peerIds[]="abcdef01";
+    static_assert(sizeof peerIds-1==PC_NETWORK_PEERS,"One valid hexadecimal fixture identity per peer");
+    for(unsigned i=0;i<PC_NETWORK_PEERS;++i){peers.push_back(session());auto c=config(port,peerIds[i],i==0);std::strcpy(c.room,"bounded");configs.push_back(c);
         CHECK(pc_network_join(peers.back().get(),&configs.back()));connected(peers.back().get());}
     CHECK(until([&]{return status(peers[0].get()).peer_count==PC_NETWORK_PEERS;}));
     for(unsigned base=0;base<PC_NETWORK_REWARDS;base+=64){
