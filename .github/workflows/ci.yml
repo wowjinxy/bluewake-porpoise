@@ -14,14 +14,24 @@
 # Downloads (Aurora, Dawn and nod packages, SDL 3 ...) are cached across runs with actions/cache;
 # images with the buildx GitHub Actions cache.
 #
-# Manual only (Actions tab, "Run workflow"): the repository is private, so every run spends the
-# account's Actions minutes (about 14 runner minutes a run), while the real check is the local
+# Manual only (Actions tab, "Run workflow"): full retains the jobs below; network runs only the
+# standalone Windows network tests without Aurora, SDK/game code or disc-derived data.
+# Runs spend the account's Actions minutes, while the real game check is the local
 # regression (native/tools/regress.sh) with the disc. Put push/pull_request back once CI can build
 # the whole game (docs/RUNTIME_ASSETS.md).
 name: ci
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Checks to run
+        type: choice
+        required: true
+        default: full
+        options:
+          - full
+          - network
 
 permissions:
   contents: read
@@ -32,6 +42,7 @@ concurrency:
 
 jobs:
   lint:
+    if: ${{ inputs.scope != 'network' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +59,7 @@ jobs:
           fi
 
   linux:
+    if: ${{ inputs.scope != 'network' }}
     strategy:
       fail-fast: false
       matrix:
@@ -106,6 +118,7 @@ jobs:
             ninja -C build/ci-linux-game switchwaker'
 
   switch-image:
+    if: ${{ inputs.scope != 'network' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -126,3 +139,59 @@ jobs:
           tags: centollos-switch-mesa-build:ci
           cache-from: type=gha,scope=switch-mesa
           cache-to: type=gha,mode=max,scope=switch-mesa
+
+  network:
+    if: ${{ inputs.scope == 'network' }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test standalone network foundations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert-FreeSpace {
+            $roots = @([IO.Path]::GetPathRoot($env:SystemRoot),
+                       [IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) | Sort-Object -Unique
+            foreach ($root in $roots) {
+              $drive = Get-PSDrive -Name $root.Substring(0, 1)
+              if ($drive.Free -lt 8GB) { throw "At least 8 GiB free is required on $root" }
+            }
+          }
+          Assert-FreeSpace
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$vs) { throw 'Visual Studio C++ tools were not found' }
+          $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          $clang = Join-Path $vs 'VC/Tools/Llvm/x64/bin/clang-cl.exe'
+          $linker = Join-Path $vs 'VC/Tools/Llvm/x64/bin/lld-link.exe'
+          foreach ($tool in @($vcvars, $clang, $linker)) {
+            if (!(Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Missing tool: $tool" }
+          }
+          $bootstrap = Join-Path $env:RUNNER_TEMP 'network-msvc.cmd'
+          [IO.File]::WriteAllText($bootstrap,
+            "@echo off`r`ncall `"$vcvars`" >nul`r`nif errorlevel 1 exit /b 1`r`nset`r`n")
+          # Capture internally; never print the runner's complete environment.
+          $environment = @(& $env:ComSpec /d /c $bootstrap)
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC environment initialization failed' }
+          foreach ($line in $environment) {
+            if ($line -match '^(Path|INCLUDE|LIB|LIBPATH)=(.*)$') {
+              [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+            }
+          }
+          & $clang --version
+          if ($LASTEXITCODE -ne 0) { throw 'clang-cl is unavailable' }
+          cmake -S native/check/network -B build/ci-network -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_LINKER=$linker"
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone network configure failed' }
+          Assert-FreeSpace
+          cmake --build build/ci-network --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone network build failed' }
+          Assert-FreeSpace
+          ctest --test-dir build/ci-network --output-on-failure --timeout 300 --parallel 2 --no-tests=error
+          if ($LASTEXITCODE -ne 0) {
+            # Synthetic fixtures only; retain them on the runner and show metadata, not contents.
+            Get-ChildItem -LiteralPath 'build/ci-network/fixtures' -File -Recurse |
+              Select-Object -First 100 FullName, Length, LastWriteTimeUtc | Format-Table -AutoSize
+            throw 'Standalone network tests failed'
+          }
