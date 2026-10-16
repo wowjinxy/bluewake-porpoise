@@ -6,6 +6,9 @@
 #include "JSystem/JSystem.h" // IWYU pragma: keep
 
 #include "JSystem/JUtility/JUTGamePad.h"
+#if TARGET_PC
+#include "pc/pc_quick_items.h"
+#endif
 #include "math.h"
 #include "dolphin/os/OS.h"
 
@@ -65,6 +68,10 @@ u32 JUTGamePad::sRumbleSupported;
 /* 802C3980-802C3C14       .text read__10JUTGamePadFv */
 u32 JUTGamePad::read() {
     sRumbleSupported = PADRead(mPadStatus);
+
+#if TARGET_PC
+    pc_quick_items_filter(mPadStatus);
+#endif
 
     PADClamp(mPadStatus);
 

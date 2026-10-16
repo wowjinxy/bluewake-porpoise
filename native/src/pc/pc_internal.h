@@ -181,6 +181,10 @@ void loadInput();
 // raw main stick); false without a script. The options menu reads it (the game's pad reads are
 // blocked while the menu is open).
 bool inputScriptAt(unsigned int frame, uint16_t* buttons, int8_t* stickX, int8_t* stickY);
+// Diagnostic modifier is separate from the GameCube button mask. A driven
+// smoke pad overrides the script, including an explicitly released modifier.
+void setDrivenQuickItemModifier(bool held);
+bool inputQuickItemModifier();
 
 // pc_watchdog.cpp
 void startWatchdog();
@@ -333,6 +337,8 @@ void eventWatchReport(unsigned int frames);
 void stageHopFrame(unsigned int frames);
 // COS_SMOKE=camera-invert (pc_camera_invert.cpp): the inverted camera axes.
 void cameraInvertFrame(unsigned int frames);
+// COS_SMOKE=quick-items: native equipment shortcuts with unchanged X/Y/Z slots.
+void quickItemsFrame(unsigned int frames);
 
 // pc_shot.cpp: parses COS_SHOT / COS_SHOT_EVERY (exit PC_EXIT_USAGE if malformed); without
 // them the screenshots stay off. Returns whether any frame will be captured.

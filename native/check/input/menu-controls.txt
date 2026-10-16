@@ -1,0 +1,60 @@
+# COS_SMOKE=options-menu, COS_BOOT_STAGE=sea:44:206, COS_TARGET_FPS=30.
+# Start with a fresh private COS_SETTINGS file, with no camera inversion environment overrides.
+# Graphics/Performance/Debug keep tab IDs 0/1/2; L wraps Graphics to Controls (3).
+# Change both real Controls rows, hold the stick while the menu pauses gameplay, close/reopen,
+# then exercise left/right editing and leave both settings enabled. The existing options-menu
+# oracle checks paused player frames, effective values and the actual persisted file.
+# Run menu-controls-reload.txt in a separate process with the same COS_SETTINGS afterward.
+#expect opened 3
+#expect setting COS_CAMERA_INVERT_X 1
+#expect setting COS_CAMERA_INVERT_Y 1
+#expect saved COS_CAMERA_INVERT_X=1
+#expect saved COS_CAMERA_INVERT_Y=1
+#expect setting COS_TARGET_FPS 30
+#expect setting COS_QUICK_ITEMS 1
+#expect saved COS_QUICK_ITEMS=1
+#expect stage sea 44
+#expect alloc-failures 0
+#expect end 660
+# frame buttons stickX stickY
+400 L+R+Z 0 0
+403 - 0 0
+406 L 0 0
+408 - 0 0
+412 A 0 0
+414 - 0 0
+418 DOWN 0 0
+420 - 0 0
+424 A 0 0
+426 - 0 0
+# A raw stick value of 40 exceeds the game's deadzone but stays below the menu's 60 threshold,
+# so it tests pause without repeatedly changing the selected setting through menu navigation.
+430 - 40 0
+470 B 40 0
+472 - 0 0
+# Reopening retains Controls and its vertical-inversion row selection.
+500 L+R+Z 0 0
+503 - 0 0
+506 UP 0 0
+508 - 0 0
+512 RIGHT 0 0
+514 - 0 0
+518 LEFT 0 0
+520 - 0 0
+524 DOWN 0 0
+526 - 0 0
+530 RIGHT 0 0
+532 - 0 0
+536 LEFT 0 0
+538 - 0 0
+550 B 0 0
+552 - 0 0
+# Reopen on the vertical-inversion row, move to the equipment shortcut option and enable it.
+600 L+R+Z 0 0
+603 - 0 0
+606 DOWN 0 0
+608 - 0 0
+612 A 0 0
+614 - 0 0
+620 B 0 0
+622 - 0 0

@@ -1934,6 +1934,11 @@ public:
     void setFootEffectPosType(u8 type) { mFootEffectPosType = type; }
     int checkIsland() const { return mRestartPoint; }
     const s16 getTactLeftHandPos() const { return mProcVar3.mTactWaitLeftHandPos; }
+#if TARGET_PC
+    // Read-only native action/diagnostic access; no actor-layout changes.
+    int getPcActionProc() const { return mCurProc; }
+    u8 getPcReadyItemButton() const { return mReadyItemBtn; }
+#endif
     
     void checkBothItemEquipAnime() const {}
     void checkDoubleItemEquipAnime() const {}

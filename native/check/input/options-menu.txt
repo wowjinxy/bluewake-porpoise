@@ -18,9 +18,14 @@
 # frame buttons stickX stickY
 400 L+R+Z 0 0
 403 - 0 0
-# Gráficos: down to "Resolución interna", right four times (0 -> 1.0 -> 1.125 -> 1.25 -> 1.5)
+# Gráficos: past FPS and Fullscreen to "Resolución interna", then right four times
+# (0 -> 1.0 -> 1.125 -> 1.25 -> 1.5).
+404 DOWN 0 0
+405 - 0 0
 406 DOWN 0 0
-408 - 0 0
+407 - 0 0
+408 DOWN 0 0
+409 - 0 0
 410 RIGHT 0 0
 412 - 0 0
 414 RIGHT 0 0

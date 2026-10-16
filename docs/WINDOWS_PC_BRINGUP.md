@@ -163,4 +163,35 @@ The tester uses the qualified `fd6fc89` executable in the original 30 FPS mode, 
 
 The staged executable was launched with its copied runtime DLLs and completed 650 frames with exit 0. It reached the title milestone at frame 561; the frame-600 capture was inspected and rendered correctly. Evidence is in `runtime-packaged-title1/`. The final archive contains 20 entries, and every declared file was checked against the manifest after compression. Only declared files are archived: no ISO, extracted assets, test cards, recorded audio or generated caches are included. Startup validation used the staged folder; archive entries were verified against that folder.
 
-The launcher uses this PC's existing original ISO when present and otherwise leaves selection to the native file picker. Settings and saves remain in the extracted folder's `user` directory. The normal source-tree `run.cmd` is also configured locally for the existing ISO. `E:/GPT5/WindWakerRecomp/WINDOWWAKER_PC_LOCATION.txt` points to the active checkout; BlueWake remains separate.
+The launcher uses this PC's existing original ISO when present and otherwise leaves selection to the native file picker. Settings and saves remain in the extracted folder's `user` directory. The normal source-tree `run.cmd` is also configured locally for the existing ISO. `E:/GPT5/WindWakerRecomp/WINDOWWAKER_PC_LOCATION.txt` points to the active checkout; the legacy recompilation checkout remains separate.
+
+## First native controls migration
+
+Recorded on 2026-10-15 (America/Chicago). This slice adds a real Controls tab, moves the existing camera inversion rows there without changing their keys/defaults, and adds optional `COS_QUICK_ITEMS`, default off. Enable through F1 > Controls > Equipment shortcuts. Hold eligible controller LB or keyboard Tab and press Up to conduct, Left to deploy/fire the cannon while riding, or Right to deploy/lower the crane; release Right to retract and use native A to stow. Owned equipment and safe native procedures are required. Plain D-pad, Down, X/Y/Z assignments and LT/RT are retained. Conflicting custom profiles keep their native controls and decline the shortcut. Binding/profile editing, native event/save foundations and networking remain later milestones.
+
+The named Windows actor libraries, `switchwaker`, `cos_pc_tests` and `cos_quick_items_tests` were built with the documented clang-cl toolchain. The final candidate was linked at 2026-10-16 01:06:12 UTC from this slice on top of source `53051479cae95c26b87ac4716e01f4d687beb1f6`. Its executable is 13,513,216 bytes, SHA-256:
+
+```text
+fe8e8d7be46653a3b05fdfed5951f7e4af888fa954496226a814f9fe2c3fe7ff
+```
+
+The final build log is `build/pc-bringup-20261015/build-migration-final-20261016T010602Z/output.log`. All game cases in the table use that same executable with isolated settings/card/run directories. Every listed child exited zero and its owned process job drained; explicit assertions below establish the requested result. Private case paths are relative to `build/pc-bringup-20261015/migration-controls-20261015/`.
+
+| Check | Observed result | Private case |
+| --- | --- | --- |
+| Input lifecycle/profile policy | Pure tests passed: release gating, menu/focus/device/profile/scene changes, conflicting directions, consumed-direction suppression, physical and keyboard profile conflicts | `runtime-gate3/` |
+| Live Controls menu | Three menu opens; both camera axes and equipment shortcuts changed and persisted; PASS at frame 660, 131 paused player frames checked, zero allocation failures; frame-616 Controls capture inspected | `runtime-menu-live2/` |
+| Settings reload | Fresh process restored both camera axes and shortcuts enabled; PASS at frame 360; settings file hash unchanged | `runtime-menu-reload2/` |
+| Native boat equipment | Already-owned unassigned cannon/hook used while riding; cannon deployed and two actual shots consumed bombs 30 to 29 to 28; cooldown repeat rejected; crane rope lowered from 20 to 60 and retracted to 20, then A stowed it; Down, X/Y/Z, ready index, ownership and actor identity preserved | `runtime-boat3/` |
+| Missing boat tools | Actual riding context with bombs/hook absent; Left/Right ignored, ammo stayed zero, Down and assignments preserved | `runtime-boat-missing/` |
+| Native conducting | Ordinary Windfall spawn `sea:11:9`; owned unassigned baton entered native TACT_WAIT; actual left/right conducting correct with camera inversion off and both axes on; native B cancellation returned to safe control; assignments and Down preserved | `runtime-foot2/` |
+| Missing on-foot tools | Same Windfall context, all three shortcut tools absent; requests ignored, ammo/Down/assignments unchanged | `runtime-missing/` |
+| Camera-only inversion | Existing camera case passed with opposite native yaw/pitch responses; conducting left remained direction 4 | `runtime-camera/` |
+| Existing virtual PAD | 20 script lines, 81 frames checked, zero errors, including native edges/sticks and analog L/R | `runtime-pad/` |
+| Diagnostic modifier transparency | MOD adds no GameCube bit; native analog L/R and Down preserved with shortcuts disabled; 9 script lines, 41 frames checked, zero errors | `runtime-pad-mod/` |
+| Fresh defaults | With `COS_TARGET_FPS` absent, effective target remained 30, shortcuts and both camera inversions were zero, diagnostics stayed off; PASS at frame 360 | `runtime-defaults/` |
+| Existing helpers | `cos_pc_tests` passed; unsupported POSIX-only death checks explicitly skipped | `runtime-helpers/` |
+
+Earlier setup attempts remain preserved. `runtime-boat/` and `runtime-boat2/` exhausted their process bounds while the ordinary King conversation still needed native A confirmation. The successful retry sends normal A only in the live dialogue states; it does not write story flags or bypass event state. `runtime-foot/` waited in Outset's opening sequence with a neutral driver; the focused conducting retry uses the ordinary Windfall spawn above. These failed setup runs are not passing action checks. The first aggregate script also expected a nonexistent `pad-echo: PASS` string; `runtime-pad/` itself passed with its real zero-error count oracle, recorded separately in `pad-native-validation.json`. The original aggregate report is preserved.
+
+The modifier is driven through the diagnostic input seam in these game cases. This qualifies the scripted native actions, not physical LB/Tab hardware use, full profile editing, full-game stability or an in-game save/reload transaction. The slice supplies no new performance benchmark or audible-quality acceptance. Earlier normal-new-game and performance evidence above retains its original executable identity. Tingle rescue wait-skip stays disabled and does not gate this slice or a local tester. The prior tester ZIP remains intact; a fresh controls tester is sealed separately only after the staged runtime reaches the title and its capture is inspected.

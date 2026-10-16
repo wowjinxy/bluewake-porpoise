@@ -345,14 +345,28 @@ BOOL daPy_lk_c::changeShipEndProc() {
             }
             return procShipSteer_init();
         }
-        if (checkSetItemTrigger(dItemNo_BOMB_BAG_e, TRUE)) {
+        if (checkSetItemTrigger(dItemNo_BOMB_BAG_e, TRUE)
+#if TARGET_PC
+            || (mCurProc != daPyProc_SHIP_CANNON_e &&
+                dComIfGp_checkPlayerStatus0(0, daPyStts0_SHIP_RIDE_e) &&
+                dComIfGs_getItem(dInvSlot_BOMB_e) == dItemNo_BOMB_BAG_e &&
+                pc_quick_items_pressed(PC_QUICK_ITEM_CANNON))
+#endif
+        ) {
             daBoomerang_c* boomerang = (daBoomerang_c*)mActorKeepThrow.getActor();
             if (boomerang != NULL) {
                 boomerang->onCancelFlg();
             }
             return procShipCannon_init();
         }
-        if (checkSetItemTrigger(dItemNo_GRAPPLING_HOOK_e, TRUE)) {
+        if (checkSetItemTrigger(dItemNo_GRAPPLING_HOOK_e, TRUE)
+#if TARGET_PC
+            || (mCurProc != daPyProc_SHIP_CRANE_e &&
+                dComIfGp_checkPlayerStatus0(0, daPyStts0_SHIP_RIDE_e) &&
+                dComIfGs_getItem(dInvSlot_GRAPPLING_HOOK_e) == dItemNo_GRAPPLING_HOOK_e &&
+                pc_quick_items_pressed(PC_QUICK_ITEM_CRANE))
+#endif
+        ) {
             daBoomerang_c* boomerang = (daBoomerang_c*)mActorKeepThrow.getActor();
             if (boomerang != NULL) {
                 boomerang->onCancelFlg();
@@ -390,7 +404,13 @@ BOOL daPy_lk_c::changeShipEndProc() {
             }
             return procShipHookshot_init();
         }
-        if (checkSetItemTrigger(dItemNo_WIND_WAKER_e, TRUE)) {
+        if (checkSetItemTrigger(dItemNo_WIND_WAKER_e, TRUE)
+#if TARGET_PC
+            || (dComIfGp_checkPlayerStatus0(0, daPyStts0_SHIP_RIDE_e) &&
+                dComIfGs_getItem(dInvSlot_WIND_WAKER_e) == dItemNo_WIND_WAKER_e &&
+                pc_quick_items_pressed(PC_QUICK_ITEM_TACT))
+#endif
+        ) {
             daBoomerang_c* boomerang = (daBoomerang_c*)mActorKeepThrow.getActor();
             if (boomerang != NULL) {
                 boomerang->onCancelFlg();

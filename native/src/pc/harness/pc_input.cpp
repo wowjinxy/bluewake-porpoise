@@ -8,6 +8,7 @@
 // - buttons: '-' or 0 for none, a number (0x1100), or names joined with '+': A B X Y Z L R START
 //   UP DOWN LEFT RIGHT (PAD_BUTTON_* / PAD_TRIGGER_*). L and R also set the analog trigger to its
 //   full value (180), as Aurora does for a digital trigger.
+//   MOD is an explicit diagnostic Quick Items modifier; it adds no GameCube bit.
 // - stickX, stickY: the raw main stick, -128..127 (positive is right / up), before PADClamp.
 // - substickX, substickY (optional, 0 when left out): the C stick, the same way (bug B6: the
 //   telescope zooms with the C stick).
@@ -46,6 +47,7 @@ struct InputLine {
     unsigned int frame;
     unsigned int line; // in the script file
     uint16_t buttons;
+    bool quickItemModifier;
     int8_t stickX;
     int8_t stickY;
     int8_t substickX;
@@ -72,6 +74,7 @@ const unsigned int kEchoTail = 8;
 // setDrivenPad: a smoke test's own controller state for port 0.
 bool sDriven = false;
 PADStatus sDrivenStatus;
+bool sDrivenQuickItemModifier = false;
 const unsigned int kEchoMaxErrorLines = 40;
 
 // The buttons mDoCPd_Convert maps into interface_of_controller_pad.
@@ -103,7 +106,8 @@ const ButtonName kButtonNames[] = {
     pc_exit(PC_EXIT_USAGE);
 }
 
-bool parseButtons(const char* text, uint16_t& out) {
+bool parseButtons(const char* text, uint16_t& out, bool& modifier) {
+    modifier = false;
     if (strcmp(text, "-") == 0) {
         out = 0;
         return true;
@@ -124,6 +128,10 @@ bool parseButtons(const char* text, uint16_t& out) {
         const char* end = strchr(p, '+');
         size_t len = end != nullptr ? (size_t)(end - p) : strlen(p);
         bool found = false;
+        if (len == 3 && strncasecmp("MOD", p, len) == 0) {
+            modifier = true;
+            found = true;
+        }
         for (const ButtonName& b : kButtonNames) {
             if (strlen(b.name) == len && strncasecmp(b.name, p, len) == 0) {
                 bits |= b.bit;
@@ -197,7 +205,7 @@ void loadScript(const char* path) {
         if (!sScript.empty() && line.frame <= sScript.back().frame) {
             scriptError(path, lineNo, "frame not after the previous line's", fields[0]);
         }
-        if (!parseButtons(fields[1], line.buttons)) {
+        if (!parseButtons(fields[1], line.buttons, line.quickItemModifier)) {
             scriptError(path, lineNo, "bad buttons", fields[1]);
         }
         if (!parseStick(fields[2], line.stickX)) {
@@ -386,6 +394,7 @@ bool inputScriptAt(unsigned int frame, uint16_t* buttons, int8_t* stickX, int8_t
 
 void setDrivenPad(bool on, uint16_t buttons, int8_t stickX, int8_t stickY, int8_t substickX, int8_t substickY) {
     sDriven = on;
+    if (!on) sDrivenQuickItemModifier = false;
     memset(&sDrivenStatus, 0, sizeof(sDrivenStatus));
     if (on) {
         sDrivenStatus.button = buttons;
@@ -396,6 +405,15 @@ void setDrivenPad(bool on, uint16_t buttons, int8_t stickX, int8_t stickY, int8_
         sDrivenStatus.triggerLeft = (buttons & PAD_TRIGGER_L) ? kTriggerFull : 0;
         sDrivenStatus.triggerRight = (buttons & PAD_TRIGGER_R) ? kTriggerFull : 0;
     }
+}
+
+void setDrivenQuickItemModifier(bool held) {
+    sDrivenQuickItemModifier = held;
+}
+
+bool inputQuickItemModifier() {
+    if (sDriven) return sDrivenQuickItemModifier;
+    return sLoaded && sCurrent != nullptr && sCurrent->quickItemModifier;
 }
 
 } // namespace pc

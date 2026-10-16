@@ -34,6 +34,7 @@
 #include "m_Do/m_Do_lib.h"
 #if TARGET_PC
 #include "helpers/endian.h"
+#include "pc/pc_quick_items.h"
 #endif
 #include "d/d_material.h"
 #include "JSystem/J3DGraphLoader/J3DAnmLoader.h"
@@ -4124,6 +4125,28 @@ int daPy_lk_c::orderTalk() {
 
 /* 8010DB58-8010E448       .text checkNextActionFromButton__9daPy_lk_cFv */
 BOOL daPy_lk_c::checkNextActionFromButton() {
+#if TARGET_PC
+    // An owned quick item does not occupy or impersonate an X/Y/Z assignment.
+    // Limit the on-foot entry to ordinary, grounded movement; the boat has its
+    // own existing dispatch point in changeShipEndProc.
+    if (pc_quick_items_pressed(PC_QUICK_ITEM_TACT) &&
+        dComIfGs_getItem(dInvSlot_WIND_WAKER_e) == dItemNo_WIND_WAKER_e &&
+        (dStage_stagInfo_GetSTType(dComIfGp_getStageStagInfo()) != dStageType_MISC_e ||
+         strcmp(dComIfGp_getStartStageName(), "Otkura") == 0) &&
+        mAcch.ChkGroundHit() && !checkPlayerFly() && !checkEquipAnime() &&
+        !checkPlayerGuard() && mActorKeepGrab.getActor() == NULL &&
+        (mCurProc == daPyProc_WAIT_e || mCurProc == daPyProc_FREE_WAIT_e ||
+         mCurProc == daPyProc_MOVE_e || mCurProc == daPyProc_ATN_MOVE_e ||
+         mCurProc == daPyProc_ATN_ACTOR_WAIT_e || mCurProc == daPyProc_ATN_ACTOR_MOVE_e ||
+         mCurProc == daPyProc_WAIT_TURN_e || mCurProc == daPyProc_MOVE_TURN_e))
+    {
+        daBoomerang_c* boomerang = (daBoomerang_c*)mActorKeepThrow.getActor();
+        if (boomerang != NULL) {
+            boomerang->onCancelFlg();
+        }
+        return procTactWait_init(-1);
+    }
+#endif
     if (checkResetFlg0(daPyRFlg0_UNK80)) {
         if (mEquipItem == daPyItem_SWORD_e) {
             resetActAnimeUpper(UPPER_MOVE2_e, -1.0f);

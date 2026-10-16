@@ -24,6 +24,7 @@
 #include "res/Object/Ship.h"
 #if TARGET_PC
 #include "pc/pc_interp.h"
+#include "pc/pc_quick_items.h"
 #endif
 
 static char l_arcName[] = "Ship";
@@ -1820,7 +1821,15 @@ BOOL daShip_c::procCannon() {
         if (m037A == 0 && 
             ((CPad_CHECK_TRIG_X(0) && dComIfGp_getSelectItem(dItemBtn_X_e) == dItemNo_BOMB_BAG_e) ||
              (CPad_CHECK_TRIG_Y(0) && dComIfGp_getSelectItem(dItemBtn_Y_e) == dItemNo_BOMB_BAG_e) ||
-             (CPad_CHECK_TRIG_Z(0) && dComIfGp_getSelectItem(dItemBtn_Z_e) == dItemNo_BOMB_BAG_e))) {
+             (CPad_CHECK_TRIG_Z(0) && dComIfGp_getSelectItem(dItemBtn_Z_e) == dItemNo_BOMB_BAG_e)
+#if TARGET_PC
+             || (dComIfGp_getShipActor() == this &&
+                 dComIfGp_checkPlayerStatus0(0, daPyStts0_SHIP_RIDE_e) &&
+                 daPy_getPlayerLinkActorClass()->getPcActionProc() == daPy_lk_c::daPyProc_SHIP_CANNON_e &&
+                 dComIfGs_getItem(dInvSlot_BOMB_e) == dItemNo_BOMB_BAG_e &&
+                 pc_quick_items_pressed(PC_QUICK_ITEM_CANNON))
+#endif
+            )) {
             m037A = 30;
             if (dComIfGs_getBombNum() == 0) {
                 mDoAud_seStart(JA_SE_ITEM_TARGET_OUT);
@@ -1918,7 +1927,15 @@ BOOL daShip_c::procCrane() {
             if(std::fabsf(speedF) < 3.0f &&
               ((CPad_CHECK_HOLD_X(0) && dComIfGp_getSelectItem(dItemBtn_X_e) == dItemNo_GRAPPLING_HOOK_e) ||
                (CPad_CHECK_HOLD_Y(0) && dComIfGp_getSelectItem(dItemBtn_Y_e) == dItemNo_GRAPPLING_HOOK_e) ||
-               (CPad_CHECK_HOLD_Z(0) && dComIfGp_getSelectItem(dItemBtn_Z_e) == dItemNo_GRAPPLING_HOOK_e))) {
+               (CPad_CHECK_HOLD_Z(0) && dComIfGp_getSelectItem(dItemBtn_Z_e) == dItemNo_GRAPPLING_HOOK_e)
+#if TARGET_PC
+               || (dComIfGp_getShipActor() == this &&
+                   dComIfGp_checkPlayerStatus0(0, daPyStts0_SHIP_RIDE_e) &&
+                   daPy_getPlayerLinkActorClass()->getPcActionProc() == daPy_lk_c::daPyProc_SHIP_CRANE_e &&
+                   dComIfGs_getItem(dInvSlot_GRAPPLING_HOOK_e) == dItemNo_GRAPPLING_HOOK_e &&
+                   pc_quick_items_held(PC_QUICK_ITEM_CRANE))
+#endif
+              )) {
                 sVar1 = mRopeCnt;
                 incRopeCnt(2, 0);
                 if (mRopeCnt == 250) {

@@ -14,7 +14,9 @@ Fresh player settings target **30 FPS**, with the FPS overlay off. Higher presen
 
 The [native enhancement roadmap](docs/NATIVE_ENHANCEMENT_MIGRATION.md) starts with controls, menu and equipment shortcuts, then native gameplay/save events and recoverable isolated saves. Shared-progress multiplayer follows those foundations: independent exploration, an owned TCP service, and permanent rewards applied safely on the game thread. Native multiplayer is not implemented yet.
 
-The agreed shortcut is held LB (keyboard Tab) plus D-pad Up for conducting, Left for the cannon at sea, and Right for the crane at sea. Plain D-pad, Down and X/Y/Z assignments keep their normal behavior. These shortcuts are migration targets, not current native controls. HD additions follow a stable PC port; the optional Tingle rescue wait-skip stays disabled and does not block builds.
+The first native controls slice adds a **Controls** tab with camera inversion and optional equipment shortcuts. Enable **Equipment shortcuts** there: hold LB (keyboard Tab + arrow keys), then Up to conduct, Left to deploy the cannon at sea, or Right to deploy the crane at sea. Press Left again to fire the cannon; hold Right to lower the crane and release it to retract. The native A action stows boat equipment. Earned gear and a safe native action context are required. Plain D-pad, Down and X/Y/Z assignments retain their behavior.
+
+Shortcuts start off. Conflicting custom controller/keyboard profiles keep their native controls and decline the shortcut; full rebinding/profile editing remains later work. Automated game tests use a diagnostic modifier, so physical-controller acceptance remains separate. HD additions follow a stable PC port; the optional Tingle rescue wait-skip stays disabled and does not block builds.
 
 ## Build and run on Windows
 

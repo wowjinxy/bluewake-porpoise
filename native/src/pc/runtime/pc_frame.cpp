@@ -1113,6 +1113,7 @@ void pc_frame_end(void) {
     eventWatchFrame(frames);
     stageHopFrame(frames);
     cameraInvertFrame(frames);
+    quickItemsFrame(frames);
     pictoBoxFrame(frames);
     fileSelectFrame(frames);
     newGameFrame(frames);

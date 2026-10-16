@@ -6,7 +6,7 @@
  *
  * Applied only where the camera reads the C stick (d_camera.cpp, dCamera_cStickX/Y): the wind
  * baton's left hand, the item menu's songs, the grappling hook and the figure viewer keep the C
- * stick's real directions. Options menu: Gráficos > "Invertir cámara horizontal" and "Invertir
+ * stick's real directions. Options menu: Controles > "Invertir cámara horizontal" and "Invertir
  * cámara vertical", live. The game thread calls all of them.
  */
 #ifndef PC_CONTROLS_H

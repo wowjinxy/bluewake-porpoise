@@ -1,0 +1,17 @@
+# COS_SMOKE=options-menu, COS_BOOT_STAGE=sea:44:206, COS_TARGET_FPS=30.
+# Use a NEW game process with menu-controls.txt's existing private COS_SETTINGS file.
+# Leave COS_CAMERA_INVERT_X/Y absent from the launching environment. This case makes no edits
+# and opens no menu: the effective values must have come from the previous process's file.
+# Check that file's hash outside the game as well if proving a read-only reload.
+#expect opened 0
+#expect setting COS_CAMERA_INVERT_X 1
+#expect setting COS_CAMERA_INVERT_Y 1
+#expect saved COS_CAMERA_INVERT_X=1
+#expect saved COS_CAMERA_INVERT_Y=1
+#expect setting COS_TARGET_FPS 30
+#expect setting COS_QUICK_ITEMS 1
+#expect saved COS_QUICK_ITEMS=1
+#expect stage sea 44
+#expect alloc-failures 0
+#expect end 360
+0 - 0 0

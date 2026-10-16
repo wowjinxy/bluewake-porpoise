@@ -68,12 +68,18 @@ build/native-mac/switchwaker                           # interactive: a 960x720 
 `switchwaker` (phase 6)" for its options and exit codes). Without `COS_DISC` (or `--disc PATH`) a run that
 boots the game stops with exit 14.
 
+**Current Windows fork status (2026-10-15).** Use the [Windows bring-up record](../docs/WINDOWS_PC_BRINGUP.md)
+for current build and gameplay qualification. The older phase-6 expected-output/platform paragraphs below
+are historical, including their no-audio and untested-Windows statements. The current Windows port
+reaches controllable Outset and produces game audio; audible quality and broader acceptance remain open.
+
 **Controls.** Port 0 is Aurora's SDL gamepad: connect a controller (Xbox, PlayStation, Switch
 Pro...) before launching. Left stick: control stick; right stick: C-stick; the bottom face button
 is A, and B, X and Y follow Aurora's default for the controller type (on an Xbox controller: left
 B, right X, top Y, the GameCube's arrangement); right shoulder: Z; analog triggers: L and R;
 Start: START; D-pad: D-pad. The keyboard is not mapped: Aurora has no default key bindings and
-the port sets none yet, so without a controller you can only watch.
+the port sets no full keyboard gameplay profile yet. The options menu accepts keyboard navigation;
+the optional desktop equipment shortcuts additionally use Tab + arrow keys (see below).
 
 **What you should see now.** The publisher and Dolby logos, then the title screen ("PRESS START")
 over Outset Island. Known problems: the gameplay HUD
@@ -481,7 +487,7 @@ Exit codes: 0 reached, 1 smoke check failed, 2 usage error, 10 timeout, 11 stall
 `pc_menu.cpp` / `pc_settings.cpp` (API: `native/include/pc/pc_settings.h`): an ImGui options window
 opened with **F1** or **L+R+Z** (a GameCube-style pad; a `COS_INPUT` script only in `COS_SMOKE=options-menu`) on the Mac and
 **Minus** on the Switch (ZL+ZR+Minus elsewhere); **B**/Esc or the same button(s) close it. Tabs *Gráficos*,
-*Rendimiento* and *Depuración* (*Graphics*, *Performance*, *Debug* in English; a help line for the selected row); controller
+*Rendimiento*, *Depuración* and *Controles* (*Graphics*, *Performance*, *Debug*, *Controls* in English; a help line for the selected row); controller
 (D-pad/stick, A change, B back, L/R tab), keyboard (arrows, Enter, Esc, Q/E) or mouse. While it is
 open the PLAY scene is paused (hit-stop pause timer) and the game gets no pad input.
 
@@ -500,7 +506,15 @@ open the PLAY scene is paused (hit-stop pause timer) and the game gets no pad in
   stats lines (`COS_HD_STATS_EVERY`), the GPU timers per group (`COS_GPU_GROUPS`), the USB live log
   (`COS_USB_LOG`, Switch), the debug server (`COS_DEBUG_SERVER`, Switch, at the next start) and the
   real-time shadow A/B test (`COS_SHADOW_OFFSCREEN`).
-  Gráficos and Rendimiento keep the options meant for players.
+  Gráficos, Rendimiento and Controles keep the options meant for players.
+- Controles contains camera horizontal/vertical inversion, applied only to the camera, and desktop
+  equipment shortcuts (`COS_QUICK_ITEMS=1`, off by default). Hold spare LB + D-pad, or Tab + arrows:
+  Up conducts, Left deploys the cannon (press again to fire), Right deploys/lowers the crane (release
+  to retract). Use the native A action to stow boat gear. Ownership, native procedure and safe-context
+  checks apply; original X/Y/Z selections, unmodified D-pad and Down are preserved. A physical profile
+  must leave LB unused and map the D-pad canonically without conflicting button-backed axes.
+  Tab/arrows must be unbound in native keyboard button/axis profiles. Conflicting profiles retain
+  their normal controls and decline shortcuts. Full rebinding is a later migration phase.
 - Values are saved to `user/settings.ini` next to the executable (Switch:
   `/switch/switchwaker/native/user/settings.ini`; `COS_SETTINGS=<path>` names another file,
   and `run.sh` gives every run its own `<run dir>/settings.ini`). Lines `NAME=value`, or

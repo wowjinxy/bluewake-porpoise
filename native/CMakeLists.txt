@@ -176,6 +176,9 @@ if (WIN32)
     target_link_libraries(cos_windows_io_tests PRIVATE cos_game_headers)
 endif ()
 
+# Held-shortcut lifecycle checks do not require the game, disc, SDL or a window.
+add_executable(cos_quick_items_tests check/pc_quick_items_gate_test.cpp)
+
 # SDK header check (phase 2, step 2.3): every SDK header name the decomp has, in one unit, against
 # the game's SDK headers (Aurora's plus the native/include/sdk forwarders). cos_sdk_shadow_check
 # also proves that none of them resolves under game/include/dolphin.

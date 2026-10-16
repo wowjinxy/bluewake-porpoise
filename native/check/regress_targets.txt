@@ -161,7 +161,7 @@ item-sweep 0 --stage Asoko:0:0:2 --env COS_ITEM_SWEEP=0x22,0x38,0x78 --env COS_I
 # COS_SMOKE=save-sweep (native/tools/save_sweep.py also loads each save back): a save in Dragon Roost
 # Cavern through the save screen's steps; the card must hold what the game packed, return place its entrance
 save-sweep 0 --stage M_NewD2:0:0 --env COS_BOOT_EVENTS=2A08
-# COS_SMOKE=camera-invert: the options' inverted camera axes (Gráficos > "Invertir cámara horizontal" /
+# COS_SMOKE=camera-invert: the options' inverted camera axes (Controles > "Invertir cámara horizontal" /
 # "vertical"): the C stick turns the camera's yaw and pitch the opposite way with the axis inverted,
 # and the wind baton's left hand still reads the C stick's real direction
 camera-invert 0 --stage sea:11:9

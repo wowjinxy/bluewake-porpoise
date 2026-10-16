@@ -7,7 +7,7 @@
 // and gets no controller input (Aurora's PADBlockInput; the buttons still held when it closes are
 // ignored until released). Other scenes (title, name entry) keep running behind it, without input.
 //
-// One ImGui window with three tabs, Gráficos, Rendimiento and Depuración, navigated by the
+// One ImGui window with Graphics, Performance, Debug and Controls tabs, navigated by the
 // controller (D-pad or stick: row and value; A: change / confirm; B: back / close; L/R: tab), the
 // keyboard (arrows, Enter, Esc, Q/E) or the mouse (click a tab, a row, a value). The menu reads the
 // controllers itself (SDL gamepads, labels of the face buttons respected, so A is A on a Switch-style
@@ -36,6 +36,7 @@
 #include "pc_internal.h"
 
 #include "pc/pc_controls.h"
+#include "pc/pc_quick_items.h"
 
 #include "d/d_com_inf_game.h"
 #include "d/d_s_play.h"
@@ -445,6 +446,7 @@ void applyDof(const char*, const char* v, void*) { pc_dof_set(strcmp(v, "0") != 
 void applyAniso(const char*, const char* v, void*) { pc_aniso_set(strcmp(v, "0") != 0); }
 void applyCameraInvertX(const char*, const char* v, void*) { pc_camera_invert_x_set(strcmp(v, "1") == 0); }
 void applyCameraInvertY(const char*, const char* v, void*) { pc_camera_invert_y_set(strcmp(v, "1") == 0); }
+void applyQuickItems(const char*, const char* v, void*) { pc_quick_items_set_enabled(strcmp(v, "1") == 0); }
 void applyShadow(const char*, const char* v, void*) {
     pc_shadow_offscreen_set(strcmp(v, "1") == 0    ? PC_SHADOW_OFFSCREEN_SAME
                             : strcmp(v, "gc") == 0 ? PC_SHADOW_OFFSCREEN_GC
@@ -566,16 +568,6 @@ const PcSettingDesc kBuiltins[] = {
      PC_SETTING_TAB_GRAPHICS, PC_SETTING_RESTART, CHOICES(kOnOff), "1", nullptr, nullptr, 65,
      "Bloom / HD style (Wii U)",
      "Warm sunlight, solar bloom and vibrant colors as in the Wii U HD version."},
-    {"COS_CAMERA_INVERT_X", "Invertir cámara horizontal",
-     "El stick C gira la cámara al revés en horizontal.",
-     PC_SETTING_TAB_GRAPHICS, 0, CHOICES(kOnOff), "0", applyCameraInvertX, nullptr, 90,
-     "Invert camera horizontally",
-     "The C stick turns the camera the other way horizontally."},
-    {"COS_CAMERA_INVERT_Y", "Invertir cámara vertical",
-     "El stick C inclina la cámara al revés en vertical.",
-     PC_SETTING_TAB_GRAPHICS, 0, CHOICES(kOnOff), "0", applyCameraInvertY, nullptr, 91,
-     "Invert camera vertically",
-     "The C stick tilts the camera the other way vertically."},
     {"COS_ASPECT", "Relación de aspecto", "Imagen panorámica 16:9 o la 4:3 original de la GameCube.",
      PC_SETTING_TAB_GRAPHICS, PC_SETTING_RESTART, CHOICES(kAspect), kSwitch ? "16:9" : "4:3", nullptr, nullptr,
      70,
@@ -591,6 +583,24 @@ const PcSettingDesc kBuiltins[] = {
      "HD texture max size",
      "Longest side of the HD textures. Automatic: 512 handheld, 1024 docked. They change "
      "gradually."},
+    // Controles
+    {"COS_CAMERA_INVERT_X", "Invertir cámara horizontal",
+     "El stick C gira la cámara al revés en horizontal.",
+     PC_SETTING_TAB_CONTROLS, 0, CHOICES(kOnOff), "0", applyCameraInvertX, nullptr, 10,
+     "Invert camera horizontally",
+     "The C stick turns the camera the other way horizontally."},
+    {"COS_CAMERA_INVERT_Y", "Invertir cámara vertical",
+     "El stick C inclina la cámara al revés en vertical.",
+     PC_SETTING_TAB_CONTROLS, 0, CHOICES(kOnOff), "0", applyCameraInvertY, nullptr, 20,
+     "Invert camera vertically",
+     "The C stick tilts the camera the other way vertically."},
+#if !defined(__SWITCH__)
+    {"COS_QUICK_ITEMS", "Atajos de equipo (LB/Tab + cruceta)",
+     "Mantener LB/Tab: arriba batuta, izquierda cañón, derecha grúa. Requiere el equipo; cañón y grúa en el barco.",
+     PC_SETTING_TAB_CONTROLS, 0, CHOICES(kOnOff), "0", applyQuickItems, nullptr, 30,
+     "Equipment shortcuts (LB/Tab + D-pad)",
+     "Hold LB/Tab: Up conducts, Left deploys the cannon (press again to fire), Right deploys/lowers the crane. Requires owned gear and safe context; cannon/crane only on the boat. Release Right to raise; A stows boat gear."},
+#endif
     // Rendimiento
     {"COS_SWITCH_GPU_PROFILE", "Perfil de GPU (portátil)",
      "Reloj de la GPU en modo portátil (perfiles oficiales de la consola; la CPU sigue a 1020 MHz).",
@@ -675,8 +685,8 @@ struct Row {
     const PcSettingDesc* desc = nullptr;
 };
 
-const char* const kTabNames[PC_SETTING_TABS] = {"Gráficos", "Rendimiento", "Depuración"};
-const char* const kTabNamesEn[PC_SETTING_TABS] = {"Graphics", "Performance", "Debug"};
+const char* const kTabNames[PC_SETTING_TABS] = {"Gráficos", "Rendimiento", "Depuración", "Controles"};
+const char* const kTabNamesEn[PC_SETTING_TABS] = {"Graphics", "Performance", "Debug", "Controls"};
 
 struct Menu {
     bool initialized = false;
@@ -1076,7 +1086,8 @@ void drawMenu() {
     ImGui::TextColored(kDim, "%s", mode.c_str());
 
     // Tabs.
-    const float tabW = (ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x) / PC_SETTING_TABS;
+    const float tabW = (ImGui::GetContentRegionAvail().x - (PC_SETTING_TABS - 1) * ImGui::GetStyle().ItemSpacing.x) /
+                       PC_SETTING_TABS;
     for (int t = 0; t < PC_SETTING_TABS; t++) {
         if (t > 0) {
             ImGui::SameLine();
