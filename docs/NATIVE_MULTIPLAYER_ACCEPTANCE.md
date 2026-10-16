@@ -307,6 +307,17 @@ not yet compiled or run. Genuine ordinary PAD navigation, failure/retry and
 nonzero recollection teardown/cancellation acceptance remain pending. Console
 paths are preserved under the TARGET_PC guards.
 
+The off-by-default `network-save-ui` diagnostic drives native PAD navigation
+through the ordinary collection/Save screens. Copied observations expose the
+UI's own read/write results without consuming them again. The case requires
+a genuine incoming Telescope, paused deferral, exact-ticket refusal, real OS
+read/replacement denial, explicit recovery reads, a native commit and both GCI
+copies. It checks an existing-card identity before attempting the save. Its
+private fixture needs a persistent owned service and actual native-created
+baseline; those marker files cannot establish native provenance by themselves.
+The first other-slot checks cover blank slots, not populated three-slot saves.
+This diagnostic source has not compiled or run yet.
+
 ## Transient player-pose transport
 
 The feature branch adds a copied 42-joint pose channel with explicit finite and
@@ -338,9 +349,21 @@ publication. All eight standalone Windows suites passed at `a05b21ae` in
 literal v3 compatibility fixtures ran in that successful suite. This is
 copied-value/socket/storage evidence, without a native model or game scene.
 
-There is no native pose adapter, remote model, interpolation or visual result
-yet. A private-resource renderer and actual same-area two-game acceptance are
-still required; transport source alone does not qualify visible multiplayer.
+An off-by-default `remote-body` diagnostic now has source for one local-offset
+body using owned archive/model/material/texture data and copied final native
+matrices. It creates no second player actor. Submission occurs before the P1
+draw lists and restores CPU graphics state. One 4 MiB model heap is retained;
+archive decoding temporarily requests another 12 MiB from Zelda's small pool.
+Actual allocation success, visual/material isolation and GPU lifetime remain
+unverified. The prototype omits eye/brow multipasses, hands, equipment, shadows
+and clothes variants, and has no interpolation or network adapter yet.
+
+Independent asset-bound tests run without disc/SDK/renderer dependencies; their
+new source is not yet compiled. CI now builds/runs them separately and in the
+full Windows job. Explicit optional retention of a separate owned-host helper
+includes its source/run manifest and licenses, without changing the game
+artifact or implying game qualification. Actual same-area two-game acceptance
+and complete remote models remain required.
 
 ## Next implementation boundaries
 

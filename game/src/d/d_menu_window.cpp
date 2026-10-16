@@ -22,6 +22,12 @@
 #include "d/actor/d_a_player_main.h"
 #include "f_op/f_op_overlap_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
+#if TARGET_PC
+#include "pc/pc_save_ui_observer.h"
+#include "f_pc/f_pc_manager.h"
+#include "f_pc/f_pc_name.h"
+#include <cstring>
+#endif
 
 #include "d/d_menu_capture.inc"
 
@@ -56,6 +62,28 @@ static dMenu_Dmap_c* dMd_c;
 static dMenu_Fmap_c* dMf_c;
 static dName_c* dNm_c;
 static dMenu_save_c* dMs_c;
+
+#if TARGET_PC
+namespace {
+void* pcFindSaveUiWindow(void* process, void*) {
+    return fpcM_GetName(process) == fpcNm_MENUWINDOW_e ? process : NULL;
+}
+}
+// Called only on the game thread. Search every time; retain no menu pointer.
+void pc_save_ui_observe(PcSaveUiObservation* out) {
+    if (out == NULL) return;
+    std::memset(out, 0, sizeof(*out));
+    base_process_class* process = fpcM_Search(pcFindSaveUiWindow, NULL);
+    if (process == NULL || fpcM_IsCreating(fpcM_GetID(process)) ||
+        !fpcM_IsExecuting(fpcM_GetID(process))) return;
+    const sub_ms_screen_class* window = reinterpret_cast<const sub_ms_screen_class*>(process);
+    out->window_present = true;
+    out->window_proc = window->mMenuProc;
+    if (dMc_c != NULL && window->mMenuProc >= MENU_STATE_COLLECT_OPEN &&
+        window->mMenuProc <= MENU_STATE_COLLECT_CLOSE)
+        dMc_c->pcCopySaveUiObservation(*out);
+}
+#endif
 
 static s8 event_wait_frame;
 

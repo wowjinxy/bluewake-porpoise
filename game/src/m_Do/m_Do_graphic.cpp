@@ -8,6 +8,7 @@
 #include "pc/pc_aspect.h"
 #include "pc/pc_gpu_opts.h"
 #include "pc/pc_dynres.h"
+#include "pc/pc_remote_body.h"
 #include "pc/game_hooks.h"
 // COS_GPU_GROUPS (pc_gpu_opts.h): a GX debug marker before each bucket the GPU timer groups by.
 #define PC_GPU_GROUP(name) pc_gpu_group(name)
@@ -1700,6 +1701,9 @@ bool mDoGph_Painter() {
 
             PC_GPU_GROUP("opa_p");
             if (!mDoGph_gInf_c::isMonotone()) {
+#if TARGET_PC
+                pc_remote_body_diagnostic_before_p1();
+#endif
                 dComIfGd_drawOpaListP0();
                 dComIfGd_drawOpaListP1();
             }

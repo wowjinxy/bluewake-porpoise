@@ -55,6 +55,9 @@ public:
     void setZSort() { mSortMode = SORT_Z; }
     void setInvalidSort() { mSortMode = SORT_INVALID; }
     void setZMtx(MtxP mtx) { mpZMtx = mtx; }
+#if TARGET_PC
+    MtxP getZMtx() const { return mpZMtx; } // Restore submission-only diagnostics.
+#endif
     void calcZRatio() {
         mZRatio = (mZFar - mZNear) / (f32)mEntryTableSize;
     }

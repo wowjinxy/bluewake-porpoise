@@ -928,6 +928,13 @@ void dMenu_save_c::memCardMakeGameFileCheck() {
 /* 801D84AC-801D8548       .text memCardDataLoadWait__12dMenu_save_cFv */
 void dMenu_save_c::memCardDataLoadWait() {
     int rt = mDoMemCd_LoadSync(dataBuf, sizeof(dataBuf), 0);
+#if TARGET_PC
+    // Copy only the result this ordinary UI call already consumed.
+    if (rt != 0) {
+        ++mPcObservedReadResults;
+        mPcObservedReadResult = rt;
+    }
+#endif
     if (rt == 0)
         return;
 

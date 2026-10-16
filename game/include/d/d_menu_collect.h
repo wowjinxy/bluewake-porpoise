@@ -26,6 +26,14 @@ public:
     void alphaChange(fopMsgM_pane_class* pane, f32 alpha) { pane->mInitAlpha *= alpha; }
     u8 getCollectMode() { return mCollectMode; }
     u8 getNowItem() { return mNowItem; }
+#if TARGET_PC
+    void pcCopySaveUiObservation(PcSaveUiObservation& out) const {
+        out.collection_present = true;
+        out.collection_mode = mCollectMode;
+        out.cursor = mNowItem;
+        if (mCollectMode == 3 && dMs_c != NULL) dMs_c->pcCopySaveUiObservation(out);
+    }
+#endif
     void setNowItem(u8 val) { mNowItem = val; }
 
     void setArchive(JKRArchive* arc) { mpArc = arc; }

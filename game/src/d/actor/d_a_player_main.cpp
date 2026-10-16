@@ -35,6 +35,7 @@
 #if TARGET_PC
 #include "helpers/endian.h"
 #include "pc/pc_quick_items.h"
+#include "pc/pc_remote_body.h"
 #endif
 #include "d/d_material.h"
 #include "JSystem/J3DGraphLoader/J3DAnmLoader.h"
@@ -11636,6 +11637,9 @@ BOOL daPy_lk_c::execute() {
     static const Vec head_offset = {40.0f, 0.0f, 0.0f};
     
     mpCLModel->calc();
+#if TARGET_PC
+    pc_remote_body_diagnostic_capture(mpCLModel, this);
+#endif
     cMtx_multVec(mpCLModel->getAnmMtx(CL_JNT_HEAD_JNT_e), &head_offset, &mHeadTopPos);
     checkRoofRestart();
     mDoMtx_multVecZero(mpCLModel->getAnmMtx(CL_JNT_CL_LHANDA_e), &mLeftHandPos);

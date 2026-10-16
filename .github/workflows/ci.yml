@@ -16,6 +16,7 @@
 #
 # Manual only (Actions tab, "Run workflow"): full retains the jobs below; network runs only the
 # standalone Windows network tests without Aurora, SDK/game code or disc-derived data.
+# The network scope also checks the copied remote-body asset bounds without those dependencies.
 # windows-game compiles and links the Windows game from source-only runtime asset stubs.
 # The local game regression (native/tools/regress.sh) still requires the player's disc.
 # Optional build retention is off by default and carries no gameplay qualification.
@@ -34,7 +35,7 @@ on:
           - network
           - windows-game
       retain_build:
-        description: Retain Windows EXE/DLL build-only artifact for one day (public)
+        description: Retain game or owned-host build-only artifact for one day (public)
         type: boolean
         required: false
         default: false
@@ -201,6 +202,59 @@ jobs:
               Select-Object -First 100 FullName, Length, LastWriteTimeUtc | Format-Table -AutoSize
             throw 'Standalone network tests failed'
           }
+          Assert-FreeSpace
+          cmake -S native/check/remote_body -B build/ci-remote-body -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_LINKER=$linker"
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone remote-body asset configure failed' }
+          Assert-FreeSpace
+          cmake --build build/ci-remote-body --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone remote-body asset build failed' }
+          Assert-FreeSpace
+          ctest --test-dir build/ci-remote-body --output-on-failure --timeout 60 --no-tests=error
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone remote-body asset checks failed' }
+      - name: Stage explicitly requested owned host helper
+        if: ${{ success() && inputs.retain_build }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = 'build/ci-network-helper'
+          if (Test-Path -LiteralPath $stage) { throw 'Helper staging directory already exists' }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          $inputs = @(
+            @{ source = 'build/ci-network/cos_network_server.exe'; name = 'cos_network_server.exe' },
+            @{ source = 'native/src/pc/network/COPYING'; name = 'COPYING' },
+            @{ source = 'native/src/pc/network/PROVENANCE.md'; name = 'PROVENANCE.md' },
+            @{ source = 'LICENSE'; name = 'LICENSE' }
+          )
+          $records = foreach ($item in $inputs) {
+            $file = Get-Item -LiteralPath $item.source
+            if ($file.Length -le 0 -or $file.Length -gt 8MB -or
+                ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw "Unsafe helper input: $($item.source)"
+            }
+            $destination = Join-Path $stage $item.name
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+            @{ path = $item.name; bytes = $file.Length;
+               sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $protocolLine = Select-String -LiteralPath 'native/include/pc/network/network_session.h' -Pattern '^#define PC_NETWORK_PROTOCOL ([0-9]+)u$'
+          if (!$protocolLine -or $protocolLine.Matches.Count -ne 1) { throw 'Missing helper wire protocol' }
+          $manifest = @{
+            format_version = 1; kind = 'network-helper-build-only'; gameplay_qualified = $false;
+            source_commit = $env:GITHUB_SHA; source_repository = $env:GITHUB_REPOSITORY;
+            workflow_run = $env:GITHUB_RUN_ID; wire_protocol = [int]$protocolLine.Matches[0].Groups[1].Value;
+            files = @($records)
+          }
+          [IO.File]::WriteAllText((Join-Path $stage 'manifest.json'),
+            ($manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+      - name: Retain explicitly requested owned host helper
+        if: ${{ success() && inputs.retain_build }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-helper-${{ github.sha }}
+          path: build/ci-network-helper/*
+          if-no-files-found: error
+          retention-days: 1
 
   windows-game:
     if: ${{ inputs.scope == 'windows-game' }}
@@ -264,7 +318,7 @@ jobs:
             -DTRACY_ENABLE=OFF
           if ($LASTEXITCODE -ne 0) { throw 'Windows runtime-assets configure failed' }
           Assert-FreeSpace
-          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke cos_windows_long_paths --parallel 2
+          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke cos_windows_long_paths cos_remote_body_asset_tests --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Windows game compile/link failed' }
           $binary = Get-Item -LiteralPath 'build/ci-win-game/switchwaker.exe'
           if ($binary.Length -eq 0) { throw 'Linked game executable is empty' }
@@ -276,6 +330,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native PC helper tests failed' }
           & './build/ci-win-game/cos_sdk_smoke.exe'
           if ($LASTEXITCODE -ne 0) { throw 'Headless SDK smoke tests failed' }
+          & './build/ci-win-game/cos_remote_body_asset_tests.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Remote-body asset bounds failed' }
           & './build/ci-win-game/cos_windows_long_paths.exe' --root "$env:GITHUB_WORKSPACE/build/ci-win-game/long-path-fixture"
           if ($LASTEXITCODE -ne 0) { throw 'Windows long-path helper failed' }
       - name: Stage explicitly requested build-only files

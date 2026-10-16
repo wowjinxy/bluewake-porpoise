@@ -4,6 +4,10 @@
 #include "d/d_drawlist.h"
 #include "f_op/f_op_msg_mng.h"
 #include "m_Do/m_Do_hostIO.h"
+#if TARGET_PC
+#include "pc/pc_save_ui_observer.h"
+#include <cstring>
+#endif
 
 struct fopMsgM_pane_class;
 
@@ -64,6 +68,28 @@ public:
         PROC_NO_SAVE,
         PROC_NO_SAVE2,
     };
+
+
+#if TARGET_PC
+    // Read-only copied observations; no lifecycle queue/result is consumed.
+    void pcCopySaveUiObservation(PcSaveUiObservation& out) const {
+        out.save_present = true;
+        out.save_status = saveStatus;
+        if (saveStatus != 2) return;
+        out.proc = proc;
+        out.choice = field_0x52f;
+        // field_0x540 is not initialized before the first actual save call.
+        out.last_save_result = mPcSaveAttempt != 0 ? field_0x540 : 0;
+        out.save_attempt = mPcSaveAttempt;
+        out.completed_reads = mPcObservedReadResults;
+        out.last_read_result = mPcObservedReadResult;
+        out.retry_read_armed = mPcRetryReadArmed;
+        out.existing_read_required = mPcExistingReadRequired;
+        out.recollection_exchanged = mPcRecollectionExchanged;
+        out.buffer_valid = mPcObservedReadResults != 0 && mPcObservedReadResult == 1;
+        if (out.buffer_valid) std::memcpy(out.buffered_slots, dataBuf, sizeof(dataBuf));
+    }
+#endif
 
     u8* getDataBufPtr() { return dataBuf; }
     u8 getEndStatus() { return endStatus; }
@@ -213,6 +239,8 @@ private:
         char profile[65] = {};
     } mPcRecollectionContext;
     u64 mPcSaveAttempt = 0;
+    u64 mPcObservedReadResults = 0;
+    int mPcObservedReadResult = 0;
     bool pcCaptureRecollectionContext(PcRecollectionContext& context, bool requireLivePlayer);
     bool pcExchangeRecollection();
     void pcRestoreRecollection();

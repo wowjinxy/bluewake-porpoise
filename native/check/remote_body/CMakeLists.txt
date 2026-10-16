@@ -1,0 +1,10 @@
+# Optional independent source/asset guard checks. No game, SDK, disc or downloads.
+cmake_minimum_required(VERSION 3.25)
+project(cos_remote_body_checks LANGUAGES CXX)
+get_filename_component(COS_NATIVE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+add_executable(cos_remote_body_asset_tests "${COS_NATIVE_ROOT}/check/pc_remote_body_asset_test.cpp")
+target_include_directories(cos_remote_body_asset_tests PRIVATE "${COS_NATIVE_ROOT}/include")
+target_compile_features(cos_remote_body_asset_tests PRIVATE cxx_std_17)
+enable_testing()
+add_test(NAME remote_body_assets COMMAND cos_remote_body_asset_tests)
+set_tests_properties(remote_body_assets PROPERTIES TIMEOUT 30 LABELS "standalone;remote-body-assets")
