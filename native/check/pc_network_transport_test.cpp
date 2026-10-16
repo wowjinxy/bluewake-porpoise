@@ -36,6 +36,19 @@ static pc_net::Bytes hello(const PcNetworkConfig& c){pc_net::Bytes b;pc_net::ide
 static pc_net::Frame receive(pc_net::Pipe& pipe,pc_net::Type type){pc_net::Frame found{};
     CHECK(until([&]{CHECK(pipe.pump());for(;;){pc_net::Frame frame;int result=pipe.next(frame);CHECK(result>=0);if(!result)return false;
         if(frame.type==type){found=std::move(frame);return true;}}}));return found;}
+static void send_rejected_frame(pc_net::Pipe& pipe,pc_net::Type type,const pc_net::Bytes& body){
+    CHECK(pipe.queue(type,0,body));bool transportClosed=false;
+    CHECK(until([&]{
+        if(!pipe.pump())transportClosed=true;
+        return pipe.output.empty()||transportClosed||pipe.eof;
+    }));
+    // pump() sends first, then receives. Winsock may report the expected reset
+    // in that SAME call after every byte was sent. A partial send still fails;
+    // never clear/reset the pipe before checking its undelivered output.
+    CHECK(pipe.output.empty());
+    // Rejection must beat the client's five-second handshake timeout.
+    CHECK(transportClosed||until([&]{return !pipe.pump()||pipe.eof;},2000));
+}
 static void stored_history(const std::filesystem::path& path,const PcNetworkConfig& config){
     // Called only after our server/client workers have stopped. Reading an
     // acknowledged file during replacement could itself interfere on Windows.
@@ -111,8 +124,7 @@ static void malformed_paged_snapshot(){using namespace pc_net;
         const uint64_t revision=fixture==0?UINT64_MAX:(fixture==1?0:1);const unsigned keys=fixture==2?0:1;
         Bytes invalidWelcome;identity(invalidWelcome,invalidConfig.compatibility);string(invalidWelcome,std::string(32,'a').c_str());
         put64(invalidWelcome,revision);put64(invalidWelcome,0);put16(invalidWelcome,uint16_t(keys));if(keys)delta(invalidWelcome,{1,1});put16(invalidWelcome,0);
-        CHECK(invalidPipe.queue(Welcome,0,invalidWelcome));CHECK(until([&]{return invalidPipe.pump()&&invalidPipe.output.empty();}));
-        CHECK(until([&]{return !invalidPipe.pump()||invalidPipe.eof;}));
+        send_rejected_frame(invalidPipe,Welcome,invalidWelcome);
         CHECK(status(invalidClient.get()).generation==0&&status(invalidClient.get()).status!=PC_NETWORK_CONNECTED);
         PcNetworkUpdate unpublished{};CHECK(!pc_network_poll(invalidClient.get(),&unpublished));pc_network_leave(invalidClient.get());
     }
@@ -125,8 +137,7 @@ static void malformed_paged_snapshot(){using namespace pc_net;
     receive(pipe,Ping);PcNetworkFacts facts{};facts.values[0]=123;PcNetworkSnapshot s{};unsigned count=0;PcNetworkReward out{};
     CHECK(!pc_network_copy_state(client.get(),&facts,&out,1,&count,&s)&&facts.values[0]==123&&s.status!=PC_NETWORK_CONNECTED&&s.generation==0);
     b.clear();put64(b,1);put16(b,1);put16(b,1);put16(b,1);reward(b,{UINT64_C(2)<<56|1,1,PC_PERMANENT_MAX,1});
-    CHECK(pipe.queue(Snapshot,0,b));CHECK(until([&]{return pipe.pump()&&pipe.output.empty();}));
-    CHECK(until([&]{return !pipe.pump()||pipe.eof;}));
+    send_rejected_frame(pipe,Snapshot,b);
     CHECK(status(client.get()).generation==0&&status(client.get()).status!=PC_NETWORK_CONNECTED);
     PcNetworkUpdate update{};CHECK(!pc_network_poll(client.get(),&update));pc_network_leave(client.get());close(listener);
 }

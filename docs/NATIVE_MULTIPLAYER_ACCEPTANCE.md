@@ -75,12 +75,19 @@ source work. It has not produced a new executable or runtime qualification.
 
 Source review and no-output clang-cl semantic checks are useful intermediate
 evidence only. An earlier 2026-10-16 snapshot passed 22 translation-unit semantic
-checks; subsequent read-provenance and offline-recovery edits are newer and
-remain unchecked by the compiler. Those checks do not establish link success,
-test execution, native saving, recovery or multiplayer behavior. The repository
-requires at least 8 GiB free on C: during builds; the
-expanded implementation is waiting for that reserve before building or running
-the new tests. The qualified pilot executable/tester remains unchanged.
+checks. Remote Windows clang-cl 19.1.5 then built the seven standalone suites at
+`899f0529`; schema, store, profile, progression logic, game policy and client
+journal suites passed. The transport suite failed its malformed-frame fixture's
+strict pump assertion after an expected connection reset. That failure is
+retained in [run 38956661533](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38956661533).
+The fixture correction still requires a new run; it retains full-send,
+prompt-closure and no-publication requirements.
+
+None of these checks proves native saving, recovery or multiplayer behavior.
+Local builds require at least 8 GiB free on C:, which remains unavailable.
+The manual CI workflow now provides separate standalone-network and source-only
+Windows game compile/link scopes. Full integration compile/link and actual game
+acceptance remain pending. The qualified pilot executable/tester is unchanged.
 
 Protocol/schema/store changes must intentionally reject incompatible pilot
 rooms. Keep the previous build playable while preparing a new checkpoint.

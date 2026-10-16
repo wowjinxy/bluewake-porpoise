@@ -16,6 +16,7 @@
 #
 # Manual only (Actions tab, "Run workflow"): full retains the jobs below; network runs only the
 # standalone Windows network tests without Aurora, SDK/game code or disc-derived data.
+# windows-game compiles and links the Windows game from source-only runtime asset stubs.
 # Runs spend the account's Actions minutes, while the real game check is the local
 # regression (native/tools/regress.sh) with the disc. Put push/pull_request back once CI can build
 # the whole game (docs/RUNTIME_ASSETS.md).
@@ -32,17 +33,18 @@ on:
         options:
           - full
           - network
+          - windows-game
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.scope || 'full' }}
   cancel-in-progress: true
 
 jobs:
   lint:
-    if: ${{ inputs.scope != 'network' }}
+    if: ${{ inputs.scope == 'full' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +61,7 @@ jobs:
           fi
 
   linux:
-    if: ${{ inputs.scope != 'network' }}
+    if: ${{ inputs.scope == 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +120,7 @@ jobs:
             ninja -C build/ci-linux-game switchwaker'
 
   switch-image:
-    if: ${{ inputs.scope != 'network' }}
+    if: ${{ inputs.scope == 'full' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -195,3 +197,78 @@ jobs:
               Select-Object -First 100 FullName, Length, LastWriteTimeUtc | Format-Table -AutoSize
             throw 'Standalone network tests failed'
           }
+
+  windows-game:
+    if: ${{ inputs.scope == 'windows-game' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and link Windows game without disc data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert-FreeSpace {
+            $roots = @([IO.Path]::GetPathRoot($env:SystemRoot),
+                       [IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) | Sort-Object -Unique
+            foreach ($root in $roots) {
+              $drive = Get-PSDrive -Name $root.Substring(0, 1)
+              if ($drive.Free -lt 8GB) { throw "At least 8 GiB free is required on $root" }
+            }
+          }
+          Assert-FreeSpace
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$vs) { throw 'Visual Studio C++ tools were not found' }
+          $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          $clang = Join-Path $vs 'VC/Tools/Llvm/x64/bin/clang-cl.exe'
+          $linker = Join-Path $vs 'VC/Tools/Llvm/x64/bin/lld-link.exe'
+          foreach ($tool in @($vcvars, $clang, $linker)) {
+            if (!(Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Missing tool: $tool" }
+          }
+          $bootstrap = Join-Path $env:RUNNER_TEMP 'windows-game-msvc.cmd'
+          [IO.File]::WriteAllText($bootstrap,
+            "@echo off`r`ncall `"$vcvars`" >nul`r`nif errorlevel 1 exit /b 1`r`nset`r`n")
+          # Import only compiler paths; never print the runner's complete environment.
+          $environment = @(& $env:ComSpec /d /c $bootstrap)
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC environment initialization failed' }
+          foreach ($line in $environment) {
+            if ($line -match '^(Path|INCLUDE|LIB|LIBPATH)=(.*)$') {
+              [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+            }
+          }
+          & $clang --version
+          if ($LASTEXITCODE -ne 0) { throw 'clang-cl is unavailable' }
+          cmake --version
+          if ($LASTEXITCODE -ne 0) { throw 'CMake is unavailable (3.28 or newer required)' }
+          ninja --version
+          if ($LASTEXITCODE -ne 0) { throw 'Ninja is unavailable' }
+          python -c "import sys; assert sys.version_info >= (3, 10); print(sys.version)"
+          if ($LASTEXITCODE -ne 0) { throw 'Python 3.10 or newer is required' }
+          # Verified release and Windows wheels: https://pypi.org/project/PyYAML/6.0.3/
+          python -m pip install --disable-pip-version-check --only-binary=:all: PyYAML==6.0.3
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned PyYAML installation failed' }
+          python native/tools/fetch_recompcore.py
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned RecompCore preparation failed' }
+          python native/tools/gen_assets.py --stubs --decomp build/ci-decomp --out build/ci-win-game/assets/GZLE01
+          if ($LASTEXITCODE -ne 0) { throw 'Source-only asset stub preparation failed' }
+          Assert-FreeSpace
+          cmake -S native -B build/ci-win-game -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            "-DCMAKE_C_COMPILER=$clang" "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_LINKER=$linker" `
+            -DCOS_RUNTIME_ASSETS=ON "-DCOS_ASSETS_DIR=$env:GITHUB_WORKSPACE/build/ci-win-game/assets/GZLE01" `
+            -DAURORA_DAWN_PROVIDER=package -DAURORA_NOD_PROVIDER=package -DAURORA_SDL3_PROVIDER=package `
+            -DTRACY_ENABLE=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Windows runtime-assets configure failed' }
+          Assert-FreeSpace
+          cmake --build build/ci-win-game --target switchwaker cos_pc_tests cos_sdk_smoke --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Windows game compile/link failed' }
+          $binary = Get-Item -LiteralPath 'build/ci-win-game/switchwaker.exe'
+          if ($binary.Length -eq 0) { throw 'Linked game executable is empty' }
+          $hash = (Get-FileHash -LiteralPath $binary.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output ("Compile/link output: switchwaker.exe bytes={0} sha256={1}" -f $binary.Length, $hash)
+          Assert-FreeSpace
+          # These two helper programs need no disc, game window or GPU. This is not gameplay proof.
+          & './build/ci-win-game/cos_pc_tests.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Native PC helper tests failed' }
+          & './build/ci-win-game/cos_sdk_smoke.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Headless SDK smoke tests failed' }
