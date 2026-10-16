@@ -142,10 +142,24 @@ the exact native OS error was not logged, so the path-limit cause remains an
 inference. That failed run and both drained child records are retained.
 
 A Windows-only embedded long-path manifest and a real unprefixed Win32
-create/flush/replace/reopen helper have been added. The helper passed a
-no-output compiler check; linking, execution and a deep native GCI regression
-remain pending. The helper explicitly reports a skip when Windows' existing
-long-path policy is off; no system policy is changed.
+create/flush/replace/reopen helper passed the full Windows build in
+[run 38964914726](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38964914726)
+at `d9025e95`. The helper actually passed with a 366-character Unicode target
+and a 391-character temporary path. The downloaded source-only game executable
+is 13,936,640 bytes, SHA-256
+`48a05704e37f66cc0873870686612b2cd22d188158fb38a4684e899cff4b278a`;
+all 32 retained manifest records were verified. An isolated personal-card native
+save subsequently passed actual SaveSync and both-copy comparison. A passive
+directory observer recorded nine native atomic temporary paths of 275–277
+characters. A fresh process loaded a byte-identical private card through the
+title/file select and passed native region comparison and return-place play.
+The 98,368-byte donor and clone both retained SHA-256
+`6841b45b4b1da46e1a0cd4cffa3f795c95c31f21d2d1524de996d32fff17cf45`;
+the source ISO was unchanged and both owned process jobs drained. The final
+GCI path was 252 characters, so this proves the longer temporary write path,
+not a read beyond 260 characters. It does not qualify network rewards. The
+helper explicitly reports a skip when Windows' existing long-path policy is
+off; no system policy is changed.
 
 The owned-host case also passed actual file selection and native quest loading
 with bind `127.0.0.2` distinct from public endpoint `127.0.0.1`. It reconnected
@@ -157,11 +171,37 @@ LoadSync 2/read denial and successful retry. Its write probe then blocked SDL's
 `r+b` readiness open rather than atomic replacement: a retained read handle is
 incompatible with SDL's exclusive writer. Aurora returned NOFILE; the native
 non-PAL controller did not map that terminal result and kept SaveSync busy.
-The PC path now reuses the existing PAL NOFILE state mapping. The write probe
-uses a zero-access pin without delete sharing, verifies its exact file through
-a separate reader, then closes that reader before native writing. Three
-affected translation units passed no-output compiler checks; actual retry
-acceptance remains pending.
+The write probe now uses a zero-access pin without delete sharing, verifies its
+exact file through a separate reader, then closes that reader before native
+writing. Three affected translation units passed no-output compiler checks;
+actual retry acceptance remains pending. An intermediate PC NOFILE-to-missing
+mapping at `aeec07ec` was found unsafe during source review: an inaccessible
+existing file could route the save screen toward creating three blank slots.
+That source was kept off the qualified pilot and has not run with player saves.
+The correction reports readiness failures for registered backing files as
+I/O errors, keeps PC operation-level NOFILE out of the missing-file state,
+and preserves classified errors after failed LoadSync. Genuine empty-card
+attachment still enables normal new-file creation. A refused prepared save
+has a separate transient result: SaveSync reports refusal and restores ready
+status without queuing CARD I/O or offering file creation. Its distinct
+pending-progress event is retained. Actual blocked-save menu retry remains
+unqualified.
+
+The diagnostic now requires actual terminal I/O-error status before consuming
+failed read/write results. After a failed write it performs a real Load/LoadSync
+into a separate buffer, verifies the active unsaved quest, selectors/resources
+and original GCI are unchanged, then repacks the current quest for a fresh
+armed STORE. It never unpacks the older controller-read buffer into the quest.
+An owned scratch test using the retained SDL library confirmed that the
+zero-access pin permits `r+b` readiness but denies replacement; releasing it
+permits the same SDL rename and correct readback. This is fixture evidence;
+the repaired native retry remains pending.
+
+The final PC controller translation unit and both changed diagnostic translation
+units passed scoped no-output clang-cl checks. Protected build metadata across
+8,509 files stayed unchanged. The Aurora classification patch applies to the
+pinned source, but its compilation and native error-path acceptance still
+require the next full build and isolated retry run.
 
 The unfaulted sender in that attempt separately failed while writing its second
 blank-save copy. Its short path rules out the earlier deep-path explanation;

@@ -24,6 +24,10 @@ ALIGN_DECL(32, u8 MemCardWorkArea0[0xa000]);
 mDoMemCd_Ctrl_c g_mDoMemCd_control;
 
 #if TARGET_PC
+// An admission refusal has no CARD command or disk failure. Its one pending
+// SaveSync result must not advertise a missing file or poison a healthy card.
+static constexpr u8 kPcSavePrepareRefused = 14;
+
 // The *Sync functions and getStatus report "busy" (0 / 14) when OSTryLockMutex fails, i.e. while the
 // memory card thread holds mMutex for a command. On the GameCube that thread (priority + 1) takes a
 // command posted by save() / load() / format() / update() as soon as the game thread waits for the
@@ -174,6 +178,12 @@ void mDoMemCd_Ctrl_c::restore() {
 
 /* 8001906C-80019174       .text store__15mDoMemCd_Ctrl_cFv */
 void mDoMemCd_Ctrl_c::store() {
+#if TARGET_PC
+    // A failed operation requires real controller recovery before another
+    // STORE. Keep its classified error and never use an uninitialized result.
+    if (field_0x1660 != 1 && field_0x1660 != 2)
+        return;
+#endif
     CARDFileInfo cardInfo;
     s32 ret;
     if (field_0x1660 == 2) {
@@ -219,7 +229,7 @@ void mDoMemCd_Ctrl_c::save(void* data, u32 size, u32 offset) {
         if (!pc_progress_prepare_card_save()) {
             // Complete the native request as refused, never as committed or as
             // disk I/O failure. The copied progress event gives the real reason.
-            field_0x1660 = 2;
+            field_0x1660 = kPcSavePrepareRefused;
             OSUnlockMutex(&mMutex);
             pc_progress_save_refused();
             return;
@@ -263,7 +273,20 @@ s32 mDoMemCd_Ctrl_c::LoadSync(void* dst, u32 size, u32 offset) {
             field_0x1660 = 1;
             ret = 1;
         } else {
+#if TARGET_PC
+            // Keep the backend's error classification. Relabeling an existing
+            // unreadable card as "no file" offers destructive file creation.
+            switch (field_0x1660) {
+            case 0: case 2: case 6: case 7: case 8: case 9:
+            case 10: case 11: case 12:
+                break;
+            default:
+                field_0x1660 = 12;
+                break;
+            }
+#else
             field_0x1660 = 2;
+#endif
             ret = 2;
         }
         OSUnlockMutex(&mMutex);
@@ -281,6 +304,11 @@ s32 mDoMemCd_Ctrl_c::SaveSync() {
         if (field_0x1660 == 4) {
             field_0x1660 = 1;
             ret = 1;
+#if TARGET_PC
+        } else if (field_0x1660 == kPcSavePrepareRefused) {
+            field_0x1660 = 1;
+            ret = 2;
+#endif
 #if VERSION > VERSION_JPN
         } else if (field_0x1660 == 1) {
             ret = 0;
@@ -343,6 +371,9 @@ u32 mDoMemCd_Ctrl_c::getStatus(u32) {
     if (mDoMemCd_tryLockForSync()) {
         s32 ret;
         switch (field_0x1660) {
+#if TARGET_PC
+        case kPcSavePrepareRefused: ret = 14; break;
+#endif
         case 1: ret = 2; break;
         case 2: ret = 1; break;
         case 3: ret = 3; break;
@@ -500,10 +531,13 @@ void mDoMemCd_Ctrl_c::setCardState(s32 state) {
         break;
 #if VERSION == VERSION_PAL || TARGET_PC
     case CARD_ERROR_NOFILE:
-        // Aurora also reports this when an existing GCI cannot be opened.
-        // Finish the native operation as failed instead of leaving state 1
-        // reporting a busy SaveSync forever. Original console paths stay PAL-only.
+#if TARGET_PC
+        // An inaccessible existing GCI is an operation failure, not permission
+        // for the save menu to initialize three new files over that card.
+        field_0x1660 = 12;
+#else
         field_0x1660 = 2;
+#endif
         break;
 #endif
     }

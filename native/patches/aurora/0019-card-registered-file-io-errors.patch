@@ -1,0 +1,25 @@
+diff --git a/lib/card/CardGciFolder.cpp b/lib/card/CardGciFolder.cpp
+--- a/lib/card/CardGciFolder.cpp
++++ b/lib/card/CardGciFolder.cpp
+@@ -313,7 +313,9 @@
+         return ECardResult::READY;
+       return ECardResult::IOERROR;
+     }
+-    return ECardResult::NOFILE;
++    // This handle names a registered file; an inaccessible backing stream
++    // is an I/O failure, not evidence that a new save should be created.
++    return ECardResult::IOERROR;
+   }
+ 
+   return ECardResult::NOCARD;
+@@ -332,7 +334,9 @@
+         return ECardResult::READY;
+       return ECardResult::IOERROR;
+     }
+-    return ECardResult::NOFILE;
++    // This handle names a registered file; an inaccessible backing stream
++    // is an I/O failure, not evidence that a new save should be created.
++    return ECardResult::IOERROR;
+   }
+ 
+   return ECardResult::NOCARD;

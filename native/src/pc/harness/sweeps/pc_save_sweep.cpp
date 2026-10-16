@@ -343,9 +343,11 @@ void saveFrame(unsigned int frames) {
     }
     case kSaveRetry: {
         if (!networkRecoveryWriteMayRetry()) return;
-        // A failed SaveSync already consumed the prepared request. Repack the
-        // same active quest for a real new request, retaining the original
-        // save-screen recollection swap until its normal successful finish.
+        // A failed SaveSync consumed the prepared request. The diagnostic must
+        // first recover the controller through a real Load/LoadSync into its
+        // separate buffer; never STORE directly from its error state or unpack
+        // that older disk snapshot over this unsaved quest. Repack the current
+        // quest for a fresh armed request, retaining the one recollection swap.
         if (dComIfGs_setMemoryToCard(sDataBuf, slot) == -1)
             failExit("retry memory_to_card: the save is too large");
         mDoMemCdRWm_SetCheckSumGameData(sDataBuf, slot);
@@ -356,6 +358,7 @@ void saveFrame(unsigned int frames) {
         return;
     }
     case kSaveWait: {
+        if (!networkRecoveryWriteMayPoll()) return;
         const s32 r = mDoMemCd_SaveSync();
         if (r == 0) {
             if (sSince > kCardFrames) {

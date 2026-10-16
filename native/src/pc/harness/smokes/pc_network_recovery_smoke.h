@@ -9,6 +9,7 @@ bool networkRecoveryReadMayPoll();
 bool networkRecoveryCardReadResult(int result);
 void networkRecoveryBeforeCardWrite();
 bool networkRecoveryWriteMayRetry();
+bool networkRecoveryWriteMayPoll();
 bool networkRecoveryCardWriteResult(int result);
 bool networkRecoverySaveComplete(unsigned int frames);
 } // namespace pc

@@ -32,12 +32,17 @@ namespace fs = std::filesystem;
 enum class Case { Off, CardRetry, HostLoad };
 enum class Step { Waiting, ReadLocked, ReadFailurePublished, ReadRetry,
                   ReadRecovered, WriteLocked, WriteFailurePublished,
+                  WriteControllerRead, WriteControllerRecovered,
                   WriteRetryReady, WriteRetry, SavePublished, HostLoaded, Done };
 Case sCase = Case::Off;
 Step sStep = Step::Waiting;
 bool sChecked = false, sReceive = false, sLoaded = false, sHostStarted = false;
 bool sInitialConnected = false, sSaveCompared = false;
 bool sBeginOwningSave = false;
+bool sReadIoErrorObserved = false, sWriteIoErrorObserved = false;
+// getStatus maps the controller's terminal IOERROR state12 to UI status8.
+// Observe it before LoadSync rewrites that state as part of consuming failure.
+constexpr u32 kNativeIoErrorStatus = 8;
 unsigned sFrame = 0, sSince = 0, sStartFrame = 0, sStable = 0;
 uint64_t sStartNs = 0, sSavesBeforeWrite = 0, sGenerationBeforeWrite = 0;
 uint64_t sInitialGeneration = 0, sInitialRevision = 0;
@@ -46,6 +51,9 @@ std::string sGci, sReadHash, sWriteHash, sRoomIdentity;
 bool sUnsavedBefore = false;
 u8 sSlots[3]{}, sItems[3]{};
 int sResources[5]{};
+// This CARD read repairs controller readiness only. Never unpack its older
+// disk snapshot over the current unsaved quest or reuse it as the retry payload.
+alignas(32) u8 sControllerRead[sizeof(card_gamedata) * 3];
 #ifdef _WIN32
 HANDLE sLock = INVALID_HANDLE_VALUE;
 #endif
@@ -170,11 +178,17 @@ void capture(const PcNetworkGameSnapshot& view) {
 void unchanged(const PcNetworkGameSnapshot& view) {
     const auto& a = view.progress.identity;
     const auto& b = sBefore.progress.identity;
-    need(a.session_id == b.session_id && a.quest_slot == b.quest_slot && a.scene_id == b.scene_id &&
-         a.player_id == b.player_id && !std::strcmp(a.profile_id, b.profile_id) &&
+    need(a.session_id == b.session_id && a.epoch == b.epoch &&
+         a.quest_generation == b.quest_generation && a.quest_slot == b.quest_slot &&
+         a.card_serial == b.card_serial && a.scene_id == b.scene_id && a.player_id == b.player_id &&
+         !std::strcmp(a.profile_id, b.profile_id) && !std::memcmp(a.player_name, b.player_name, sizeof(a.player_name)) &&
          view.native_loads == sBefore.native_loads, "quest/player/profile changed during native retry");
     need(view.local_awards == sBefore.local_awards && view.remote_applies == sBefore.remote_applies &&
          view.progress.telescope_owned == sBefore.progress.telescope_owned, "retry duplicated or changed permanent reward");
+    need(view.progress.facts_valid == sBefore.progress.facts_valid &&
+         (!view.progress.facts_valid || !std::memcmp(view.progress.facts, sBefore.progress.facts,
+                                                     sizeof(view.progress.facts))),
+         "controller retry changed the current native permanent facts");
     for (int i = 0; i != 3; ++i)
         need(sSlots[i] == dComIfGs_getSelectItem(i) && sItems[i] == dComIfGp_getSelectItem(i), "retry changed XYZ selectors");
     need(sResources[0] == dComIfGs_getRupee() && sResources[1] == dComIfGs_getLife() &&
@@ -301,7 +315,36 @@ void networkRecoveryFrame(unsigned frames) {
              view.progress.identity.save_generation == sGenerationBeforeWrite && view.unsaved_remote == sUnsavedBefore,
              "failed native write claimed commit or cleared received unsaved progress");
         need(gciHash() == sWriteHash, "failed native atomic publication changed original GCI");
-        writef(STDERR_FILENO, "[cos] network-recovery: actual SaveSync2 published; commit-unchanged=1 received-pending=%d GCI-unchanged=1; native retry permitted\n", sUnsavedBefore);
+        writef(STDERR_FILENO, "[cos] network-recovery: actual SaveSync2 published; commit-unchanged=1 received-pending=%d GCI-unchanged=1; restoring controller through native Load\n", sUnsavedBefore);
+        // IOERROR leaves the real controller in an error state. A direct STORE
+        // cannot recover it: use the ordinary accepted read/result path first.
+        // This does not call card_to_memory, QUEST_LOADED or replace sDataBuf.
+        std::memset(sControllerRead, 0, sizeof(sControllerRead));
+        mDoMemCd_Load();
+        enter(Step::WriteControllerRead);
+    } else if (sStep == Step::WriteControllerRead) {
+        if (sSince < 2) return; // observe the actual request suspend authorization
+        need(!view.authorized && view.unsaved_remote == sUnsavedBefore &&
+             view.native_saves == sSavesBeforeWrite &&
+             view.progress.identity.save_generation == sGenerationBeforeWrite,
+             "controller recovery read changed save state or did not suspend sharing");
+        const u32 result = mDoMemCd_LoadSync(sControllerRead, sizeof(sControllerRead), 0);
+        if (result == 0) return;
+        need(result == 1, "controller recovery native LoadSync failed");
+        for (unsigned slot = 0; slot != 3; ++slot)
+            need(mDoMemCdRWm_TestCheckSumGameData(sControllerRead + slot * sizeof(card_gamedata)),
+                 "controller recovery read returned a damaged native game slot");
+        need(gciHash() == sWriteHash, "controller recovery read changed the original GCI");
+        unchanged(snapshot());
+        enter(Step::WriteControllerRecovered);
+    } else if (sStep == Step::WriteControllerRecovered) {
+        if (sSince < 2) return; // require the matching real read result publication
+        need(view.authorized && view.unsaved_remote == sUnsavedBefore &&
+             view.native_saves == sSavesBeforeWrite &&
+             view.progress.identity.save_generation == sGenerationBeforeWrite,
+             "controller read did not restore only the prior quest authorization");
+        need(gciHash() == sWriteHash, "controller recovery changed persisted native data");
+        writef(STDERR_FILENO, "[cos] network-recovery: actual controller LoadSync1 published; separate-read-buffer=1 active-quest-unchanged=1 authorization-restored=1 GCI-unchanged=1; native retry permitted\n");
         enter(Step::WriteRetryReady);
     } else if (sStep == Step::SavePublished) {
         if (sSince < 2) return;
@@ -343,13 +386,24 @@ void networkRecoveryBeforeCardRead() {
     writef(STDERR_FILENO, "[cos] network-recovery: controlled private read denial armed; original-GCI-sha256=%s\n", sReadHash.c_str());
 }
 bool networkRecoveryReadMayPoll() {
-    return !selected() || sCase != Case::CardRetry || sStep != Step::ReadFailurePublished;
+    if (!selected() || sCase != Case::CardRetry) return true;
+    if (sStep == Step::ReadFailurePublished) return false;
+    if (sStep == Step::ReadLocked) {
+        const u32 status = mDoMemCd_getStatus(0);
+        if (status == 14) return false; // request queued or worker still holds its mutex
+        need(status == kNativeIoErrorStatus,
+             "existing GCI read denial was not reported as native I/O error");
+        sReadIoErrorObserved = true;
+        writef(STDERR_FILENO, "[cos] network-recovery: existing GCI read denial terminal-status=8 before LoadSync; missing-file=0\n");
+    }
+    return true;
 }
 bool networkRecoveryCardReadResult(int result) {
     if (!selected() || sCase != Case::CardRetry || result == 0) return false;
     JKRPcHostAllocScope host;
     if (sStep == Step::ReadLocked) {
-        need(result == 2, "controlled OS read denial did not produce actual LoadSync2");
+        need(result == 2 && sReadIoErrorObserved,
+             "controlled OS read denial lacks terminal I/O status and actual LoadSync2");
         unlock(); need(gciHash() == sReadHash, "failed read altered GCI");
         enter(Step::ReadFailurePublished); return true;
     }
@@ -369,13 +423,28 @@ void networkRecoveryBeforeCardWrite() {
 bool networkRecoveryWriteMayRetry() {
     if (!selected() || sCase != Case::CardRetry) return false;
     if (sStep != Step::WriteRetryReady) return false;
+    const u32 status = mDoMemCd_getStatus(0);
+    if (status == 14) return false; // an actual controller reader holds its mutex
+    need(status == mDoMemCd_Ctrl_c::CARD_STAT_CREATE,
+         "quest retry requires a successful native read to restore controller readiness");
     enter(Step::WriteRetry); return true;
+}
+bool networkRecoveryWriteMayPoll() {
+    if (!selected() || sCase != Case::CardRetry || sStep != Step::WriteLocked) return true;
+    const u32 status = mDoMemCd_getStatus(0);
+    if (status == 14) return false;
+    need(status == kNativeIoErrorStatus,
+         "existing GCI replacement denial was not reported as native I/O error");
+    sWriteIoErrorObserved = true;
+    writef(STDERR_FILENO, "[cos] network-recovery: existing GCI replacement denial terminal-status=8 before SaveSync; missing-file=0\n");
+    return true;
 }
 bool networkRecoveryCardWriteResult(int result) {
     if (!selected() || sCase != Case::CardRetry || result == 0) return false;
     JKRPcHostAllocScope host;
     if (sStep == Step::WriteLocked) {
-        need(result == 2, "controlled atomic replacement denial did not produce actual SaveSync2");
+        need(result == 2 && sWriteIoErrorObserved,
+             "controlled replacement denial lacks terminal I/O status and actual SaveSync2");
         unlock(); need(gciHash() == sWriteHash, "failed atomic replacement altered original GCI");
         enter(Step::WriteFailurePublished); return true;
     }
