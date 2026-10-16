@@ -30,7 +30,14 @@ dolphin_*.bin
 
 # Build artifacts
 *.o
+*.obj
 *.a
+*.lib
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
 *.dylib
 *.nro
 *.nsp

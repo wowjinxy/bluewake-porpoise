@@ -6,7 +6,7 @@ Status recorded on 2026-10-15. The native GameCube Windows port boots to the tit
 
 | Role | Location / revision |
 | --- | --- |
-| Active source and build | `C:\Users\wowjinxy\Projects\WindowWaker`, branch `pc-bringup` |
+| Active source and build | `C:\Users\wowjinxy\Projects\WindowWaker`, branch `main` |
 | Qualified baseline | `875ea27a8a849f9541b24473e026d8ea0cd8e8c1` |
 | Qualified post-import new-game build | `fd6fc89feb74729a415adc7487d8b503da9e5197` |
 | Windows donor | [MaskeZenY/WindowWaker](https://github.com/MaskeZenY/WindowWaker), initial checkout `105e244` |
@@ -19,6 +19,8 @@ Status recorded on 2026-10-15. The native GameCube Windows port boots to the tit
 | Converged game-source reference | `zeldaret/tww` at `a1854d47ce5aa9d0f21c7fb5a71aaade63659693`, from `game/UPSTREAM` |
 
 The active checkout moved from D: after small synchronous writes there stalled and the volume reported `Warning`. The archive and the previous E: project were retained. Build outputs remain on C:, with an 8 GiB free-space reserve used during this bring-up. No previous BlueWake build or tester package was replaced.
+
+On 2026-10-15, the native checkout became the primary `main` of `wowjinxy/bluewake-porpoise`. The merge preserves the previous BlueWake main `d08c197a5e8d6e2e09b8de2c6e38044bb19b87e5` as an ancestor and on `legacy/bluewake-recomp-20261015`; its physical checkout and uncommitted work remain untouched. `pc-bringup` retains checkpoint `13d31f1`. Publishing remote `origin` now targets the user's repository; `windowwaker` and `upstream` remain donor remotes. See [workspace routing](WORKSPACE_LAYOUT.md) and [enhancement migration](NATIVE_ENHANCEMENT_MIGRATION.md).
 
 ## Reproduce the Windows build
 
@@ -46,6 +48,21 @@ The executable is `build/native-win/switchwaker.exe`. The missing Python bootstr
 Aurora fetches its pinned dependencies, using Windows packages for Dawn, nod and SDL. The Windows post-build rule copies shared libraries and Dawn's dynamically loaded `dxcompiler.dll`/`dxil.dll` beside the executable. DSP compilation uses RecompCore's Windows `UNICODE`/`_UNICODE` contract and Aurora's `ZLIB::ZLIB` target. With `/MANIFEST:NO`, the lld-link executable rule retains response files directly instead of letting CMake's manifest wrapper expand the whole game's object list past Windows' command-line limit. Game objects remain linked directly in their explicit order.
 
 For an ordinary local launch, set `COS_DISC` to the absolute ISO path and run `run.cmd` from that same shell. The default presentation rate is 30; higher-rate interpolation remains optional. Settings normally live in `build/native-win/user/settings.ini`.
+
+## Primary-main defaults check
+
+The source promotion also aligns the menu's built-in target rate with the existing 30 FPS pacing fallback. The Windows packager now emits comment-only settings instead of forcing 120 FPS, 4K and an FPS overlay. Saved player choices remain authoritative; no existing settings or tester archive was overwritten.
+
+The affected `switchwaker` and `cos_pc_tests` targets rebuilt successfully in 5.453 seconds. The resulting executable is 13,498,368 bytes with SHA-256 `6ef7df5537f8afe1f18540482b79abfccd2d1ac63ebe415bb31c04dc09170903`. Evidence is under `build/pc-bringup-20261015/`:
+
+| Check | Actual result | Private evidence |
+| --- | --- | --- |
+| Fresh settings without a target-FPS environment override | `COS_TARGET_FPS` absent from the launch environment; options smoke asserted effective setting 30 and overlay off; PASS at frame 360, exit 0 | `runtime-primary-fresh-default1/` |
+| FPS menu change and persistence | Script opened the actual menu at frame 400, selected FPS, changed 30 to 60 then back to 30, and closed at frame 430; asserted saved `COS_TARGET_FPS=30`, scene `sea` room 44 and overlay off; PASS at frame 520 with 27 paused frames checked, exit 0 | `runtime-primary-fps-menu1/` |
+| Native helper tests | `ok`, with unsupported POSIX fork/wait death checks explicitly skipped | `runtime-primary-pc-tests1/` |
+| Windows package settings | Disposable fake-repository run verified both staged and zipped settings have no active overrides or `[dev]`, with the declared dummy files and launcher unchanged | `package-defaults-fixture/result.json` |
+
+These isolated cases booted directly into Outset and used scripted input. They establish defaults, menu behavior and persistence, not a new whole-game performance or physical-controller result. The package fixture is not a new game package or release. The already qualified `fd6fc89` tester below remains unchanged.
 
 ## Baseline proof
 

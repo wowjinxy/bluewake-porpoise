@@ -45,8 +45,14 @@ files stay under `build/` and fetched sources under `ref/`, both ignored by git.
 
 ## Checks
 
-Before sending a change: build the Mac target and run `native/tools/regress.sh`; for changes
-under `switch/` or `scripts/switch/`, also build the NRO with `scripts/switch/build_native.sh`.
+For Windows changes, build the named `switchwaker` target with the documented clang-cl
+toolchain and run the relevant native/helper checks in isolated settings/card directories.
+Record what was actually verified and any remaining gameplay acceptance. See
+[Windows bring-up](docs/WINDOWS_PC_BRINGUP.md) and the [native migration plan](docs/NATIVE_ENHANCEMENT_MIGRATION.md).
+
+For Mac changes, build the Mac target and use `native/tools/regress.sh`; for changes
+under `switch/` or `scripts/switch/`, build the NRO with `scripts/switch/build_native.sh`.
+Use the full regression/stage sweep at checkpoints as described in AGENTS.md.
 
 ## Names
 

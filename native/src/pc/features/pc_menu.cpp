@@ -519,7 +519,7 @@ const PcSettingDesc kBuiltins[] = {
     // Gráficos
     {"COS_TARGET_FPS", "Taux de rafraichissement (FPS)",
      "Frecuencia de cuadros por segundo: 30 FPS clásico o 60 FPS fluido.",
-     PC_SETTING_TAB_GRAPHICS, 0, CHOICES(kTargetFps), "60", applyTargetFps, nullptr, 1,
+     PC_SETTING_TAB_GRAPHICS, 0, CHOICES(kTargetFps), "30", applyTargetFps, nullptr, 1,
      "Framerate (FPS)",
      "Target framerate: 30 FPS classic or 60 FPS smooth native."},
     {"COS_FULLSCREEN", "Pantalla completa (Fullscreen)",

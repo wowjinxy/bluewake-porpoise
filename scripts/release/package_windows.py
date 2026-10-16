@@ -39,12 +39,8 @@ def main():
     user_dir = os.path.join(pkg_dir, "user")
     os.makedirs(user_dir, exist_ok=True)
     default_ini = (
-        "COS_TARGET_FPS=120\n"
-        "COS_FB_SCALE=3.0\n"
-        "COS_ASPECT=16:9\n"
-        "COS_FPS_OVERLAY=1\n"
-        "COS_FULLSCREEN=0\n"
-        "COS_ANISO=1\n"
+        "# Fresh installs use the game's registered player defaults.\n"
+        "# Options changed in-game are saved here.\n"
     )
     with open(os.path.join(user_dir, "settings.ini"), "w", encoding="utf-8") as f:
         f.write(default_ini)

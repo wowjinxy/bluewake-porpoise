@@ -1,5 +1,44 @@
 # Notes for agents
 
+## Primary project and preserved history
+
+This repository's `main` is the native Windows PC source port, adopted on 2026-10-15.
+Publishing remote `origin` is `https://github.com/wowjinxy/bluewake-porpoise.git`.
+`windowwaker` and `upstream` are donor remotes; do not publish to them.
+The previous recompilation main is preserved on `legacy/bluewake-recomp-20261015`
+and in the merge ancestry. Adapt legacy features through native functions; never
+copy guest CPU/register/RAM adapters into this implementation.
+
+On this machine the active checkout/build is `C:\Users\wowjinxy\Projects\WindowWaker`.
+`E:\GPT5\WindWakerRecomp\bluewake-porpoise` is the preserved legacy checkout, including
+uncommitted work; do not pull the native main into it, move it, reset it or clean it.
+`D:\Projects\WindowWaker` is an earlier checkpoint, not the active build location.
+Do not put new builds on E: or D:; preserve at least 8 GiB free on C: during builds.
+See [Windows bring-up](docs/WINDOWS_PC_BRINGUP.md) for actual qualification and
+[the migration plan](docs/NATIVE_ENHANCEMENT_MIGRATION.md) for accepted behavior.
+
+Controls/menu are first. Preserve LB/Tab + D-pad shortcuts, ordinary D-pad/Down,
+X/Y/Z and conducting directions when implementing them. Co-op means independent
+exploration with shared permanent progress, using an owned TCP service inspired
+by Anchor. It is not implemented or public Anchor-compatible. Real native
+events, safe saves and room isolation precede shared rewards. Tingle rescue
+wait-skip stays disabled; retain its old work/results and never make it a gate
+for unrelated milestones or tester builds. HD migration follows a stable PC port.
+
+Always read timestamps before responding or acting on old handoffs. Preserve
+saves, private diagnostics, failed results and the playable baseline. Do not take
+over the user's mouse. When using Ghidra MCP, never switch the current program;
+target the intended program explicitly because other agents may share it.
+Do not add AI authors/co-authors, generated-by attribution or session links to
+commits/PRs. Preserve donor authorship/licenses and sign off new commits per
+CONTRIBUTING.md. Keep disc data, builds, saves and private evidence out of Git.
+
+For Windows changes build the named `switchwaker` target using the documented
+clang-cl toolchain, plus relevant tests. Use isolated settings/card/run paths for
+runtime checks. A successful build, frame cap, initial GCI structure check or
+nonzero PCM does not prove gameplay, save/reload or audible quality. The Switch
+and Mac instructions below apply only when working on those platforms.
+
 ## Reaching the Switch: the debug server
 
 The console runs a TCP debug server (port 6543) when the options menu (Minus) has Depuración >
