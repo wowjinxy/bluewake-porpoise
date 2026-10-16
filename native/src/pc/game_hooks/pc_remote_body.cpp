@@ -22,7 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
-#include "assets/GZLE01/res/Object/Link.h"
+#include "res/Object/Link.h"
 
 namespace {
 constexpr u32 kRendererBytes = 4 * 1024 * 1024;
@@ -57,7 +57,7 @@ struct J3DState {
     Mtx current;
     Vec scale = J3DSys::mCurrentS, parentScale = J3DSys::mParentS;
     J3DTexCoordScaleInfo texScale[8];
-    GDLObj* gd = GDGetCurrent();
+    GDLObj* gd = __GDCurrentDL;
     GDLObj staticGD = J3DDisplayListObj::sGDLObj;
     s32 interruptFlag = J3DDisplayListObj::sInterruptFlag;
     J3DState() {

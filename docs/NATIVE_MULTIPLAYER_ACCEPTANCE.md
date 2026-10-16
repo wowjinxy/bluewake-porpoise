@@ -301,9 +301,10 @@ search before their Delete callbacks, so rollback deliberately does not require
 a still-executing player or refresh teardown player pointers. Native buffer
 setup/reversal invalidates its generation; ordinary save exchange does not.
 
-The initial two menu/controller translation units passed no-output compiler
-checks before the later buffer-lifetime changes. The complete final change has
-not yet compiled or run. Genuine ordinary PAD navigation, failure/retry and
+The final menu/controller, buffer-lifetime and diagnostic translation units
+passed no-output clang-cl checks on 2026-10-16. Protected build metadata and
+2,535 source/header pins stayed unchanged. Full linking and genuine ordinary
+PAD navigation, failure/retry and
 nonzero recollection teardown/cancellation acceptance remain pending. Console
 paths are preserved under the TARGET_PC guards.
 
@@ -316,7 +317,8 @@ copies. It checks an existing-card identity before attempting the save. Its
 private fixture needs a persistent owned service and actual native-created
 baseline; those marker files cannot establish native provenance by themselves.
 The first other-slot checks cover blank slots, not populated three-slot saves.
-This diagnostic source has not compiled or run yet.
+This diagnostic passed the scoped compiler checks; actual native execution
+remains pending.
 
 ## Transient player-pose transport
 
@@ -358,9 +360,14 @@ Actual allocation success, visual/material isolation and GPU lifetime remain
 unverified. The prototype omits eye/brow multipasses, hands, equipment, shadows
 and clothes variants, and has no interpolation or network adapter yet.
 
-Independent asset-bound tests run without disc/SDK/renderer dependencies; their
-new source is not yet compiled. CI now builds/runs them separately and in the
-full Windows job. Explicit optional retention of a separate owned-host helper
+Independent asset-bound tests passed in
+[network run 38975421604](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38975421604)
+alongside all eight network suites. They run without disc/SDK/renderer
+dependencies. The first full Windows job failed on the new renderer's resource
+header include. Scoped compiler checks then found an unavailable SDK accessor;
+the renderer now uses the declared GD pointer and the correct resource include.
+The renderer-only recheck passed. Full linking and native rendering still need
+qualification. Explicit optional retention of a separate owned-host helper
 includes its source/run manifest and licenses, without changing the game
 artifact or implying game qualification. Actual same-area two-game acceptance
 and complete remote models remain required.
