@@ -72,6 +72,11 @@ void mDoMemCd_Ctrl_c::ThdInit() {
     mPictDataPtr = NULL;
     mPictDataWritePtr = NULL;
     mCopyToPos = 0;
+#if TARGET_PC
+    mPcSaveAttempt = 0;
+    mPcRefusedAttempt = 0;
+    mPcRefusedPreviousState = 0;
+#endif
     mProbeStat = 2;
     field_0x1660 = CARD_NO_COMMAND;
     mCommand = CARD_NO_COMMAND;
@@ -232,9 +237,17 @@ void mDoMemCd_Ctrl_c::command_format() {
 void mDoMemCd_Ctrl_c::save(void* data, u32 size, u32 offset) {
     if (OSTryLockMutex(&mMutex)) {
 #if TARGET_PC
-        if (!pc_progress_prepare_card_save()) {
+        if (++mPcSaveAttempt == 0) ++mPcSaveAttempt;
+        mPcRefusedAttempt = 0;
+        const bool pendingRefusal = field_0x1660 == kPcSavePrepareRefused;
+        // An unconsumed refusal cannot be overwritten by another request or
+        // saved as its own underlying state. Refuse again without CARD I/O.
+        if (pendingRefusal || !pc_progress_prepare_card_save()) {
+            if (pendingRefusal) pc_progress_cancel_card_save();
             // Complete the native request as refused, never as committed or as
             // disk I/O failure. The copied progress event gives the real reason.
+            if (!pendingRefusal) mPcRefusedPreviousState = field_0x1660;
+            mPcRefusedAttempt = mPcSaveAttempt;
             field_0x1660 = kPcSavePrepareRefused;
             OSUnlockMutex(&mMutex);
             pc_progress_save_refused();
@@ -312,7 +325,8 @@ s32 mDoMemCd_Ctrl_c::SaveSync() {
             ret = 1;
 #if TARGET_PC
         } else if (field_0x1660 == kPcSavePrepareRefused) {
-            field_0x1660 = 1;
+            // Refusal cannot heal a pre-existing classified CARD failure.
+            field_0x1660 = mPcRefusedPreviousState;
             ret = 2;
 #endif
 #if VERSION > VERSION_JPN

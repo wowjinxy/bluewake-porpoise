@@ -376,6 +376,9 @@ void pc_progress_frame(void) {
    cancelAward(award);
  }
 }
+void pc_progress_copy_identity(PcProgressIdentity* out) {
+ if(out) *out=sIdentity;
+}
 void pc_progress_capture(PcProgressSnapshot* out) {
  if(!out) return; refresh(); *out={}; out->identity=sIdentity;
  out->telescope_owned=telescopeOwned(); out->safe_to_apply=safeToApply()?1:0;

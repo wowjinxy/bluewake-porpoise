@@ -279,6 +279,34 @@ including the SDK and long-path helpers. Its source-only artifact is retained by
 CI. This is build evidence; fresh native CARD-retry and fairy runs are pending.
 The earlier negative runs and playable pilot remain preserved.
 
+## Ordinary Save-menu recovery source
+
+The PC Save menu now spends one explicit Yes confirmation on a real controller
+read when an existing card has an I/O failure. Busy does not consume that
+confirmation. Another failed read retains its classified error and returns to
+acknowledgement/back; it cannot fall through to creating or formatting a file.
+A successful read preserves all three buffered slots, then repacks the current
+unsaved quest. The recovery read does not activate its older quest snapshot.
+
+Each accepted Save call has a process-local admission ticket. The menu can
+therefore distinguish that exact request's pre-CARD progression refusal from a
+real write failure. Refusal retains the previous controller classification and
+uses the ordinary cannot-save/back flow; it queues no CARD write.
+
+Temporary recollection inventory is exchanged only when the native operation
+has a real nonzero buffer stage. Success, failure, cancellation, reinitialization
+and menu deletion consume at most one rollback token. It binds the initialized
+native buffer lifetime and copied quest identity. FPC removes child actors from
+search before their Delete callbacks, so rollback deliberately does not require
+a still-executing player or refresh teardown player pointers. Native buffer
+setup/reversal invalidates its generation; ordinary save exchange does not.
+
+The initial two menu/controller translation units passed no-output compiler
+checks before the later buffer-lifetime changes. The complete final change has
+not yet compiled or run. Genuine ordinary PAD navigation, failure/retry and
+nonzero recollection teardown/cancellation acceptance remain pending. Console
+paths are preserved under the TARGET_PC guards.
+
 ## Transient player-pose transport
 
 The feature branch adds a copied 42-joint pose channel with explicit finite and
@@ -291,7 +319,7 @@ authority enters the transport.
 A newly ready peer receives a still-fresh existing sample even when its source
 has not published again. The replay retains the original sequence/connection
 epoch and obeys the same relay period. A loopback regression covers this
-late-join boundary; it remains unexecuted with the rest of the new suite.
+late-join boundary.
 
 Each worker publishes at most ten poses per second. Bounded replace-latest
 slots and one partial TCP frame remain separate from reliable progression
@@ -301,10 +329,14 @@ Welcome, reward-ledger pages and roster must drain before transient delivery.
 Wire protocol 4 deliberately rejects older sockets. Durable storage protocol 3,
 schema 2, semantic/rules digests, profile format and isolated-card route hashing
 remain unchanged. Literal independently serialized v3 room/journal/profile
-fixtures cover this compatibility boundary in the proposed eighth standalone
+fixtures cover this compatibility boundary in the eighth standalone
 suite. Its remaining cases exercise malformed/spoofed samples, expiry,
 reconnection, real socket backpressure and reliable reward traffic during pose
-publication. These new tests have not run yet.
+publication. All eight standalone Windows suites passed at `a05b21ae` in
+[run 38973915072](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38973915072):
+18.04 seconds total, including 5.21 seconds for presence. The late-join case and
+literal v3 compatibility fixtures ran in that successful suite. This is
+copied-value/socket/storage evidence, without a native model or game scene.
 
 There is no native pose adapter, remote model, interpolation or visual result
 yet. A private-resource renderer and actual same-area two-game acceptance are

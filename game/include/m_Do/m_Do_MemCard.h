@@ -74,6 +74,13 @@ public:
     u64 getCardSerialNo() { return mCardSerialNo; }
     u32 getDataVersion() { return mDataVersion; }
     u8 getProbeStat() { return mProbeStat; }
+#if TARGET_PC
+    // Game-thread admission ticket, not a CARD request/commit or network ACK.
+    u64 pcGetSaveAttempt() const { return mPcSaveAttempt; }
+    bool pcWasSaveRefused(u64 attempt) const {
+        return attempt != 0 && attempt == mPcRefusedAttempt;
+    }
+#endif
 
     /* 0x0000 */ u8 mData[3 * sizeof(card_gamedata)];
     /* 0x1650 */ u8* mPictDataPtr;
@@ -92,6 +99,11 @@ public:
     /* 0x1688 */ u64 mCardSerialNo;
     /* 0x1690 */ u32 mDataVersion;
     /* 0x1694 */ u32 field_0x1694;
+#if TARGET_PC
+    u64 mPcSaveAttempt = 0;
+    u64 mPcRefusedAttempt = 0;
+    s32 mPcRefusedPreviousState = 0;
+#endif
 };  // Size: 0x1698
 
 static int mDoMemCd_main(void*);

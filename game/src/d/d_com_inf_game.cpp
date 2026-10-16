@@ -29,6 +29,24 @@
 
 dComIfG_inf_c g_dComIfG_gameInfo;
 
+#if TARGET_PC
+namespace {
+u64 sPcRecollectionBufferGeneration = 0;
+bool sPcRecollectionBufferReady = false;
+void pcInvalidateRecollectionBuffer() {
+    sPcRecollectionBufferReady = false;
+    // Saturation permanently refuses new tokens instead of reusing an old ID.
+    if (sPcRecollectionBufferGeneration != ~u64(0)) {
+        ++sPcRecollectionBufferGeneration;
+    }
+}
+}
+u64 dComIfGp_getPlayerInfoBufferGeneration() {
+    return sPcRecollectionBufferReady && sPcRecollectionBufferGeneration != ~u64(0)
+        ? sPcRecollectionBufferGeneration : 0;
+}
+#endif
+
 GXColor g_clearColor      = {0x00, 0x00, 0x00, 0x00};
 GXColor g_blackColor      = {0x00, 0x00, 0x00, 0xFF};
 GXColor g_whiteColor      = {0xFF, 0xFF, 0xFF, 0xFF};
@@ -1459,6 +1477,10 @@ void dComIfGs_copyPlayerRecollectionData() {
 
 /* 80054E9C-80055318       .text dComIfGs_setPlayerRecollectionData__Fv */
 void dComIfGs_setPlayerRecollectionData() {
+#if TARGET_PC
+    // A failed/early-returning setup must not qualify the old inline buffer.
+    pcInvalidateRecollectionBuffer();
+#endif
 #if VERSION > VERSION_JPN
     daArrow_c::setKeepType(daArrow_c::TYPE_NORMAL);
 #endif
@@ -1539,6 +1561,9 @@ void dComIfGs_setPlayerRecollectionData() {
     memcpy((void*)(buffer + offsetof(dSv_player_status_c_c, mRecollectBagItem)),       dComIfGs_getpBagItem(),                   sizeof(stts->mRecollectBagItem));
     memcpy((void*)(buffer + offsetof(dSv_player_status_c_c, mRecollectBagItemRecord)), dComIfGs_getpBagItemRecord(),             sizeof(stts->mRecollectBagItemRecord));
     memcpy((void*)(buffer + offsetof(dSv_player_status_c_c, mRecollectCollect)),       dComIfGs_getpCollect(),                   sizeof(stts->mRecollectCollect));
+#if TARGET_PC
+    sPcRecollectionBufferReady = true;
+#endif
 
     memcpy(dComIfGs_getpPlayerStatusA(),             &stts->mRecollectStatusA,       sizeof(stts->mRecollectStatusA));
     memcpy(dComIfGs_getpItem(),                      &stts->mRecollectItem,          sizeof(stts->mRecollectItem));
@@ -1599,6 +1624,9 @@ void dComIfGs_setPlayerRecollectionData() {
 /* 80055318-80055580       .text dComIfGs_revPlayerRecollectionData__Fv */
 void dComIfGs_revPlayerRecollectionData() {
     if (dComIfGp_getPlayerInfoBufferStageNo() != 0) {
+#if TARGET_PC
+        pcInvalidateRecollectionBuffer();
+#endif
         dComIfGp_setPlayerInfoBufferStageNo(0);
     } else {
         return;

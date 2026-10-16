@@ -2,6 +2,9 @@
 #if TARGET_PC
 #include "pc/pc_aspect.h"
 #include "pc/pc_progression.h"
+#include "f_pc/f_pc_manager.h"
+#include "f_pc/f_pc_name.h"
+#include <cstring>
 #endif
 #include "d/d_menu_save.h"
 #include "d/d_file_error.h"
@@ -567,6 +570,9 @@ BOOL dMenu_save_c::closeForEnding() {
 
 /* 801D79F0-801D7A9C       .text _delete__12dMenu_save_cFv */
 void dMenu_save_c::_delete() {
+#if TARGET_PC
+    pcRestoreRecollection();
+#endif
    delete MenuSave.Scr;
    mDoExt_removeMesgFont();
    delete stick;
@@ -626,6 +632,9 @@ void dMenu_save_c::saveQuestion() {
     }
 
     if (temp_r3) {
+#if TARGET_PC
+        mPcRetryReadArmed = field_0x52f == 0;
+#endif
         if (field_0x52f == 0) {
             *field_0x51c[field_0x536 ^ 1] = 0;
             proc = PROC_MEMCARD_CHECK;
@@ -652,7 +661,29 @@ void dMenu_save_c::saveQuestion() {
 
 /* 801D7CE8-801D7E30       .text memCardCheck__12dMenu_save_cFv */
 void dMenu_save_c::memCardCheck() {
-    switch (mDoMemCd_getStatus(0)) {
+    const u32 cardStatus = mDoMemCd_getStatus(0);
+#if TARGET_PC
+    // Busy is not an I/O classification and does not spend the user's retry.
+    if (cardStatus == 14) return;
+    if (cardStatus == 8) mPcExistingReadRequired = true;
+    if (mPcExistingReadRequired) {
+        if (mPcRetryReadArmed) {
+            mPcRetryReadArmed = false;
+            mDoMemCd_setPictDataPtr(NULL);
+            mDoMemCd_Load();
+            proc = PROC_MEMCARD_DATA_LOAD_WAIT;
+        } else {
+            // Recovery keeps the classified controller error and never enters
+            // creation/formatting while an existing-card read is still bad.
+            field_0x532 = 0x2A;
+            proc = PROC_CLOSE_SAVE_MENU;
+            field_0x52d = PROC_MEMCARD_ERR_MSG_WAIT_KEY;
+        }
+        return;
+    }
+    mPcRetryReadArmed = false;
+#endif
+    switch (cardStatus) {
     case mDoMemCd_Ctrl_c::CARD_STAT_WAIT:
         field_0x532 = 0x29;
         proc = PROC_CLOSE_SAVE_MENU;
@@ -901,8 +932,15 @@ void dMenu_save_c::memCardDataLoadWait() {
         return;
 
     if (rt == 2) {
+#if TARGET_PC
+        mPcRetryReadArmed = false;
+#endif
         proc = PROC_MEMCARD_CHECK;
     } else if (rt == 1) {
+#if TARGET_PC
+        mPcExistingReadRequired = false;
+        mPcRetryReadArmed = false;
+#endif
         if (field_0x53a == 1) {
             proc = PROC_OPEN_SAVE_MENU;
         } else if (useType == 3) {
@@ -940,8 +978,16 @@ void dMenu_save_c::memCardDataSave() {
         temp_r0 = true;
     }
 
+#if TARGET_PC
     if (temp_r0) {
+        pcRestoreRecollection();
+        temp_r0 = pcExchangeRecollection();
+    }
+#endif
+    if (temp_r0) {
+#if !TARGET_PC
         dComIfGs_exchangePlayerRecollectionData();
+#endif
         dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(dComIfGp_getStage().getStagInfo()));
         dComIfGs_setGameStartStage();
 
@@ -992,6 +1038,10 @@ void dMenu_save_c::memCardDataSaveSel() {
             #endif
             proc = PROC_MEMCARD_DATA_SAVE_DOWN_MENU;
         } else {
+#if TARGET_PC
+            // The overwrite question can be cancelled before any CARD write.
+            pcRestoreRecollection();
+#endif
             CursorAlphaInit();
             field_0x52f = 0;
             CursorMove();
@@ -1019,6 +1069,100 @@ void dMenu_save_c::memCardDataSaveDownMenu() {
 }
 
 /* 801D8964-801D8A18       .text dataWrite__12dMenu_save_cFv */
+#if TARGET_PC
+namespace {
+void* pcRecollectionProcess(void* process, void* profile) {
+    return fpcM_GetName(process) == *static_cast<s16*>(profile) ? process : NULL;
+}
+}
+
+bool dMenu_save_c::pcCaptureRecollectionContext(PcRecollectionContext& context, bool requireLivePlayer) {
+    const u8 stage = dComIfGp_getPlayerInfoBufferStageNo();
+    const u64 bufferGeneration = dComIfGp_getPlayerInfoBufferGeneration();
+    if (stage == 0 || bufferGeneration == 0) {
+        return false;
+    }
+
+    PcProgressIdentity identity = {};
+    if (requireLivePlayer) {
+        // Admission requires live actors. Teardown rollback instead belongs to
+        // the same initialized native buffer, even after actors leave FPC.
+        s16 sceneProfile = fpcNm_PLAY_SCENE_e;
+        s16 playerProfile = fpcNm_PLAYER_e;
+        void* scene = fpcM_Search(pcRecollectionProcess, &sceneProfile);
+        void* player = fpcM_Search(pcRecollectionProcess, &playerProfile);
+        if (!scene || !player || player != dComIfGp_getPlayer(0) ||
+            player != dComIfGp_getLinkPlayer()) {
+            return false;
+        }
+        const u32 sceneID = fpcM_GetID(scene);
+        const u32 playerID = fpcM_GetID(player);
+        if (fpcM_IsErrorID(sceneID) || fpcM_IsErrorID(playerID) ||
+            !fpcM_IsExecuting(sceneID) || !fpcM_IsExecuting(playerID) ||
+            fpcM_IsCreating(sceneID) || fpcM_IsCreating(playerID)) {
+            return false;
+        }
+        PcProgressSnapshot snapshot = {};
+        pc_progress_capture(&snapshot);
+        identity = snapshot.identity;
+    } else {
+        // Do not refresh against global player pointers while children are
+        // being deleted. Quest/profile hooks already advance this identity.
+        pc_progress_copy_identity(&identity);
+    }
+    if (!identity.session_id || !identity.quest_generation ||
+        identity.quest_slot < 0 || identity.quest_slot > 2 ||
+        identity.quest_slot != dComIfGs_getDataNum()) {
+        return false;
+    }
+    context.session = identity.session_id;
+    context.questGeneration = identity.quest_generation;
+    context.questSlot = identity.quest_slot;
+    context.bufferGeneration = bufferGeneration;
+    context.buffer = dComIfGp_getPlayerInfoBuffer();
+    context.stage = stage;
+    std::memcpy(context.profile, identity.profile_id, sizeof(context.profile));
+    return true;
+}
+
+bool dMenu_save_c::pcExchangeRecollection() {
+    if (dComIfGp_getPlayerInfoBufferStageNo() == 0) {
+        return true; // Native exchange is a no-op; there is nothing to reverse.
+    }
+    PcRecollectionContext context = {};
+    if (!pcCaptureRecollectionContext(context, true)) {
+        return false; // Existing cannot-save flow, before any inventory swap.
+    }
+    dComIfGs_exchangePlayerRecollectionData();
+    mPcRecollectionContext = context;
+    mPcRecollectionExchanged = true;
+    return true;
+}
+
+void dMenu_save_c::pcRestoreRecollection() {
+    if (!mPcRecollectionExchanged) {
+        return;
+    }
+    const PcRecollectionContext original = mPcRecollectionContext;
+    mPcRecollectionExchanged = false;
+    mPcRecollectionContext = {}; // Consume before cleanup; never reverse twice.
+
+    PcRecollectionContext current = {};
+    if (!pcCaptureRecollectionContext(current, false) ||
+        current.stage != original.stage || current.buffer != original.buffer ||
+        current.bufferGeneration != original.bufferGeneration ||
+        current.session != original.session ||
+        current.questGeneration != original.questGeneration ||
+        current.questSlot != original.questSlot ||
+        std::memcmp(current.profile, original.profile, sizeof(current.profile)) != 0) {
+        return; // Replaced context owns its inventory; discard the stale token.
+    }
+    // CARD reads/writes may change epoch, serial and save_generation without
+    // replacing the active quest. Those fields deliberately do not gate rollback.
+    dComIfGs_exchangePlayerRecollectionData();
+}
+#endif
+
 void dMenu_save_c::dataWrite() {
     int res = dComIfGs_setMemoryToCard(dataBuf, dComIfGs_getDataNum());
     JUT_ASSERT(VERSION_SELECT(1789, 1792, 1792, 1803), res != -1);
@@ -1026,8 +1170,13 @@ void dMenu_save_c::dataWrite() {
     mDoMemCdRWm_SetCheckSumGameData(dataBuf, dComIfGs_getDataNum());
 #if TARGET_PC
     pc_progress_arm_quest_save(dComIfGs_getDataNum());
+    const u64 previousAttempt = g_mDoMemCd_control.pcGetSaveAttempt();
 #endif
     mDoMemCd_Save(dataBuf, sizeof(dataBuf), 0);
+#if TARGET_PC
+    const u64 acceptedAttempt = g_mDoMemCd_control.pcGetSaveAttempt();
+    mPcSaveAttempt = acceptedAttempt != previousAttempt ? acceptedAttempt : 0;
+#endif
 
 #if VERSION >= VERSION_USA
     field_0x540 = mDoMemCd_SaveSync();
@@ -1064,7 +1213,11 @@ void dMenu_save_c::memCardDataSaveWait() {
 #endif
         {
             mDoAud_seStart(JA_SE_SAVE_FINISH, NULL);
+#if TARGET_PC
+            pcRestoreRecollection();
+#else
             dComIfGs_exchangePlayerRecollectionData();
+#endif
             dComIfGs_setMemCardCheckID(mDoMemCd_getCardSerialNo());
             dComIfGs_setNewFile(0);
             dComIfGs_setNoFile(0);
@@ -1078,6 +1231,17 @@ void dMenu_save_c::memCardDataSaveWait() {
         else if (field_0x540 == 2)
 #endif
         {
+#if TARGET_PC
+            pcRestoreRecollection();
+            if (g_mDoMemCd_control.pcWasSaveRefused(mPcSaveAttempt)) {
+                // Refused before CARD: ordinary cannot-save acknowledgement/
+                // back, without inventing disk failure or issuing a reload.
+                mDoAud_seStart(JA_SE_ALERT_DATA, NULL);
+                fopMsgM_messageGet(field_0x51c[field_0x536 ^ 1], 0x3A);
+                proc = PROC_CAN_NOT_SAVE;
+                return;
+            }
+#endif
             mDoAud_seStart(JA_SE_ALERT_DATA, NULL);
             fopMsgM_messageGet(field_0x51c[field_0x536 ^ 1], 0x3D);
             proc = PROC_MSG_WAIT2;
@@ -1660,6 +1824,12 @@ void dMenu_save_c::paneTransInit() {
 
 /* 801DA2C8-801DA3C4       .text displayInit__12dMenu_save_cFv */
 void dMenu_save_c::displayInit() {
+#if TARGET_PC
+    pcRestoreRecollection();
+    mPcRetryReadArmed = false;
+    mPcExistingReadRequired = false;
+    mPcSaveAttempt = 0;
+#endif
     field_0x536 = 0;
     errorFlag = 0;
     errorType = 0;

@@ -944,6 +944,11 @@ void dComIfGs_gameStart();
 void dComIfGs_copyPlayerRecollectionData();
 u8 dComIfGs_checkGetItem(u8);
 void dComIfGs_exchangePlayerRecollectionData();
+#if TARGET_PC
+// Nonzero only for the current initialized recollection-buffer lifetime.
+// Native set/rev changes it; an ordinary save exchange deliberately does not.
+u64 dComIfGp_getPlayerInfoBufferGeneration();
+#endif
 
 inline void dComIfGs_init() {
     g_dComIfG_gameInfo.save.init();

@@ -98,6 +98,9 @@ typedef struct PcProgressClaim {
 int pc_progress_bind_profile(const char* identity);
 void pc_progress_frame(void);
 void pc_progress_capture(PcProgressSnapshot* out);
+// Game-thread identity copy only: no refresh, actor lookup, queue or inventory
+// observation. Teardown callers may use it after native child actors leave FPC.
+void pc_progress_copy_identity(PcProgressIdentity* out);
 // 1 copied event, 0 empty, -1 queue overflow (caller must resnapshot/reconcile).
 int pc_progress_pop_event(PcNativeEvent* out);
 // Canonical ownership capture is NOT a locally earned reward. Apply only a

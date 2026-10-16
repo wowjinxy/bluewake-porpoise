@@ -199,6 +199,24 @@ private:
     /* 0x0544 */ s16 field_0x544;
     /* 0x0546 */ u8 field_0x546[0x0554 - 0x0546];
     /* 0x0554 */ u8 dataBuf[5712];
+#if TARGET_PC
+    bool mPcRetryReadArmed = false;
+    bool mPcExistingReadRequired = false;
+    bool mPcRecollectionExchanged = false;
+    struct PcRecollectionContext {
+        u64 session = 0;
+        u64 questGeneration = 0;
+        u64 bufferGeneration = 0;
+        int questSlot = -1;
+        const u8* buffer = NULL;
+        u8 stage = 0;
+        char profile[65] = {};
+    } mPcRecollectionContext;
+    u64 mPcSaveAttempt = 0;
+    bool pcCaptureRecollectionContext(PcRecollectionContext& context, bool requireLivePlayer);
+    bool pcExchangeRecollection();
+    void pcRestoreRecollection();
+#endif
 };  // Size: 0x1BA4
 
 class dMs_HIO_c : public JORReflexible {
