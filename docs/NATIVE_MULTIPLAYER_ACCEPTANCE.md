@@ -224,8 +224,9 @@ unchanged and reports the observed status on failure. The corrected controller
 and both diagnostics passed scoped no-output clang-cl checks; the final fairy
 diagnostic revision passed separately afterward. All 2,523 input pins matched,
 8,509 protected build files stayed unchanged and temporary outputs were empty.
-Full linking and another native retry remain pending. The sender was drained when
-the receiver failed, before its save, so this run does not resolve the earlier
+That checkpoint still needed linking and another native retry; the later `7d`
+results below provide those outcomes. The sender was drained when the receiver
+failed, before its save, so this failed run does not explain the earlier
 unfaulted second-copy write failure. Both negative process records and the
 unchanged source ISO are retained.
 
@@ -281,8 +282,11 @@ replacement denial each produced real status 8 and failed sync result 2 without
 changing the original GCI. A genuine controller read restored authorization;
 the retry committed both native save copies without a duplicate application.
 The receiver's ordinary durable receipt hashes the final GCI. The sender's
-immediate diagnostic exit retained a post-CARD intent, so ordinary sender
-completion and its fresh restart recovery remain separate qualifications.
+immediate diagnostic exit retained a post-CARD intent. A fresh private-copy
+file-select load then recovered that exact intent, retained the original GCI
+and room ledger, and added no reward. The receiver's ordinary receipt and GCI
+also stayed unchanged during its fresh load. Sender recovery is a recovered
+commit, separately classified from ordinary receipt publication.
 
 Both fairy participants completed the real event. The receiver first gained
 wallet tier 1 remotely, then the same fairy's actual tier-2 item was reconciled
@@ -317,8 +321,10 @@ setup/reversal invalidates its generation; ordinary save exchange does not.
 
 The final menu/controller, buffer-lifetime and diagnostic translation units
 passed no-output clang-cl checks on 2026-10-16. Protected build metadata and
-2,535 source/header pins stayed unchanged. Full linking and genuine ordinary
-PAD navigation, failure/retry and
+2,535 source/header pins stayed unchanged. The complete `494407af` candidate
+compiled and linked in
+[Windows run 38977449016](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38977449016).
+Genuine ordinary PAD navigation, failure/retry and
 nonzero recollection teardown/cancellation acceptance remain pending. Console
 paths are preserved under the TARGET_PC guards.
 
@@ -331,8 +337,10 @@ copies. It checks an existing-card identity before attempting the save. Its
 private fixture needs a persistent owned service and actual native-created
 baseline; those marker files cannot establish native provenance by themselves.
 The first other-slot checks cover blank slots, not populated three-slot saves.
-This diagnostic passed the scoped compiler checks; actual native execution
-remains pending.
+The first native attempt created its genuine baseline and passed existing-GCI
+admission, then stopped before menu navigation because the persistent service
+had no pre-created room. Join correctly refused that missing room. The fixture
+needs explicit empty-room creation; complete native UI qualification is pending.
 
 ## Transient player-pose transport
 
@@ -379,12 +387,20 @@ It publishes copied final native poses through the authorized mounted room and
 selects one authenticated same-area peer. Connection/quest generations, roster
 epochs, sequence, age and scene changes control visibility and reset history.
 It applies no local diagnostic offset or second world transform. A one-shot
-Zelda-heap preflight guards the existing 4 MiB graph plus 12 MiB decode scratch;
-seven graphs still require a measured dedicated pool. Independent copied-value
+Zelda-heap preflight guards the existing 4 MiB graph plus 12 MiB decode scratch.
+The shared renderer initializer also checks actual Zelda free/largest sizes
+before either diagnostic allocates, with a sticky refusal and unchanged parent
+allocator flags. This admission check does not reserve against concurrent
+allocations or qualify internal loader OOM paths. Seven graphs still require
+a measured dedicated pool. Independent copied-value
 policy tests are wired into both CI scopes. All five affected native translation
 units passed no-output clang-cl checks, with 2,539 source/header pins and all
-protected build metadata unchanged. Full linking, pure policy execution, real
-networked rendering and complete remote models remain pending.
+protected build metadata unchanged. Its two independent asset/policy tests and
+all eight network suites passed at `1718517f` in
+[run 38978719157](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38978719157).
+The shared initializer's additional heap gate also passed a renderer-only
+compiler check. Full adapter linking, real networked rendering and complete
+remote models remain pending.
 
 Independent asset-bound tests passed in
 [network run 38975421604](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38975421604)
@@ -392,8 +408,9 @@ alongside all eight network suites. They run without disc/SDK/renderer
 dependencies. The first full Windows job failed on the new renderer's resource
 header include. Scoped compiler checks then found an unavailable SDK accessor;
 the renderer now uses the declared GD pointer and the correct resource include.
-The renderer-only recheck passed. Full linking and native rendering still need
-qualification. Explicit optional retention of a separate owned-host helper
+The corrected local-body diagnostic compiled and linked in the `494407af`
+Windows run above. Native rendering still needs qualification. Explicit
+optional retention of a separate owned-host helper
 includes its source/run manifest and licenses, without changing the game
 artifact or implying game qualification. Actual same-area two-game acceptance
 and complete remote models remain required.

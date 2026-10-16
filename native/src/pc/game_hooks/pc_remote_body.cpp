@@ -10,6 +10,7 @@
 #include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
 #include "JSystem/J3DGraphLoader/J3DModelLoader.h"
 #include "JSystem/JKernel/JKRDvdFile.h"
+#include "JSystem/JKernel/JKRExpHeap.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "JSystem/JUtility/JUTNameTab.h"
 #include "d/d_com_inf_game.h"
@@ -205,6 +206,19 @@ bool init_toon() {
 bool initialize() {
     if (sAttempted) return sModel != nullptr;
     sAttempted = true;
+    // Both fixed heaps below come from Zelda via createSolidHeapFromSystem.
+    // Refuse before touching that parent when the simultaneous peak cannot fit.
+    JKRExpHeap* parent = mDoExt_getZeldaHeap();
+    const s32 total = parent ? parent->getTotalFreeSize() : -1;
+    const u32 largest = parent ? parent->getMaxAllocatableSize(32) : 0;
+    constexpr u32 demand = kRendererBytes + kScratchBytes + 64 * 1024;
+    constexpr u32 untouched = 1024 * 1024;
+    std::fprintf(stderr, "[cos] remote-body: budget zelda_total=%d zelda_largest=%u demand=%u untouched=%u; before private allocations\n",
+                 total, largest, demand, untouched);
+    if (total < 0 || u32(total) < demand + untouched || largest < demand) {
+        std::fprintf(stderr, "[cos] remote-body: REFUSED native Zelda heap budget; no private allocations attempted\n");
+        return false; // sAttempted makes this first refusal sticky for the process.
+    }
     J3DState graphics;
     sHeap = mDoExt_createSolidHeapFromSystem(kRendererBytes, 32);
     if (!sHeap) return false;
