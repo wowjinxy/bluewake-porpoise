@@ -70,6 +70,9 @@ static void replay_and_rejection(unsigned port){using namespace pc_net;auto c=co
     body.clear();delta(body,{1,1});CHECK(gap.queue(Delta,3,body));receive(gap,Reject);
     Pipe legacy;legacy.socket=connect(c.server,c.port);CHECK(legacy.socket!=invalid);
     auto old=frame(Hello,0,hello(c));std::memcpy(old.data(),"BWPN",4);legacy.output.push_back(old);receive(legacy,Reject);
+    Pipe schema2;schema2.socket=connect(c.server,c.port);CHECK(schema2.socket!=invalid);
+    auto prior=c;prior.compatibility.progression_schema=2;
+    CHECK(schema2.queue(Hello,0,hello(prior)));receive(schema2,Reject);
     Pipe incompatible;incompatible.socket=connect(c.server,c.port);CHECK(incompatible.socket!=invalid);
     c.compatibility.rules_digest[0]^=1;CHECK(incompatible.queue(Hello,0,hello(c)));receive(incompatible,Reject);
     Pipe oversized;oversized.socket=connect("127.0.0.1",uint16_t(port));CHECK(oversized.socket!=invalid);
@@ -103,6 +106,32 @@ static void operations_and_ledger(){
     // Same authored producer with another valid payload is explicitly refused.
     CHECK(pc_network_submit_reward(guest.get(),{UINT64_C(2)<<56|1,9,PC_PERMANENT_MAX,2}));
     CHECK(until([&]{return status(guest.get()).status==PC_NETWORK_REJECTED;}));CHECK(status(host.get()).server_revision==4);
+    pc_network_leave(guest.get());pc_network_leave(host.get());pc_network_server_stop(server);
+}
+static void bracelet_max_and_ledger(){
+    auto server=pc_network_server_start("127.0.0.1",0);CHECK(server);
+    const auto port=pc_network_server_port(server);auto host=session(),guest=session();
+    auto a=config(port,'a',true),b=config(port,'b');
+    std::strcpy(a.room,"bracelets");std::strcpy(b.room,"bracelets");
+    CHECK(pc_network_join(host.get(),&a));connected(host.get());
+    CHECK(pc_network_join(guest.get(),&b));connected(guest.get());
+    const PcNetworkReward claim{UINT64_C(1)<<56|24,PC_PERMANENT_POWER_BRACELETS,PC_PERMANENT_MAX,1};
+    CHECK(!pc_network_submit(host.get(),{22,1})&&!pc_network_submit(host.get(),{23,1}));
+    CHECK(pc_network_submit_reward(host.get(),claim));
+    CHECK(until([&]{return status(host.get()).pending_outgoing==0&&status(guest.get()).server_revision==1;}));
+    PcNetworkFacts facts{};PcNetworkReward receipt[2]{};unsigned count=0;PcNetworkSnapshot copy{};
+    CHECK(pc_network_copy_state(guest.get(),&facts,receipt,2,&count,&copy));
+    CHECK(count==1&&facts.values[PC_PERMANENT_POWER_BRACELETS]==1&&copy.server_revision==1);
+    CHECK(pc_net::same_reward(receipt[0],claim));
+    CHECK(pc_network_submit_reward(guest.get(),claim));
+    CHECK(until([&]{return status(guest.get()).pending_outgoing==0;}));
+    CHECK(pc_network_copy_state(host.get(),&facts,receipt,2,&count,&copy));
+    CHECK(count==1&&copy.server_revision==1&&facts.values[PC_PERMANENT_POWER_BRACELETS]==1);
+    CHECK(pc_network_reward_known(guest.get(),claim.reward_id,&receipt[0])==1);
+    // Reuse of an authored chest for a different valid fact is rejected.
+    CHECK(pc_network_submit_reward(guest.get(),{claim.reward_id,1,PC_PERMANENT_MAX,1}));
+    CHECK(until([&]{return status(guest.get()).status==PC_NETWORK_REJECTED;}));
+    CHECK(status(host.get()).server_revision==1);
     pc_network_leave(guest.get());pc_network_leave(host.get());pc_network_server_stop(server);
 }
 static pc_net::Socket fixture_listener(uint16_t& port){using namespace pc_net;
@@ -235,7 +264,7 @@ int main(){
     const auto after=status(host.get());CHECK(!std::strcmp(before.room_identity,after.room_identity));
     CHECK(after.server_revision==1&&after.reconnects==before.reconnects+1&&drain(host.get(),true)==1);
     pc_network_leave(host.get());pc_network_leave(guest.get());pc_network_server_stop(server);
-    operations_and_ledger();malformed_paged_snapshot();eight_peers_and_paged_bound();
+    operations_and_ledger();bracelet_max_and_ledger();malformed_paged_snapshot();eight_peers_and_paged_bound();
     std::printf("native network transport/replay/durable-reconnect: PASS checks=%u\n",checks);
     return 0;
 }

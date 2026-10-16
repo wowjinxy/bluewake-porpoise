@@ -88,6 +88,7 @@ int main(){
     invalid=saved;invalid[7]=1;checksum(invalid);reject(invalid); // prior store schema
     invalid=saved;invalid[11]=1;checksum(invalid);reject(invalid); // legacy protocol 1
     invalid=saved;invalid[15]=1;checksum(invalid);reject(invalid); // prior fact schema
+    invalid=saved;invalid[15]=2;checksum(invalid);reject(invalid); // schema2 is not migrated
     invalid=saved;invalid.back()^=1;reject(invalid);
     invalid=saved;invalid.push_back(0);reject(invalid);
     invalid=saved;invalid.resize(80);reject(invalid);
@@ -123,6 +124,20 @@ int main(){
     {
         const auto linked=base/"hardlink";fs::create_directories(linked);write(file(linked,r),saved);
         fs::create_hard_link(file(linked,r),linked/"outside_alias");RoomStore store;CHECK(!store.open(linked.u8string().c_str(),error));
+    }
+    {
+        const auto folder=base/"bracelet-ledger";auto entry=room("bracelets");
+        const PcNetworkReward reward{UINT64_C(1)<<56|24,PC_PERMANENT_POWER_BRACELETS,PC_PERMANENT_MAX,1};
+        {
+            RoomStore store;STORE(store.open(folder.u8string().c_str(),error));STORE(store.save(entry,error));
+            claim(entry,reward);STORE(store.save(entry,error));
+            claim(entry,reward);STORE(store.save(entry,error));
+            CHECK(entry.revision==1&&entry.rewards.size()==1&&entry.progress.values[24]==1);
+        }
+        RoomStore reopened;STORE(reopened.open(folder.u8string().c_str(),error));
+        StoredRoom loaded;bool found=false;STORE(reopened.load(entry.compatibility,"bracelets",loaded,found,error));
+        CHECK(found&&loaded.revision==1&&loaded.rewards.size()==1&&loaded.progress.values[24]==1);
+        CHECK(loaded.clients.begin()->second.sequence==2&&pc_net::same_reward(loaded.rewards.begin()->second,reward));
     }
     std::printf("native network durable store: PASS checks=%u fixture=%s\n",checks,base.u8string().c_str());
     return 0;

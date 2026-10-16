@@ -155,8 +155,8 @@ void pendingView() {
     for (unsigned key = 1; key < PC_NETWORK_FACTS; ++key) {
         const auto value = (s.projectionValid ? s.projection.facts : s.canonical).values[key];
         const auto owned = pc::network::effectiveFact(static_cast<uint16_t>(key), s.view.progress.facts[key]);
-        if (value && (pc_permanent_server_authoritative(static_cast<uint16_t>(key))
-            ? value != owned : value > owned)) {
+        if (value && !pc::progression::factSettled(key, value, owned,
+            s.view.progress.bracelets_equipped != 0)) {
             s.view.pending_remote = true;
             break;
         }
@@ -239,6 +239,19 @@ extern "C" int pc_network_game_native_save_prepare(const PcProgressIdentity* ide
     if (!pc_network_client_copy(s.clientStore, &s.clientState)) return 0;
     if (!s.clientState.canonical_present) {
         say("Connect to this room once before its first save. Earned rewards are preserved locally.");
+        return 0;
+    }
+    // Do not confirm a save while a received bracelet's native equipment
+    // effect still waits behind a grab/menu. Its collection bit alone can
+    // already be present. Closing the menu lets ordinary apply repair settle.
+    PcProgressSnapshot live{};
+    pc_progress_capture(&live);
+    if (frozen[PC_PERMANENT_POWER_BRACELETS] &&
+        (!live.facts_valid || live.identity.epoch != identity->epoch ||
+         !pc::progression::sameQuest(live.identity, *identity) ||
+         !pc::progression::factSettled(PC_PERMANENT_POWER_BRACELETS, 1,
+            live.facts[PC_PERMANENT_POWER_BRACELETS], live.bracelets_equipped != 0))) {
+        say("Let the received equipment finish before retrying the game save.");
         return 0;
     }
     PcNetworkFacts facts{};
@@ -543,8 +556,8 @@ extern "C" void pc_network_game_frame() {
     for (unsigned key = 1; key < PC_NETWORK_FACTS; ++key) {
         const uint32_t value = s.projection.facts.values[key];
         const uint32_t owned = pc::network::effectiveFact(static_cast<uint16_t>(key), s.view.progress.facts[key]);
-        if (!value || claimedKeys[key] || (pc_permanent_server_authoritative(static_cast<uint16_t>(key))
-            ? owned == value : owned >= value)) continue;
+        if (!value || claimedKeys[key] || pc::progression::factSettled(key, value, owned,
+            s.view.progress.bracelets_equipped != 0)) continue;
         const int applied = pc_progress_apply(key, value, s.view.progress.identity.epoch);
         if (applied == PC_PROGRESS_APPLIED) receivedEffect(key, value, pendingOperationFor(key));
         else if (applied == PC_PROGRESS_REJECTED) {

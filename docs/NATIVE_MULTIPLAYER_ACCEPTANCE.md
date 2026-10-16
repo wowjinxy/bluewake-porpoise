@@ -6,6 +6,11 @@ baseline, not completion of that objective. This checklist records missing
 evidence as missing; implementation, standalone tests and real game acceptance
 remain separate columns.
 
+The latest source adds Power Bracelets sharing with progression schema 3.
+It rejects schema-2 campaigns without rewriting their files. The retained
+schema-2 binaries and their native results below remain separate checkpoints;
+they do not qualify the new equipment behavior.
+
 The accepted model is independent exploration with shared permanent progress
 over an owned TCP service. Each player keeps local movement, camera, cutscenes
 and ordinary consumable counts. Steam and public Anchor services are not used.
@@ -399,8 +404,11 @@ protected build metadata unchanged. Its two independent asset/policy tests and
 all eight network suites passed at `1718517f` in
 [run 38978719157](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38978719157).
 The shared initializer's additional heap gate also passed a renderer-only
-compiler check. Full adapter linking, real networked rendering and complete
-remote models remain pending.
+compiler check. The full Windows build at `a1e51826` passed in
+[run 38979528898](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38979528898),
+including the named game target and headless helpers. Its independent asset
+and body-policy checks passed 390 and 41 checks respectively. Real networked
+rendering and complete remote models remain pending.
 
 Independent asset-bound tests passed in
 [network run 38975421604](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38975421604)
@@ -415,15 +423,38 @@ includes its source/run manifest and licenses, without changing the game
 artifact or implying game qualification. Actual same-area two-game acceptance
 and complete remote models remain required.
 
+## Power Bracelets source checkpoint
+
+The native catalogue now includes item `0x28` as permanent MAX fact 24.
+Collection ownership comes from the native collect bit. Remote application
+uses `item_func_pwr_groove`, which sets that bit and selected bracelet equipment
+without modifying local health, money, ammunition or X/Y/Z choices. Ownership
+alone is insufficient for settlement: the incoming loop repairs a missing
+selected-equipment effect at a safe boundary. Grab mode, carry actions, grab
+animation and a retained grab-actor ID all defer that repair. Existing
+recollection, temporary-inventory and event/menu guards still apply.
+
+A prepared save also requires the bracelet effect to have settled in the same
+quest and epoch before CARD I/O begins. The new fact changes the permanent
+contract, so schema 3 and new semantic/rules digests intentionally reject old
+profiles, room stores and client journals. Wire protocol 4 and storage framing
+3 remain unchanged; previous files are preserved. The literal prior-schema
+fixtures remain byte-identical and now exercise refusal without rewriting.
+
+The new source and focused standalone checks are pending their first build.
+Genuine authored collection, receipt/replay, lifting heavy objects, wrist
+display and save/reload still require native qualification. Sword and shield
+facts 22/23 remain reserved.
+
 ## Next implementation boundaries
 
-These are source-backed design constraints, not implemented or qualified
-features. Their fact/operation formats require an intentional compatibility
-change before use.
+These are source-backed design constraints for the remaining work. Additional
+fact/operation formats require an intentional compatibility change before use.
 
-- **Permanent gear:** sword ranks, shield ranks and bracelets need native collect
-  bits plus selected equipment. Defer held-sword, guarding and lifting changes
-  until the native models can refresh safely. Preserve recollection/minigame
+- **Permanent gear:** sword and shield ranks need native collect bits plus
+  selected equipment; bracelets have the unqualified implementation above.
+  Defer held-sword and guarding changes until native models can refresh safely.
+  Preserve recollection/minigame
   guards and the authored first-Forsaken-Fortress stolen-sword sequence. Master
   Sword cutscenes call `execItemGet` directly; catalogue entries alone miss those
   genuine producers. The dropped recovery sword is not a newly earned reward.

@@ -78,6 +78,8 @@ typedef struct PcProgressSnapshot {
     uint32_t facts_valid;
     uint32_t facts[PC_PERMANENT_FACT_COUNT];
     uint32_t pending_claims, recovery_required;
+    // Copied apply-settlement observation only. Never a wire fact or earned origin.
+    uint32_t bracelets_equipped;
 } PcProgressSnapshot;
 
 enum PcProgressClaimState {

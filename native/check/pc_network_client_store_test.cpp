@@ -107,6 +107,8 @@ int main(){
     CHECK(pc_network_client_copy(store.get(),state.get())&&state->outgoing_count==0);store.reset();
     CHECK(!open(folder,compatibility,std::string(64,'f').c_str(),error));CHECK(read(journal)==beforeFailure);
     auto old=compatibility;old.progression_schema=1;CHECK(!open(folder,old,profile.c_str(),error));
+    old=compatibility;old.progression_schema=2;CHECK(!open(folder,old,profile.c_str(),error));
+    CHECK(read(journal)==beforeFailure); // schema refusal does not rewrite the journal
     unsigned malformed=0;const auto reject=[&](Bytes invalid){auto dir=base/("malformed-"+std::to_string(++malformed));fs::create_directories(dir);write(dir/"client.bwjournal",invalid);
         CHECK(!open(dir,compatibility,profile.c_str(),error));CHECK(read(dir/"client.bwjournal")==invalid);};
     auto invalid=beforeFailure;invalid.back()^=1;reject(invalid);invalid=beforeFailure;invalid[11]=2;checksum(invalid);reject(invalid);
@@ -169,5 +171,19 @@ int main(){
     store=open(replayDir,compatibility,profile.c_str(),error);CHECK(store);GOOD(pc_network_client_hash_gci(replayGci.u8string().c_str(),hash,error,sizeof error));
     GOOD(pc_network_client_reconcile_loaded(store.get(),0,replayGci.u8string().c_str(),hash,&replay.facts,&disposition,error,sizeof error));
     CHECK(disposition==PC_NETWORK_CLIENT_LOAD_PERSISTED&&pc_network_client_copy(store.get(),state.get())&&state->receipts[0].provisional&&state->receipts[0].recovered&&state->outgoing_count==1);
+    store.reset();const auto braceletDir=base/"bracelet-outbox";
+    store=open(braceletDir,compatibility,profile.c_str(),error);CHECK(store);
+    GOOD(pc_network_client_stage(store.get(),room.c_str(),&empty,nullptr,0,0,error,sizeof error));
+    const PcNetworkReward bracelet{UINT64_C(1)<<56|24,PC_PERMANENT_POWER_BRACELETS,PC_PERMANENT_MAX,1};
+    GOOD(pc_network_client_enqueue(store.get(),bracelet,error,sizeof error));
+    GOOD(pc_network_client_enqueue(store.get(),bracelet,error,sizeof error));
+    CHECK(pc_network_client_copy(store.get(),state.get())&&state->outgoing_count==1);
+    GOOD(pc_network_client_projection(store.get(),&replay,error,sizeof error));
+    CHECK(replay.provisional&&replay.facts.values[24]==1&&state->revision==0);
+    PcNetworkFacts ownedBracelet{};ownedBracelet.values[24]=1;
+    GOOD(pc_network_client_stage(store.get(),room.c_str(),&ownedBracelet,&bracelet,1,1,error,sizeof error));
+    store.reset();store=open(braceletDir,compatibility,profile.c_str(),error);CHECK(store);
+    CHECK(pc_network_client_copy(store.get(),state.get())&&state->outgoing_count==0&&
+        state->reward_count==1&&state->revision==1&&state->facts.values[24]==1);
     std::printf("native network client journal: PASS checks=%u fixture=%s\n",checks,base.u8string().c_str());return 0;
 }

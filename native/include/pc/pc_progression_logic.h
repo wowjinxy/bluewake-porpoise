@@ -109,6 +109,22 @@ inline bool canonicalCorrection(uint32_t key, uint32_t& value) {
     return pc_permanent_fact_valid(static_cast<uint16_t>(key), value);
 }
 
+// A permanent collection bit alone does not prove the native equipment effect
+// settled. This is an apply/recovery predicate, NEVER an earned-item producer.
+inline bool factSettled(uint32_t key, uint32_t required, uint32_t owned,
+                        bool braceletsEquipped) {
+    if (key > UINT16_MAX) return false;
+    if (key == PC_PERMANENT_WALLET && required == 0) return owned == 0;
+    if (!pc_permanent_fact_valid(static_cast<uint16_t>(key), required)) return false;
+    if (key == PC_PERMANENT_POWER_BRACELETS)
+        return owned >= required && braceletsEquipped;
+    return pc_permanent_server_authoritative(static_cast<uint16_t>(key))
+        ? owned == required : owned >= required;
+}
+inline bool braceletsApplySafe(bool grabMode, bool carryAction, bool grabAnimation, bool retainedActor) {
+    return !grabMode && !carryAction && !grabAnimation && !retainedActor;
+}
+
 inline int applyReadiness(uint32_t key, uint32_t value, uint64_t expectedEpoch,
                           uint64_t currentEpoch, bool safe, bool owned) {
     if (key > UINT16_MAX || !pc_permanent_fact_valid((uint16_t)key, value)) return PC_PROGRESS_REJECTED;

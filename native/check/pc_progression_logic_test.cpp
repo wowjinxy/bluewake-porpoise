@@ -88,6 +88,27 @@ void applyGate() {
     CHECK(applyReadiness(65537, 1, 5, 5, true, false) == PC_PROGRESS_REJECTED);
 }
 
+void braceletSettlement() {
+    using pc::progression::factSettled;
+    using pc::progression::braceletsApplySafe;
+    CHECK(!factSettled(PC_PERMANENT_POWER_BRACELETS,1,0,false));
+    CHECK(!factSettled(PC_PERMANENT_POWER_BRACELETS,1,1,false)); // owned, wrong selected equipment
+    CHECK(!factSettled(PC_PERMANENT_POWER_BRACELETS,1,0,true)); // selected is NOT earned ownership
+    CHECK(factSettled(PC_PERMANENT_POWER_BRACELETS,1,1,true));
+    CHECK(!factSettled(PC_PERMANENT_POWER_BRACELETS,2,1,true));
+    CHECK(!factSettled(22,1,1,true)&&!factSettled(23,1,1,true));
+    CHECK(!factSettled(65560,1,1,true)); // no narrowed key24 alias
+    CHECK(factSettled(9,1,2,false)); // other MAX rank behavior unchanged
+    CHECK(!factSettled(50,60,99,true)); // authoritative STEP equality unchanged
+    CHECK(factSettled(48,0,0,false)); // local canonical wallet-base correction unchanged
+    for(unsigned state=0;state<16;++state)
+        CHECK(braceletsApplySafe((state&1)!=0,(state&2)!=0,(state&4)!=0,(state&8)!=0)==(state==0));
+    CHECK(pc::progression::applyReadiness(24,1,7,8,true,false)==PC_PROGRESS_STALE);
+    CHECK(pc::progression::applyReadiness(24,1,8,8,false,false)==PC_PROGRESS_DEFERRED);
+    CHECK(pc::progression::applyReadiness(24,1,8,8,true,false)==PC_PROGRESS_APPLIED);
+    CHECK(pc::progression::applyReadiness(24,1,8,8,true,true)==PC_PROGRESS_ALREADY);
+}
+
 void correctionPolicy() {
     using pc::progression::canonicalCorrection;
     uint32_t value = 0;
@@ -237,7 +258,7 @@ void journalRetirementPolicy() {
 } // namespace
 
 int main() {
-    correlation(); applyGate(); correctionPolicy(); saveCorrelation(); localDurabilityPolicy(); journalRetirementPolicy();
+    correlation(); applyGate(); braceletSettlement(); correctionPolicy(); saveCorrelation(); localDurabilityPolicy(); journalRetirementPolicy();
     std::printf("native progression correlation: %u checks passed (no gameplay/save proof)\n", checks);
     return 0;
 }

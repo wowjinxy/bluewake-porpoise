@@ -18,7 +18,7 @@ int main() {
     CHECK(facts.values[0] == 0 && facts.values[1] == 1 && !pc_network_fact_merge(&facts,{1,1}));
     CHECK(!pc_network_fact_merge(&facts,{0,1}) && !pc_network_fact_merge(nullptr,{1,1}));
     pc_network_fact_clear(&facts); CHECK(facts.values[1] == 0);
-    CHECK(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==2&&PC_NETWORK_FACTS==128);
+    CHECK(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==3&&PC_NETWORK_FACTS==128);
     for(uint16_t key=0;key<128;++key){
         CHECK(!pc_network_fact_valid({key,0}));
         if(pc_network_fact_valid({key,1})){CHECK(pc_network_fact_merge(&facts,{key,1}));CHECK(!pc_network_fact_merge(&facts,{key,1}));}
@@ -28,6 +28,16 @@ int main() {
     }
     CHECK(!pc_network_fact_valid({9,3})&&pc_network_fact_valid({13,3})&&!pc_network_fact_valid({13,4}));
     CHECK(pc_network_fact_valid({49,16})&&pc_network_fact_valid({49,32})&&!pc_network_fact_valid({49,17}));
+    CHECK(pc_network_fact_valid({PC_PERMANENT_POWER_BRACELETS,1}));
+    CHECK(!pc_network_fact_valid({PC_PERMANENT_POWER_BRACELETS,2}));
+    CHECK(!pc_network_fact_valid({22,1})&&!pc_network_fact_valid({23,1}));
+    CHECK(!pc_permanent_server_authoritative(PC_PERMANENT_POWER_BRACELETS));
+    CHECK(!std::strcmp(pc_network_fact_name(PC_PERMANENT_POWER_BRACELETS),"Power bracelets"));
+    const PcNetworkReward bracelets{UINT64_C(1)<<56|1,PC_PERMANENT_POWER_BRACELETS,PC_PERMANENT_MAX,1};
+    CHECK(pc_network_reward_valid(bracelets));
+    CHECK(!pc_network_reward_valid({bracelets.reward_id,PC_PERMANENT_POWER_BRACELETS,PC_PERMANENT_STEP,1}));
+    CHECK(pc_permanent_operation_result(PC_PERMANENT_POWER_BRACELETS,0,PC_PERMANENT_MAX,1)==1);
+    CHECK(pc_permanent_operation_result(PC_PERMANENT_POWER_BRACELETS,1,PC_PERMANENT_MAX,1)==1);
     const uint64_t source=UINT64_C(3)<<56|1;
     for(uint16_t key:{uint16_t(48),uint16_t(50),uint16_t(51)}){
         CHECK(pc_permanent_server_authoritative(key));
@@ -58,6 +68,13 @@ int main() {
     CHECK(!pc_network_config_valid(&changed,nullptr,0)); // legacy translated build identity
     changed=c; changed.compatibility.rules_digest[0]^=1; CHECK(!pc_network_config_valid(&changed,nullptr,0));
     changed=c; changed.compatibility.progression_schema=1; CHECK(!pc_network_config_valid(&changed,nullptr,0));
+    changed=c; changed.compatibility.progression_schema=2;
+    const auto priorSemantics=pc_net::digest("BlueWake.Native.GZLE01.rev0.CXX.NativeItems.RewardOperations.v2");
+    const auto priorRules=pc_net::digest("permanent-facts:v2;sparse128;tools1-14,19-21;ranks9:1-2,13:1-3;songs32-37;wallet48:step2;magic49:16,32;arrow50,bomb51:step30,60,99;pearls64-66;shards72-79;producer-ledger4096;no-local-resources-selectors");
+    std::strcpy(changed.compatibility.semantic_digest,priorSemantics.c_str());
+    std::strcpy(changed.compatibility.rules_digest,priorRules.c_str());
+    CHECK(!pc_network_config_valid(&changed,nullptr,0)); // no silent schema2 room reuse
+    CHECK(!pc_net::same(c.compatibility,changed.compatibility));
     changed=c; std::strcpy(changed.room,"../personal"); CHECK(!pc_network_config_valid(&changed,nullptr,0));
     changed=c; std::memset(changed.server,'x',sizeof changed.server); CHECK(!pc_network_config_valid(&changed,nullptr,0));
     using namespace pc_net;
@@ -66,6 +83,11 @@ int main() {
     CHECK(parsed.type==Delta && parsed.sequence==9 && parsed.body==body && pipe.input.empty());
     Bytes awardBytes;const PcNetworkReward claim{source,50,PC_PERMANENT_STEP,1};reward(awardBytes,claim);
     Reader awardReader{awardBytes};CHECK(same_reward(reward(awardReader),claim)&&awardReader.done()&&awardBytes.size()==16);
+    Bytes braceletBytes; reward(braceletBytes,bracelets); Reader braceletReader{braceletBytes};
+    CHECK(braceletBytes.size()==16&&same_reward(reward(braceletReader),bracelets)&&braceletReader.done());
+    Bytes braceletDelta;delta(braceletDelta,{PC_PERMANENT_POWER_BRACELETS,1});
+    Reader braceletDeltaReader{braceletDelta};const auto decodedBracelet=delta(braceletDeltaReader);
+    CHECK(decodedBracelet.key==PC_PERMANENT_POWER_BRACELETS&&decodedBracelet.value==1&&braceletDeltaReader.done());
     pipe.input=bytes; pipe.input[4]=0xFF; CHECK(pipe.next(parsed)==-1);
     pipe.input=bytes; pipe.input[5]=3; CHECK(pipe.next(parsed)==-1); // prior native protocol
     pipe.input=bytes; pipe.input[8]=1; CHECK(pipe.next(parsed)==-1);

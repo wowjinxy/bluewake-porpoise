@@ -14,6 +14,8 @@ typedef enum PcPermanentFactKey {
     PC_PERMANENT_IRON_BOOTS=10, PC_PERMANENT_MAGIC_ARMOR=11,
     PC_PERMANENT_BAIT_BAG=12, PC_PERMANENT_BOW=13, PC_PERMANENT_BOMBS=14,
     PC_PERMANENT_DELIVERY_BAG=19, PC_PERMANENT_HOOKSHOT=20, PC_PERMANENT_HAMMER=21,
+    // 22/23 remain reserved for sword/shield; no temporary availability policy yet.
+    PC_PERMANENT_POWER_BRACELETS=24,
     PC_PERMANENT_SONG_FIRST=32, PC_PERMANENT_SONG_LAST=37,
     PC_PERMANENT_WALLET=48, PC_PERMANENT_MAGIC_MAX=49,
     PC_PERMANENT_ARROW_MAX=50, PC_PERMANENT_BOMB_MAX=51,
@@ -36,7 +38,7 @@ static inline bool pc_permanent_fact_valid(uint16_t key,uint32_t value) {
     if(key==PC_PERMANENT_WALLET)return value<=2;
     if(key==PC_PERMANENT_MAGIC_MAX)return value==16||value==32;
     if(key==PC_PERMANENT_ARROW_MAX||key==PC_PERMANENT_BOMB_MAX)return value==30||value==60||value==99;
-    if((key>=1&&key<=14)||(key>=19&&key<=21)||
+    if((key>=1&&key<=14)||(key>=19&&key<=21)||key==PC_PERMANENT_POWER_BRACELETS||
        (key>=32&&key<=37)||(key>=64&&key<=66)||(key>=72&&key<=79))return value==1;
     return false;
 }
@@ -68,6 +70,7 @@ static inline const char* pc_permanent_fact_name(uint16_t key) {
     case 10:return "Iron boots";case 11:return "Magic armor";case 12:return "Bait bag";
     case 13:return "Bow";case 14:return "Bombs";case 19:return "Delivery bag";
     case 20:return "Hookshot";case 21:return "Hammer";
+    case PC_PERMANENT_POWER_BRACELETS:return "Power bracelets";
     case 48:return "Wallet tier";case 49:return "Magic capacity";
     case 50:return "Arrow capacity";case 51:return "Bomb capacity";
     default:if(key>=32&&key<=37)return "Song";if(key>=64&&key<=66)return "Pearl";

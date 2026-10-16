@@ -25,13 +25,14 @@ constexpr uint32_t kAbsent=UINT32_MAX;
 constexpr unsigned kQueueSize=64, kAwards=8;
 struct ItemSpec { u8 item; u16 key; u32 value; int slot; };
 // Explicit permanent catalogue. No consumables, training gear, bottles,
-// sword/shield/bracelets, chest flags, small keys or boss-heart suppression.
+// sword/shield, chest flags, small keys or boss-heart suppression.
 const ItemSpec kItems[]={
  {0x20,1,1,0},{0x78,2,1,1},{0x22,3,1,2},{0x25,4,1,3},
  {0x24,5,1,4},{0x2d,6,1,5},{0x34,7,1,6},{0x21,8,1,7},
  {0x23,9,1,8},{0x26,9,2,8},{0x29,10,1,9},{0x2a,11,1,10},
  {0x2c,12,1,11},{0x27,13,1,12},{0x35,13,2,12},{0x36,13,3,12},
  {0x31,14,1,13},{0x30,19,1,18},{0x2f,20,1,19},{0x33,21,1,20},
+ {0x28,PC_PERMANENT_POWER_BRACELETS,1,-1},
  {0x6d,32,1,-1},{0x6e,33,1,-1},{0x6f,34,1,-1},
  {0x70,35,1,-1},{0x71,36,1,-1},{0x72,37,1,-1},
  {0xab,48,1,-1},{0xac,48,2,-1},{0xb2,49,32,-1},
@@ -86,7 +87,8 @@ u32 factValue(u32 key) {
   if(spec.key!=key||spec.slot<0) continue;
   if(dComIfGs_isGetItem(spec.slot,static_cast<u8>(spec.value-1))&&spec.value>value) value=spec.value;
  }
- if(key>=32&&key<=37) value=dComIfGs_isTact(key-32)?1:0;
+ if(key==PC_PERMANENT_POWER_BRACELETS) value=dComIfGs_isCollect(2,0)?1:0;
+ else if(key>=32&&key<=37) value=dComIfGs_isTact(key-32)?1:0;
  else if(key==48) value=dComIfGs_getWalletSize();
  else if(key==49) value=dComIfGs_getMaxMagic();
  else if(key==50) value=dComIfGs_getArrowMax();
@@ -321,13 +323,19 @@ int applyFact(u32 key,u32 value,u64 expected,bool correction=false) {
     (key==PC_PERMANENT_BOW&&player->checkBowItem(player->getPcEquippedItem()))) return PC_PROGRESS_DEFERRED;
  const char* stage=dComIfGp_getStartStageName();
  if(key==13&&stage&&!std::strcmp(stage,"GTower")) return PC_PROGRESS_DEFERRED;
- u32 current=factValue(key); bool authoritative=pc_permanent_server_authoritative(static_cast<u16>(key));
- if(authoritative?current==value:current>=value) return PC_PROGRESS_ALREADY;
+ if(key==PC_PERMANENT_POWER_BRACELETS&&!pc::progression::braceletsApplySafe(
+    player->checkModeFlg(daPy_lk_c::ModeFlg_GRAB)!=0,
+    player->checkCarryActionNow()!=0,player->checkGrabAnime()!=0,
+    !fpcM_IsErrorID(player->getGrabActorID()))) return PC_PROGRESS_DEFERRED;
+ const u32 current=factValue(key);
+ const bool braceletsEquipped=dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e;
+ if(pc::progression::factSettled(key,value,current,braceletsEquipped)) return PC_PROGRESS_ALREADY;
  sRemote=true;
  if(key==48) dComIfGs_setWalletSize(static_cast<u8>(value));
  else if(key==49) dComIfGs_setMaxMagic(static_cast<u8>(value));
  else if(key==50) dComIfGs_setArrowMax(static_cast<u8>(value));
  else if(key==51) dComIfGs_setBombMax(static_cast<u8>(value));
+ else if(key==PC_PERMANENT_POWER_BRACELETS) item_func_pwr_groove();
  else if(key>=32&&key<=37) dComIfGs_onTact(static_cast<u8>(key-32));
  else if(key>=64&&key<=66) dComIfGs_onSymbol(static_cast<u8>(key-64));
  else if(key>=72&&key<=79) dComIfGs_onTriforce(static_cast<u8>(key-72));
@@ -345,7 +353,8 @@ int applyFact(u32 key,u32 value,u64 expected,bool correction=false) {
   if(key==7&&dComIfGs_getMaxMagic()<16) dComIfGs_setMaxMagic(16);
  }
  sRemote=false;
- if(factValue(key)!=value) return PC_PROGRESS_REJECTED;
+ if(!pc::progression::factSettled(key,value,factValue(key),
+    dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e)) return PC_PROGRESS_REJECTED;
  auto event=eventValue(PC_NATIVE_FACT_APPLIED,PC_NATIVE_REMOTE);
  event.fact_key=key; event.fact_value=value; push(event);
  return PC_PROGRESS_APPLIED;
@@ -383,7 +392,10 @@ void pc_progress_capture(PcProgressSnapshot* out) {
  if(!out) return; refresh(); *out={}; out->identity=sIdentity;
  out->telescope_owned=telescopeOwned(); out->safe_to_apply=safeToApply()?1:0;
  out->event_overflow=sOverflow?1:0; out->facts_valid=sQuestReady&&!temporaryInventory()?1:0;
- if(out->facts_valid) captureFacts(out->facts);
+ if(out->facts_valid) {
+  captureFacts(out->facts);
+  out->bracelets_equipped=dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e?1:0;
+ }
  for(unsigned i=0;i<PC_PROGRESS_MAX_PENDING_CLAIMS;++i) if(sClaimUsed[i]) {
   ++out->pending_claims;
   if(!sClaims[i].authored_reward_id||sClaims[i].state==PC_PROGRESS_CLAIM_STALE||

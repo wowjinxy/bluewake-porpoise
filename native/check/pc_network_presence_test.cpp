@@ -76,7 +76,7 @@ static void write(const fs::path& path,const Bytes& bytes){CHECK(!fs::exists(pat
 
 static void codec_and_bounds(){
     static_assert(PC_NETWORK_POSE_JOINTS==42,"Native GZLE01 Link hierarchy");
-    static_assert(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==2,"Intentional split");
+    static_assert(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==3,"Intentional wire/storage/schema split");
     auto original=pose(32768.5f);CHECK(pc_network_pose_valid(&original));auto body=pose_body(original);
     CHECK(body.size()<2300&&body.size()+42<max_body);Reader reader{body};PcNetworkPose decoded{};
     CHECK(pose_read(reader,decoded)&&reader.done());CHECK(decoded.active==1&&!std::strcmp(decoded.stage,"sea")&&decoded.room==44);
@@ -111,41 +111,28 @@ static void codec_and_bounds(){
     CHECK(!bounded.queue_latest(0,Pose,1,Bytes(max_body+1,0)));
 }
 
-static void v3_reopen(const fs::path& base){
-    // Literal arrays were serialized independently with protocol3 before this
-    // proposal. No encode(new constant)->decode(new constant) tautology.
+static void prior_schema_refused(const fs::path& base){
+    // Independently serialized wire3/storage3/schema2 literal fixtures remain
+    // unchanged. New bracelet semantics must refuse their campaign identities.
     CHECK(digest(std::string(reinterpret_cast<const char*>(v3_fixture::server),sizeof v3_fixture::server))==
         "3eaa45e87e430c0a4d29591361af84db4366150fbf40f271a9f7030c22a4d50a");
     CHECK(digest(std::string(reinterpret_cast<const char*>(v3_fixture::client),sizeof v3_fixture::client))==
         "ab2f327f3bfd4d2842582a39b7dd011c597cf90bbf01558e177db186b5362785");
-    const auto folder=base/"v3";fs::create_directories(folder);const auto ini=folder/"network.ini";
+    const auto folder=base/"prior-schema";fs::create_directories(folder);const auto ini=folder/"network.ini";
     write(ini,Bytes(v3_fixture::ini,v3_fixture::ini+std::strlen(v3_fixture::ini)));
-    PcNetworkProfile profile{};char error[256]{};
-    CHECK(pc_network_profile_load(ini.u8string().c_str(),true,&profile,error,sizeof error));
-    CHECK(profile.enabled&&!std::strcmp(profile.config.server,"127.0.0.1"));
-    char selected[1100]{},identityText[65]{};const auto root=folder/"rooms",personal=folder/"personal";
-    CHECK(pc_network_profile_route(&profile,root.u8string().c_str(),personal.u8string().c_str(),selected,sizeof selected,
-        identityText,sizeof identityText,error,sizeof error));
-    CHECK(std::strcmp(identityText,v3_fixture::route)==0);CHECK(fs::u8path(selected).parent_path()==root/v3_fixture::route);
+    const auto beforeIni=read(ini);PcNetworkProfile profile{};char error[256]{};
+    CHECK(!pc_network_profile_load(ini.u8string().c_str(),true,&profile,error,sizeof error));
     const auto host=folder/"server",journal=folder/"journal";fs::create_directories(host);fs::create_directories(journal);
     const auto roomFile=host/(std::string(v3_fixture::key)+".bwroom"),clientFile=journal/"client.bwjournal";
     write(roomFile,Bytes(std::begin(v3_fixture::server),std::end(v3_fixture::server)));
     write(clientFile,Bytes(std::begin(v3_fixture::client),std::end(v3_fixture::client)));
     const auto beforeRoom=read(roomFile),beforeClient=read(clientFile);std::string detail;
-    {RoomStore store;CHECK(store.open(host.u8string().c_str(),detail));StoredRoom room;bool found=false;
-        CHECK(store.load(profile.config.compatibility,"presence-compat",room,found,detail)&&found);
-        CHECK(room.revision==1&&room.progress.values[48]==1&&room.rewards.size()==1);
-        CHECK(room.clients.at(std::string(32,'a')).sequence==1&&room.rewards.begin()->first==(UINT64_C(3)<<56|1));
-        CHECK(room_credential_matches(room,"fixture-only"));}
+    {RoomStore store;CHECK(!store.open(host.u8string().c_str(),detail));}
+    PcNetworkCompatibility current{};pc_network_native_compatibility(&current);
     auto store=std::unique_ptr<PcNetworkClientStore,decltype(&pc_network_client_close)>(
-        pc_network_client_open(journal.u8string().c_str(),&profile.config.compatibility,v3_fixture::route,error,sizeof error),pc_network_client_close);
-    CHECK(store);auto state=std::make_unique<PcNetworkClientState>();CHECK(pc_network_client_copy(store.get(),state.get()));
-    CHECK(state->serial==3&&state->revision==1&&state->facts.values[48]==1&&state->reward_count==1&&state->outgoing_count==1);
-    CHECK(state->outgoing[0].reward_id==(UINT64_C(3)<<56|2));PcNetworkClientProjection projected{};
-    CHECK(pc_network_client_projection(store.get(),&projected,error,sizeof error)&&projected.provisional&&projected.facts.values[48]==2);
-    CHECK(projected.revision==1&&state->outgoing_count==1);store.reset();
-    CHECK(read(roomFile)==beforeRoom&&read(clientFile)==beforeClient);
-    // Sockets deliberately reject the old wire even though old disk files stay valid.
+        pc_network_client_open(journal.u8string().c_str(),&current,v3_fixture::route,error,sizeof error),pc_network_client_close);
+    CHECK(!store);
+    CHECK(read(ini)==beforeIni&&read(roomFile)==beforeRoom&&read(clientFile)==beforeClient);
     Pipe wire;wire.input=frame(Ping,0,{});wire.input[5]=3;Frame parsed{};CHECK(wire.next(parsed)==-1);
 }
 
@@ -365,6 +352,6 @@ static void socket_backpressure(){
 int main(){
     const auto base=fs::absolute(fs::temp_directory_path())/("BlueWake-presence-"+std::to_string(Clock::now().time_since_epoch().count()));
     CHECK(!fs::exists(base));fs::create_directories(base);std::printf("synthetic presence fixtures: %s\n",base.u8string().c_str());std::fflush(stdout);
-    CHECK(init());codec_and_bounds();v3_reopen(base);sessions_and_durable_fairness(base/"durable");raw_authority_stale_expiry();late_join_replays_fresh_pose();incomplete_welcome_no_publication();client_decoder_stale_and_clear();socket_backpressure();
+    CHECK(init());codec_and_bounds();prior_schema_refused(base);sessions_and_durable_fairness(base/"durable");raw_authority_stale_expiry();late_join_replays_fresh_pose();incomplete_welcome_no_publication();client_decoder_stale_and_clear();socket_backpressure();
     std::printf("native transient presence transport: PASS checks=%u (no game/render qualification)\n",checks);return 0;
 }
