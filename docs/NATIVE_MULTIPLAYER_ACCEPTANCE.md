@@ -10,8 +10,8 @@ The latest source adds Hero's Shield and Mirror Shield sharing with progression
 schema 4, following the schema-3 Power Bracelets work. It rejects earlier
 campaign schemas without rewriting their files. The retained schema-2 binaries
 and their native results below remain separate checkpoints; they do not qualify
-the new equipment behavior. Shield source still needs its standalone suites,
-full game build and native acceptance.
+the new equipment behavior. The shield source passed its standalone suites and
+full Windows game build; native equipment acceptance remains pending.
 
 The accepted model is independent exploration with shared permanent progress
 over an owned TCP service. Each player keeps local movement, camera, cutscenes
@@ -22,7 +22,8 @@ must not control another simulation.
 ## Requirements and current evidence
 
 Native results are checkpoint-specific: `80489913` and `7d418a51` use schema 2.
-The current schema-4 source does not inherit that native qualification.
+The current schema-4 source has its own focused normal Save-menu regression
+below; it does not inherit the older checkpoints' other native qualifications.
 The detailed sections below preserve
 both completed cases and failed attempts.
 
@@ -33,13 +34,13 @@ both completed cases and failed attempts.
 | Shared permanent inventory | Native Telescope and one wallet-fairy source qualified at `7d418a51`; broader tools/bags/songs/capacities/pearls/shards, bracelets and shields have source implementations | Qualify every intended native producer/effect, including weapons/derived equipment, bags, songs, capacities, pearls/shards and other permanent progression; shield grants/display and bracelet lifting/wrist display/save/reload remain unqualified |
 | Once-only progressive rewards | `7d418a51`: both players genuinely complete one `Fairy01` wallet source; the receiver's native tier-2 item reconciles to tier 1, with one authored ledger entry and revision 1 | Other fairy sources, ammo and heart rewards, offline/unsent STEP replay and overlapping claims; the zero-rupee wallet fixture does not cover over-capacity correction |
 | Shared world/dungeon progression | No qualified shared world/dungeon implementation | Explicit reward identities and reconciliation before synchronizing chest/boss-heart or other reward-suppressing flags; coherent key/dungeon and story progression policies; no stranded rewards |
-| Safe game-thread application | Focused Telescope/wallet application preserves XYZ/resources; `494407af` additionally passes genuine PAD Save-menu deferral/refusal, real read/replacement denial and recovery, and one native UI save | Broader effects, menus/cutscenes/loading/player replacement, borrowed/recollection inventory, cancellation/stale work and current-schema regression |
-| Durable player saves and receipts | `7d418a51`: real read/replacement denial and retry; ordinary receipt for the Telescope receiver and both wallet participants. The Telescope sender's post-CARD intent is separately recovered by a fresh offline native load. Both reward fixtures pass fresh file-select loads with unchanged GCIs | Unsent/offline authored rewards, further interrupted-save/receipt windows, provisional reconciliation, host loss and current-schema regression; a recovered receipt does not establish ordinary publication |
+| Safe game-thread application | Focused Telescope/wallet application preserves XYZ/resources; `494407af` and current schema-4 `e1a4b6de` pass genuine PAD Save-menu deferral/refusal, real read/replacement denial and recovery, and one native UI save | Broader effects, menus/cutscenes/loading/player replacement, borrowed/recollection inventory, cancellation/stale work and broader current-schema regression |
+| Durable player saves and receipts | `7d418a51`: real read/replacement denial and retry; ordinary receipt for the Telescope receiver and both wallet participants. Its Telescope sender's post-CARD intent is separately recovered by a fresh offline native load; both reward fixtures pass fresh file-select loads with unchanged GCIs. `e1a4b6de` additionally has an ordinary receiver receipt after the normal Save-menu regression | Unsent/offline authored rewards, further interrupted-save/receipt windows, provisional reconciliation, host loss and broader current-schema regression; a recovered receipt does not establish ordinary publication |
 | Reconnect and host restoration | `80489913`: actual owning-quest native load/rejoin with bind `127.0.0.2` distinct from endpoint `127.0.0.1`, unchanged room/GCI and no new award/apply; standalone replay/reconnect tests are separate | Retained unsent rewards, native late join, duplicate delivery, host termination/restart during pending claims, explicit rejoin and full server-state reconciliation |
-| Save/room isolation | Pilot routes both CARD slots before initialization; focused expanded private-card failure/retry and offline-copy cases preserve original GCIs/room ledger. Standalone profile/store checks exercise compatibility and unsafe-route refusal | Populated multi-slot/photo preservation, both CARD channels in actual gameplay, personal/other-room isolation across failure/recovery, and current schema-3 regression |
-| Remote player presence | Wire-4 copied-pose transport and body-policy/asset standalone checks pass at their documented checkpoints. The `6b98216e` native body attempt passed private allocation and pointer isolation, but submitted no body; both inspected images contain only local Link. A queued-draw lighting timing correction is awaiting a new build and native run | Actual rendered geometry/material/graphics isolation, skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in two-game visual acceptance; full seven-peer budget and no remote simulation authority |
-| Player-facing multiplayer UI | Pilot Network tab; `494407af` now passes genuine PAD-driven Save refusal/read/write recovery and an ordinary durable receipt. The earlier missing-room fixture failure remains preserved | Nonzero recollection teardown/cancellation, populated slots/Card B, broader shared-progress/presence status, compatibility/error messages and current-schema regression |
-| Build, regression and tester provenance | Retained `7d418a51` build has the focused native proofs above; `6b98216e` full Windows game/headless build and schema-3 standalone suites passed. The EF84 pilot tester remains preserved | Complete current-schema native regression, retain failures, verify actual body images and packaged title/archive contents before replacing the tester; compile/metadata alone are not gameplay proof |
+| Save/room isolation | Pilot routes both CARD slots before initialization; focused expanded private-card failure/retry and offline-copy cases preserve original GCIs/room ledger. Standalone profile/store checks exercise compatibility and unsafe-route refusal | Populated multi-slot/photo preservation, both CARD channels in actual gameplay, personal/other-room isolation across failure/recovery, and current-schema regression |
+| Remote player presence | Wire-4 transport/policy/asset checks pass. `6b98216e` admitted the private model but submitted nothing. `2e0065ae` passes native admission, isolation and at least 600 submissions. Both Windfall images and a stone-entrance Outset pair remain visually negative; a fresh Outset pier pair clearly shows a separate green body, partly cropped at the right edge | Qualify the complete geometry/materials and skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in actual two-game acceptance; full seven-peer budget, current schema and no remote simulation authority |
+| Player-facing multiplayer UI | Pilot Network tab; `494407af` and current schema-4 `e1a4b6de` pass genuine PAD-driven Save refusal/read/write recovery and an ordinary durable receiver receipt. The earlier missing-room fixture failure remains preserved | Nonzero recollection teardown/cancellation, populated slots/Card B, broader shared-progress/presence status, compatibility/error messages and broader current-schema regression |
+| Build, regression and tester provenance | Retained `7d418a51` and `494407af` builds have their focused native proofs above; schema-4 `e1a4b6de` full Windows game/headless build and all eight standalone suites passed. The EF84 pilot tester remains preserved | Complete current-schema native regression, retain failures, verify actual visible bodies and packaged title/archive contents before replacing the tester; compile/metadata alone are not gameplay proof |
 
 The detailed pilot evidence and known edges remain in [Native LAN pilot](NATIVE_NETWORK.md).
 Its executable SHA-256 is
@@ -377,6 +378,25 @@ schema-2 normal-menu case; populated slots, Card B, nonzero recollection,
 fresh reload, physical-controller, audiovisual and current-schema acceptance
 remain separate.
 
+The same focused normal-menu case was repeated on the retained schema-4
+`e1a4b6de` game and matching owned helper, using fresh profiles, private cards
+and an empty room. The executable is 14,045,696 bytes, SHA-256
+`1a7f8853a12b8bc0cb88208455a79906ef17d4321e0bc7d4e1de40d21efe6525`.
+Actual PAD Save-question deferral/refusal, real read and replacement failures,
+explicit recovery, one remote Telescope application and one native UI save all
+passed. Both GCI copies agree; local position, resources and X/Y/Z remained
+unchanged, as did the two blank nonselected slots. Independent closed-file
+decoding confirmed the receiver's ordinary, nonrecovered, nonprovisional token-6
+receipt hashes the final GCI
+`e5009715cf218e63fb0bd2a2e695cffeb02344f216746c683c624f7ac882d13d`.
+Its journal has no outgoing operation or active save intent. The actual host
+ledger contains only Aryll's one authored Telescope source at revision 1; all
+four owned jobs drained after the three native games exited normally and the
+service was intentionally stopped. This qualifies that schema-4 receiver/menu
+case. It does not qualify the giver's ordinary receipt, fresh reload, host
+restart, populated slots, Card B, nonzero recollection, physical controls,
+audiovisual behavior or the newly added equipment.
+
 ## Transient player-pose transport
 
 The feature branch adds a copied 42-joint pose channel with explicit finite and
@@ -500,6 +520,37 @@ game-frame lighting, retaining the original draw-only capture, stable private
 copy, native tag and exact scene/player/stage/room/layer checks. It still needs
 a new full build and native visual acceptance; the failed attempt is preserved.
 
+The timing correction `2e0065ae` then passed
+[Windows run 38986257173](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38986257173).
+Its retained executable is 14,042,112 bytes, SHA-256
+`dd76687d60fc07e6c0e92690fbce2a843f94cbdc907e9112362cf736ece6d2ac`.
+A fresh native run passed heap admission/isolation, first submitted at frame
+340, logged submission 600 at frame 939, and completed 960 frames with exit 0
+and its owned job drained. The heap reports stayed stable. Both actual images
+at frames 600 and 900 were inspected and still show only the local player, so
+the visual result remains negative. Occlusion/framing from the fixed world-X
+offset beside the Windfall building is a hypothesis, not an established cause.
+Source review found no definite transform or draw-list defect. A second run
+using the same binary at Outset's `sea:44:8` stone entrance passed the native
+smoke but still showed only the local player in both inspected images.
+
+A third run changed only the neutral native boot to `sea:44:0`, the Outset
+pier, without adding items, events, input, camera commands or network data.
+It passed 960 frames, first submitted at frame 319, logged submission 600 at
+frame 918 and drained normally. Root and independent image inspection agree:
+both frames 600 and 900 show a separate green-tunic head, torso, legs and boots
+beside the intact local blue-shirt Link. The right edge crops part of the copy.
+Private allocation and pointer-isolation checks passed; the retained heap used
+511,256 of 4,194,312 bytes, with stable post-load heap reports. These are
+diagnostic results, not a frame-rate benchmark or measured RNG equivalence.
+
+This establishes visible partial body rendering on `2e0065ae`/schema 3. The
+Windfall and stone-entrance visual negatives remain preserved. It does not
+qualify complete geometry or skinning, separate hands, facial passes, matching
+clothes, equipment, shadows, actual remote poses, seven peers, lifetime behavior
+or the current schema-4 build. The fixed local-offset mirror has no player
+actor, physics or remote simulation authority.
+
 ## Power Bracelets source checkpoint
 
 The native catalogue now includes item `0x28` as permanent MAX fact 24.
@@ -524,8 +575,8 @@ in 18.05 seconds, along with both independent asset/body-policy tests. This
 covers schema refusal, transport deduplication, store/journal replay and
 copied settlement rules. The full game build passed at `6b98216e` as recorded above.
 Genuine authored collection, receipt/replay, lifting heavy objects, wrist
-display and save/reload still require native qualification. Sword and shield
-facts 22/23 remain reserved.
+display and save/reload still require native qualification. At this checkpoint,
+sword and shield facts 22/23 remained reserved.
 
 ## Shield source checkpoint
 
@@ -549,9 +600,16 @@ Mirror Shield's normal chest uses the existing presentation/effect/end hooks.
 
 Schema 4 and new semantic/rules digests reject prior schema-3 profiles, journals,
 room stores and sockets without importing or rewriting their campaigns. Wire 4
-and storage framing 3 remain unchanged. Standalone schema, settlement, transport,
-store/journal and literal prior-schema refusal cases are extended but have not
-yet run for this source. Real Grandma and Mirror chest ordering, cancellation,
+and storage framing 3 remain unchanged. All eight standalone suites passed at
+`e1a4b6de` in
+[network run 38987323100](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38987323100)
+in 19.07 seconds, along with both independent asset/body-policy tests. This
+includes shield settlement, transport/store/journal replay and literal prior
+schema refusal. The full Windows game, headless helpers, long-path helper and
+asset/body-policy checks passed in
+[Windows run 38987338388](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38987338388).
+These source-only builds do not qualify native equipment. Real Grandma and
+Mirror chest ordering, cancellation,
 rendered equipment and save/load still need native qualification. Sword fact 22
 remains unsupported: FF1 temporarily clears its native collection/selection,
 so canonical earned rank and local availability need separate handling.
@@ -561,8 +619,8 @@ so canonical earned rank and local availability need separate handling.
 These are source-backed design constraints for the remaining work. Additional
 fact/operation formats require an intentional compatibility change before use.
 
-- **Permanent gear:** sword and shield ranks need native collect bits plus
-  selected equipment; bracelets have the unqualified implementation above.
+- **Permanent gear:** sword ranks still need separate earned ownership and local
+  availability; shield and bracelet source implementations need native acceptance.
   Defer held-sword and guarding changes until native models can refresh safely.
   Preserve recollection/minigame
   guards and the authored first-Forsaken-Fortress stolen-sword sequence. Master
