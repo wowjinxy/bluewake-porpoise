@@ -35,7 +35,7 @@ both completed cases and failed attempts.
 | Durable player saves and receipts | `7d418a51`: real read/replacement denial and retry; ordinary receipt for the Telescope receiver and both wallet participants. The Telescope sender's post-CARD intent is separately recovered by a fresh offline native load. Both reward fixtures pass fresh file-select loads with unchanged GCIs | Unsent/offline authored rewards, further interrupted-save/receipt windows, provisional reconciliation, host loss and current-schema regression; a recovered receipt does not establish ordinary publication |
 | Reconnect and host restoration | `80489913`: actual owning-quest native load/rejoin with bind `127.0.0.2` distinct from endpoint `127.0.0.1`, unchanged room/GCI and no new award/apply; standalone replay/reconnect tests are separate | Retained unsent rewards, native late join, duplicate delivery, host termination/restart during pending claims, explicit rejoin and full server-state reconciliation |
 | Save/room isolation | Pilot routes both CARD slots before initialization; focused expanded private-card failure/retry and offline-copy cases preserve original GCIs/room ledger. Standalone profile/store checks exercise compatibility and unsafe-route refusal | Populated multi-slot/photo preservation, both CARD channels in actual gameplay, personal/other-room isolation across failure/recovery, and current schema-3 regression |
-| Remote player presence | Wire-4 copied-pose transport and body-policy/asset standalone checks pass at their documented checkpoints. `6b98216e` has corrected one-slot renderer source; no native body images or rendering acceptance yet | Actual heap/resource/material/graphics isolation, skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in two-game visual acceptance; full seven-peer budget and no remote simulation authority |
+| Remote player presence | Wire-4 copied-pose transport and body-policy/asset standalone checks pass at their documented checkpoints. The `6b98216e` native body attempt passed private allocation and pointer isolation, but submitted no body; both inspected images contain only local Link. A queued-draw lighting timing correction is awaiting a new build and native run | Actual rendered geometry/material/graphics isolation, skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in two-game visual acceptance; full seven-peer budget and no remote simulation authority |
 | Player-facing multiplayer UI | Pilot Network tab; current source adds progress/recovery status and ordinary Save-menu recovery. The `494407af` UI attempt passed baseline/card admission, then correctly refused a missing room before menu qualification | Complete genuine PAD-driven Save refusal/read/write recovery, recollection teardown/cancellation, broader shared-progress/presence status and usable compatibility/error messages |
 | Build, regression and tester provenance | Retained `7d418a51` build has the focused native proofs above; `6b98216e` full Windows game/headless build and schema-3 standalone suites passed. The EF84 pilot tester remains preserved | Complete current-schema native regression, retain failures, verify actual body images and packaged title/archive contents before replacing the tester; compile/metadata alone are not gameplay proof |
 
@@ -433,8 +433,8 @@ Source review subsequently found that the prototype's extra
 table entry and gameplay RNG. Its stack lighting object could also leave a retained
 material light pointer. The corrected source captures the receiver's original
 current-draw lighting by value before local damage-fog effects, retains that
-copy at a stable private address, and requires the same frame and scene/player
-context before submission. A valid native lighting tag prevents the setter's
+copy at a stable private address, and originally required the same frame and
+scene/player context before submission. A valid native lighting tag prevents the setter's
 initialization fallback. This first slice uses receiver same-area lighting;
 position-specific remote lighting remains future work. Console behavior is
 unchanged and the hook returns immediately with diagnostics disabled. The
@@ -462,6 +462,19 @@ also passed all eight standalone suites in 18.29 seconds and both independent
 asset/body-policy tests. These builds contain source-only runtime asset stubs;
 they do not supply native rendering, saving or gameplay acceptance for schema 3.
 
+The retained `6b98216e` executable (14,042,112 bytes, SHA-256
+`7c6b8d855d3ed5fbe3d54a4105bc4f70854549e85d2bfbe90827eb688990375b`)
+subsequently ran the isolated body diagnostic for 960 frames and exited normally
+with its owned job drained. Native admission and pointer-isolation checks passed;
+the private 4 MiB heap used 511,240 bytes. However, no body submission occurred,
+so the case failed. Both inspected images show only the intact local player.
+The normal frame loop paints before executing and drawing actors, consuming the
+previous draw's copied lighting. The same-frame equality therefore rejected
+every normal submission. The next correction accepts only current or previous
+game-frame lighting, retaining the original draw-only capture, stable private
+copy, native tag and exact scene/player/stage/room/layer checks. It still needs
+a new full build and native visual acceptance; the failed attempt is preserved.
+
 ## Power Bracelets source checkpoint
 
 The native catalogue now includes item `0x28` as permanent MAX fact 24.
@@ -484,7 +497,7 @@ All eight standalone Windows suites passed at `2190269c` in
 [run 38982333726](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38982333726)
 in 18.05 seconds, along with both independent asset/body-policy tests. This
 covers schema refusal, transport deduplication, store/journal replay and
-copied settlement rules. A full game build is still pending.
+copied settlement rules. The full game build passed at `6b98216e` as recorded above.
 Genuine authored collection, receipt/replay, lifting heavy objects, wrist
 display and save/reload still require native qualification. Sword and shield
 facts 22/23 remain reserved.

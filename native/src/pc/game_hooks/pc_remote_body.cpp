@@ -385,7 +385,9 @@ void before_p1(const PcRemoteBodyPose& receiver) {
     if (!sReady || !sHavePose || sSubmittedFrame == frame) return;
     if (receiver.scene_epoch != sPose.scene_epoch || receiver.room != sPose.room || receiver.layer != sPose.layer ||
         std::memcmp(receiver.stage, sPose.stage, sizeof(sPose.stage)) || frame - sPose.sample_frame > 1) { hide(); return; }
-    if (!sHaveReceiverLighting || sLightingFrame != frame || sLightingSceneEpoch != receiver.scene_epoch ||
+    // Normal native frames paint the preceding draw list; separate presentation
+    // may paint this frame. Retain only that current/previous native draw light.
+    if (!sHaveReceiverLighting || frame - sLightingFrame > 1 || sLightingSceneEpoch != receiver.scene_epoch ||
         sLightingRoom != receiver.room || sLightingLayer != receiver.layer ||
         std::memcmp(sLightingStage, receiver.stage, sizeof(sLightingStage)) ||
         sReceiverLighting.mInitType != 0x7c) { hide(); return; }
