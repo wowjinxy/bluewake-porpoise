@@ -1935,6 +1935,11 @@ BOOL daPy_lk_c::draw() {
     }
     
     dComIfGd_setListP1();
+#if TARGET_PC
+    // Copy actual draw-time CL hand visibility and final pose. No native flags
+    // or actor/model pointers are retained by the off-by-default diagnostic.
+    pc_remote_body_diagnostic_visuals(mpCLModel, this);
+#endif
     if (checkFreezeState()) {
         dMat_control_c::iceEntryDL(mpCLModel, -1, NULL);
     } else {

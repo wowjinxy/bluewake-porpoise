@@ -1,4 +1,5 @@
 #include "pc/pc_network_body_policy.h"
+#include "pc/pc_remote_body_visual_policy.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,7 +21,44 @@ struct Fixture {
         id(room.peers[1].player_id,'b');room.peers[1].connection_epoch=11;room.peers[1].online=true;
         presence.generation=2;presence.count=1;auto&r=presence.peers[0];id(r.player_id,'b');r.connection_epoch=11;r.sequence=8;r.pose=pose(1234);}
 };
+static void nativeVisualPolicy() {
+    PcRemoteBodyPose p{}; p.version=PC_REMOTE_BODY_POSE_VERSION; p.joint_count=42;
+    p.scene_epoch=7; p.sample_frame=100; std::strcpy(p.stage,"sea"); p.room=44; p.layer=9;
+    PcRemoteBodyVisual v{}; v.version=PC_REMOTE_VISUAL_VERSION; v.scene_epoch=7;
+    v.sample_frame=100; std::strcpy(v.stage,"sea"); v.room=44; v.layer=9; v.open_hands=3;
+    CHECK(pc_remote_visual::valid(v)); CHECK(pc_remote_visual::matches(v,p,100));
+    CHECK(pc_remote_visual::matches(v,p,101)); CHECK(!pc_remote_visual::matches(v,p,102));
+    CHECK(!pc_remote_visual::matches(v,p,99)); // Future samples cannot authorize a draw.
+    for (unsigned mask=0; mask<4; ++mask) {
+        v.open_hands=static_cast<uint8_t>(mask);
+        CHECK(pc_remote_visual::hand_mask(true,true,v,p,100)==mask);
+        CHECK(pc_remote_visual::hand_mask(false,true,v,p,100)==0); // Network/default pose.
+        CHECK(pc_remote_visual::hand_mask(true,false,v,p,100)==0); // Unknown native selection.
+    }
+    v.open_hands=3; auto bad=v; bad.open_hands=4; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.reserved=1; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.version=0; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.scene_epoch=0; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; ++bad.scene_epoch; CHECK(!pc_remote_visual::matches(bad,p,100));
+    bad=v; --bad.sample_frame; CHECK(!pc_remote_visual::matches(bad,p,100)); // Pair must be SAME native draw.
+    bad=v; ++bad.room; CHECK(!pc_remote_visual::matches(bad,p,100));
+    bad=v; ++bad.layer; CHECK(!pc_remote_visual::matches(bad,p,100));
+    bad=v; bad.room=64; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.layer=16; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; std::strcpy(bad.stage,"RoomA"); CHECK(!pc_remote_visual::matches(bad,p,100));
+    bad=v; bad.stage[0]=0; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.stage[0]='!'; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.stage[8]='x'; CHECK(!pc_remote_visual::valid(bad));
+    bad=v; bad.stage[4]='x'; CHECK(!pc_remote_visual::valid(bad)); // Hidden trailing bytes after NUL.
+    auto wrong=p; wrong.version=0; CHECK(!pc_remote_visual::matches(v,wrong,100));
+    wrong=p; wrong.joint_count=41; CHECK(!pc_remote_visual::matches(v,wrong,100));
+    wrong=p; wrong.reserved=1; CHECK(!pc_remote_visual::matches(v,wrong,100));
+    p.sample_frame=v.sample_frame=UINT32_MAX;
+    CHECK(pc_remote_visual::matches(v,p,0)); // Actual unsigned frame wrap, age1.
+    CHECK(!pc_remote_visual::matches(v,p,1));
+}
 int main(){
+    nativeVisualPolicy();
     Fixture f;Slot slot;PcNetworkRemotePose chosen{};unsigned extra=99;
     CHECK(slot.select(f.local,f.room,f.presence,chosen,&extra)==Result::changed);CHECK(extra==0&&chosen.sequence==8);
     CHECK(slot.select(f.local,f.room,f.presence,chosen)==Result::held);

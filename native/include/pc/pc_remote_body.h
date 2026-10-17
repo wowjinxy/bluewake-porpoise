@@ -21,6 +21,23 @@ typedef struct PcRemoteBodyPose {
     uint8_t scale_flags[PC_REMOTE_BODY_JOINTS];
 } PcRemoteBodyPose;
 
+// Internal copied draw selection, NOT a wire/appearance contract. Unknown means
+// no added hands. External HANDS grip models are a separate later slice.
+enum {
+    PC_REMOTE_VISUAL_VERSION = 1,
+    PC_REMOTE_VISUAL_LEFT_OPEN = 1,
+    PC_REMOTE_VISUAL_RIGHT_OPEN = 2
+};
+typedef struct PcRemoteBodyVisual {
+    uint32_t version;
+    uint64_t scene_epoch;
+    uint32_t sample_frame;
+    char stage[9];
+    int8_t room, layer;
+    uint8_t open_hands;
+    uint8_t reserved;
+} PcRemoteBodyVisual;
+
 #ifdef __cplusplus
 class J3DModel;
 class daPy_lk_c;
@@ -29,7 +46,10 @@ class dKy_tevstr_c;
 namespace pc_remote_body {
 // Game/render owner thread only; prepare never retains the local model pointer.
 bool prepare_private(J3DModel* local);
-bool stage(const PcRemoteBodyPose& pose);
+// Default callers (including network-body) never inherit receiver appearance.
+// True is reserved for a pose+visibility pair sampled in one native local draw.
+bool stage(const PcRemoteBodyPose& pose, bool local_native_visual = false);
+bool copy_native_visual(const PcRemoteBodyVisual&);
 void hide();
 // Current draw's receiver lighting only, copied to stable private storage.
 // Passing nullptr invalidates an unsafe/stale capture without retaining pointers.
@@ -45,5 +65,7 @@ bool pc_remote_body_context_native(PcRemoteBodyPose*);
 // settings, input injection, network session or multiplayer authority.
 void pc_remote_body_diagnostic_capture(J3DModel*, daPy_lk_c*);
 void pc_remote_body_diagnostic_lighting(const dKy_tevstr_c&, daPy_lk_c*);
+// Observes actual CL hand flags after native selection/camera hiding, before P1.
+void pc_remote_body_diagnostic_visuals(J3DModel*, daPy_lk_c*);
 void pc_remote_body_diagnostic_before_p1();
 #endif

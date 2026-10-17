@@ -12,6 +12,8 @@ campaign schemas without rewriting their files. The retained schema-2 binaries
 and their native results below remain separate checkpoints; they do not qualify
 the new equipment behavior. The shield source passed its standalone suites and
 full Windows game build; native equipment acceptance remains pending.
+New draw-paired open-hand source is described below; it still needs its own
+build and native visual qualification.
 
 The accepted model is independent exploration with shared permanent progress
 over an owned TCP service. Each player keeps local movement, camera, cutscenes
@@ -38,7 +40,7 @@ both completed cases and failed attempts.
 | Durable player saves and receipts | `7d418a51`: real read/replacement denial and retry; ordinary receipt for the Telescope receiver and both wallet participants. Its Telescope sender's post-CARD intent is separately recovered by a fresh offline native load; both reward fixtures pass fresh file-select loads with unchanged GCIs. `e1a4b6de` additionally has an ordinary receiver receipt after the normal Save-menu regression | Unsent/offline authored rewards, further interrupted-save/receipt windows, provisional reconciliation, host loss and broader current-schema regression; a recovered receipt does not establish ordinary publication |
 | Reconnect and host restoration | `80489913`: actual owning-quest native load/rejoin with bind `127.0.0.2` distinct from endpoint `127.0.0.1`, unchanged room/GCI and no new award/apply; standalone replay/reconnect tests are separate | Retained unsent rewards, native late join, duplicate delivery, host termination/restart during pending claims, explicit rejoin and full server-state reconciliation |
 | Save/room isolation | Pilot routes both CARD slots before initialization; focused expanded private-card failure/retry and offline-copy cases preserve original GCIs/room ledger. Standalone profile/store checks exercise compatibility and unsafe-route refusal | Populated multi-slot/photo preservation, both CARD channels in actual gameplay, personal/other-room isolation across failure/recovery, and current-schema regression |
-| Remote player presence | Wire-4 transport/policy/asset checks pass. `6b98216e` admitted the private model but submitted nothing. `2e0065ae` passes native admission, isolation and at least 600 submissions. Both Windfall images and a stone-entrance Outset pair remain visually negative; a fresh Outset pier pair clearly shows a separate green body, partly cropped at the right edge | Qualify the complete geometry/materials and skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in actual two-game acceptance; full seven-peer budget, current schema and no remote simulation authority |
+| Remote player presence | Schema-4 `e1a4b6de` has actual native Host/Join proof: copied other-player poses, a visibly turning/moving green body beside the intact local player, then disappearance after the other game exits. Both jobs drained and the native-created room retained zero progression. Earlier local rendering and fixture failures remain preserved | Complete geometry/materials and skinning, hands/face/clothing/equipment, interpolation, graceful leave and measured expiry, scene/room/layer and player-replacement cases, all seven peers and no remote simulation authority; the new local open-hand slice does not transmit appearance |
 | Player-facing multiplayer UI | Pilot Network tab; `494407af` and current schema-4 `e1a4b6de` pass genuine PAD-driven Save refusal/read/write recovery and an ordinary durable receiver receipt. The earlier missing-room fixture failure remains preserved | Nonzero recollection teardown/cancellation, populated slots/Card B, broader shared-progress/presence status, compatibility/error messages and broader current-schema regression |
 | Build, regression and tester provenance | Retained `7d418a51` and `494407af` builds have their focused native proofs above; schema-4 `e1a4b6de` full Windows game/headless build and all eight standalone suites passed. The EF84 pilot tester remains preserved | Complete current-schema native regression, retain failures, verify actual visible bodies and packaged title/archive contents before replacing the tester; compile/metadata alone are not gameplay proof |
 
@@ -550,6 +552,63 @@ qualify complete geometry or skinning, separate hands, facial passes, matching
 clothes, equipment, shadows, actual remote poses, seven peers, lifetime behavior
 or the current schema-4 build. The fixed local-offset mirror has no player
 actor, physics or remote simulation authority.
+
+## Actual same-room native body checkpoint
+
+The retained `e1a4b6de`/schema-4 game subsequently ran as two actual native
+processes. One configured Host created the empty owned room; a second native
+game joined it. Both used fresh native quest initialization, private profiles
+and both CARD routes, and neutral `sea:44:0` boots. There was no bootstrap peer,
+injected pose, authored reward or preseeded room ledger. The separately verified
+helper was not executed in this case.
+
+The first attempt completed both native processes but failed its stationarity
+oracle: the initial ready-player Y was 173.1 and every later measured Y was
+168.3; X/Z stayed identical. Its longer walks also produced a severely cropped
+remote face near the camera. That failed fixture and its actual images remain
+preserved. A fresh attempt used two six-frame ordinary virtual-PAD backward
+holds. It retained initial horizontal invariance and required all four periodic
+settled XYZ measurements to agree within 0.1, with the baseline before frame
+1200. No native position or camera was forced.
+
+That second attempt passed its native checks. The Host ran 3,000 frames and
+the joining game 1,500, both with exit 0 and their owned jobs drained. Each bound
+the actual other player, received increasing fresh pose sequences and submitted
+its isolated private body. The mover's measured horizontal separation reached
+89.26 units while the observer's settled XYZ stayed fixed. Actual image review
+shows the green remote body turning and moving relative to the intact local
+blue-shirt Link, with matching remote fragments in the other game's captures.
+The late observer image shows only local Link after the mover exits, alongside
+the actual no-eligible-peer hide log. The image was captured more than two
+seconds after the mover's job drained; this does not measure exact expiry
+latency or exercise graceful Leave.
+
+Closed-file decoding confirmed the native-created room has two real
+participants, revision 0, zero facts/rewards and both durable submission
+sequences 0. No quest GCI was written, and the original disc remained unchanged.
+This establishes one actual same-room remote body with native pose changes
+and socket-loss removal on this checkpoint. It does not qualify full geometry
+or skinning, complete appearance/equipment, seven peers, interpolation,
+other scene/layer/lifecycle cases, matrix equality, local consumable/RNG
+equivalence, saving or performance. Early overlap and later close-camera
+cropping remain limits of this view.
+
+## Native embedded-hand source slice
+
+The next local diagnostic slice copies the native CL open-hand shape selection
+and final 42-joint pose together after the original hand/camera visibility
+decisions and before native P1 submission. It changes only owned private hand
+shape flags, with the existing scene/player, stage/room/layer and frame-age
+checks. Private model preparation remains in the existing execute phase;
+the 4 MiB retained and 12 MiB scratch guards are unchanged.
+
+The copied visual DTO is internal. The wire carries no hand/appearance selector,
+so network poses continue to keep these additional hands hidden instead of
+borrowing the receiver's choices. External grip models, facial multipass and
+animation, clothing textures/hair, equipment and seven-peer allocation remain
+required. Value-only policy cases are added for matching and stale contexts,
+unknown/network inputs, masks and frame wrap. These changes have not yet built
+or run; they are not visible-hand or full-model qualification.
 
 ## Power Bracelets source checkpoint
 

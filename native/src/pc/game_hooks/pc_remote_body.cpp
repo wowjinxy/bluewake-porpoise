@@ -3,6 +3,7 @@
 #include "d/dolzel.h" // IWYU pragma: keep
 #include "pc/pc_remote_body.h"
 #include "pc/pc_remote_body_asset.h"
+#include "pc/pc_remote_body_visual_policy.h"
 #include "pc/pc_harness.h"
 #include "pc/pc_interp.h"
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
@@ -41,6 +42,9 @@ u8* sBinary;
 u32 sBinaryBytes;
 PcRemoteBodyPose sPose{};
 bool sAttempted, sReady, sHavePose;
+PcRemoteBodyVisual sVisual{};
+bool sHaveVisual, sLocalNativeVisual;
+u32 sLastHandsState = std::numeric_limits<u32>::max();
 u64 sSceneEpoch;
 u32 sSubmittedFrame = std::numeric_limits<u32>::max();
 u32 sSubmissions;
@@ -352,7 +356,7 @@ bool prepare_private(J3DModel* local) {
     sReady = true;
     return true;
 }
-bool stage(const PcRemoteBodyPose& pose) {
+bool stage(const PcRemoteBodyPose& pose, bool local_native_visual) {
     if (!sReady || !finite_pose(pose)) { hide(); return false; }
     if (sSceneEpoch && (sSceneEpoch != pose.scene_epoch || sPose.room != pose.room || sPose.layer != pose.layer ||
                         std::memcmp(sPose.stage, pose.stage, sizeof(pose.stage)))) {
@@ -360,10 +364,20 @@ bool stage(const PcRemoteBodyPose& pose) {
     }
     sSceneEpoch = pose.scene_epoch;
     sPose = pose;
+    sLocalNativeVisual = local_native_visual;
     sHavePose = true;
     return true;
 }
-void hide() { sHavePose = false; forget_pose(); }
+void hide() {
+    sHavePose = sHaveVisual = sLocalNativeVisual = false;
+    forget_pose();
+}
+bool copy_native_visual(const PcRemoteBodyVisual& visual) {
+    sHaveVisual = false;
+    if (!pc_remote_visual::valid(visual) || visual.sample_frame != pc_frame_count()) return false;
+    sVisual = visual; sHaveVisual = true;
+    return true;
+}
 void copy_receiver_lighting(const PcRemoteBodyPose& receiver, const dKy_tevstr_c* lighting) {
     sHaveReceiverLighting = false;
     // Only the original current native draw may authorize this value. Do not
@@ -404,6 +418,25 @@ void before_p1(const PcRemoteBodyPose& receiver) {
         sModel->setScaleFlag(i, sPose.scale_flags[i]);
     }
     sModel->calcWeightEnvelopeMtx();
+    // Only embedded open-hand CL meshes are in this graph. The native draw
+    // selected/hid them before its own P1 entry. A network pose has no visual
+    // selection field, and the default stage() argument keeps those hands hidden.
+    const bool matchedVisual = sLocalNativeVisual && sHaveVisual && pc_remote_visual::matches(sVisual, sPose, frame);
+    const u8 handMask = pc_remote_visual::hand_mask(sLocalNativeVisual, sHaveVisual, sVisual, sPose, frame);
+    const int handJoints[] = {CL_JNT_CL_LHANDA_e, CL_JNT_CL_RHANDA_e};
+    for (unsigned i = 0; i < 2; ++i) {
+        J3DMaterial* material = sData->getJointNodePointer(handJoints[i])->getMesh();
+        J3DShape* shape = material && owned(material) ? material->getShape() : nullptr;
+        if (!shape || !owned(shape)) { hide(); return; }
+        if (handMask & (1u << i)) shape->show();
+        else shape->hide();
+    }
+    const u32 handsState = handMask | (matchedVisual ? 4u : 0u);
+    if (sLastHandsState != handsState) {
+        sLastHandsState = handsState;
+        std::fprintf(stderr, "[cos] remote-body: CL open-hands mask=%u matched_native_draw=%u frame=%u; external grips/appearance pending\n",
+                     handMask, matchedVisual ? 1u : 0u, frame);
+    }
     // First slice reuses receiver same-area lighting, not remote-position lighting.
     // Valid 0x7c skips the native UNK99 fallback; only private model/copied values
     // are updated. No extra settingTevStruct, palette writes or gameplay RNG draw.

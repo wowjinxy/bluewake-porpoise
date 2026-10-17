@@ -3,9 +3,12 @@
 #include "d/dolzel.h" // IWYU pragma: keep
 #include "pc/pc_remote_body.h"
 #include "pc/pc_network_body.h"
+#include "pc/pc_remote_body_visual_policy.h"
 #include "pc_internal.h"
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "JSystem/J3DGraphAnimator/J3DModelData.h"
+#include "JSystem/J3DGraphBase/J3DMaterial.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
 #include "d/actor/d_a_player_main.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_meter.h"
@@ -14,6 +17,7 @@
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_manager.h"
 #include "f_pc/f_pc_name.h"
+#include "res/Object/Link.h"
 #include <cstdio>
 #include <cstring>
 
@@ -89,20 +93,38 @@ void pc_remote_body_diagnostic_capture(J3DModel* model, daPy_lk_c* player) {
         pc_network_body_diagnostic_capture(model, player); return;
     }
     if (!selected()) return;
-    PcRemoteBodyPose pose{};
-    if (!pc_remote_body_capture_native(model, player, &pose)) { pc_remote_body::hide(); return; }
+    PcRemoteBodyPose context{};
+    if (!pc_remote_body_capture_native(model, player, &context)) { pc_remote_body::hide(); return; }
+    // Preserve the existing execute-time private allocation/isolation phase.
+    // Matrices for local display are paired with visibility in the draw below.
     if (!pc_remote_body::prepare_private(model)) {
         static bool reported;
         if (!reported) {
             std::fprintf(stderr, "[cos] remote-body: REFUSED private resource/model isolation; native play unchanged\n");
             reported = true;
         }
-        return;
     }
+}
+
+void pc_remote_body_diagnostic_visuals(J3DModel* model, daPy_lk_c* player) {
+    if (!selected()) return; // Never substitute receiver appearance for a network peer.
+    PcRemoteBodyPose pose{};
+    if (!pc_remote_body_capture_native(model, player, &pose)) { pc_remote_body::hide(); return; }
+    J3DModelData* data = model->getModelData();
+    J3DMaterial* left = data->getJointNodePointer(CL_JNT_CL_LHANDA_e)->getMesh();
+    J3DMaterial* right = data->getJointNodePointer(CL_JNT_CL_RHANDA_e)->getMesh();
+    if (!left || !right || !left->getShape() || !right->getShape()) { pc_remote_body::hide(); return; }
+    PcRemoteBodyVisual visual{};
+    visual.version = PC_REMOTE_VISUAL_VERSION;
+    visual.scene_epoch = pose.scene_epoch; visual.sample_frame = pose.sample_frame;
+    std::memcpy(visual.stage, pose.stage, sizeof visual.stage);
+    visual.room = pose.room; visual.layer = pose.layer;
+    if (!left->getShape()->checkFlag(J3DShpFlag_Hide)) visual.open_hands |= PC_REMOTE_VISUAL_LEFT_OPEN;
+    if (!right->getShape()->checkFlag(J3DShpFlag_Hide)) visual.open_hands |= PC_REMOTE_VISUAL_RIGHT_OPEN;
     constexpr float offset = 150.0f;
     pose.base[0][3] += offset;
     for (int i = 0; i < PC_REMOTE_BODY_JOINTS; ++i) pose.joints[i][0][3] += offset;
-    pc_remote_body::stage(pose);
+    if (!pc_remote_body::copy_native_visual(visual) || !pc_remote_body::stage(pose, true)) pc_remote_body::hide();
 }
 
 void pc_remote_body_diagnostic_before_p1() {
