@@ -14,7 +14,8 @@ typedef enum PcPermanentFactKey {
     PC_PERMANENT_IRON_BOOTS=10, PC_PERMANENT_MAGIC_ARMOR=11,
     PC_PERMANENT_BAIT_BAG=12, PC_PERMANENT_BOW=13, PC_PERMANENT_BOMBS=14,
     PC_PERMANENT_DELIVERY_BAG=19, PC_PERMANENT_HOOKSHOT=20, PC_PERMANENT_HAMMER=21,
-    // 22/23 remain reserved for sword/shield; no temporary availability policy yet.
+    // 22 remains reserved: sword ownership and temporary FF1 availability differ.
+    PC_PERMANENT_SHIELD=23,
     PC_PERMANENT_POWER_BRACELETS=24,
     PC_PERMANENT_SONG_FIRST=32, PC_PERMANENT_SONG_LAST=37,
     PC_PERMANENT_WALLET=48, PC_PERMANENT_MAGIC_MAX=49,
@@ -33,7 +34,7 @@ typedef enum PcPermanentProducerKind {
 
 static inline bool pc_permanent_fact_valid(uint16_t key,uint32_t value) {
     if(!value)return false;
-    if(key==PC_PERMANENT_CAMERA)return value<=2;
+    if(key==PC_PERMANENT_CAMERA||key==PC_PERMANENT_SHIELD)return value<=2;
     if(key==PC_PERMANENT_BOW)return value<=3;
     if(key==PC_PERMANENT_WALLET)return value<=2;
     if(key==PC_PERMANENT_MAGIC_MAX)return value==16||value==32;
@@ -70,6 +71,7 @@ static inline const char* pc_permanent_fact_name(uint16_t key) {
     case 10:return "Iron boots";case 11:return "Magic armor";case 12:return "Bait bag";
     case 13:return "Bow";case 14:return "Bombs";case 19:return "Delivery bag";
     case 20:return "Hookshot";case 21:return "Hammer";
+    case PC_PERMANENT_SHIELD:return "Shield rank";
     case PC_PERMANENT_POWER_BRACELETS:return "Power bracelets";
     case 48:return "Wallet tier";case 49:return "Magic capacity";
     case 50:return "Arrow capacity";case 51:return "Bomb capacity";

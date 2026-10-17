@@ -13,8 +13,8 @@ extern "C" {
  * Presence changes no permanent fact, producer, journal or CARD meaning. */
 #define PC_NETWORK_STORAGE_PROTOCOL 3u
 #define PC_NETWORK_NAMESPACE "BlueWake.Native.GZLE01.Permanent"
-// The wire framing is unchanged; native schema2/rules are deliberately incompatible.
-#define PC_NETWORK_SCHEMA 3u
+// The wire framing is unchanged; native schema3/rules are deliberately incompatible.
+#define PC_NETWORK_SCHEMA 4u
 #define PC_NETWORK_FACTS PC_PERMANENT_FACT_COUNT
 #define PC_NETWORK_FACT_TELESCOPE PC_PERMANENT_TELESCOPE
 #define PC_NETWORK_PEERS 8u

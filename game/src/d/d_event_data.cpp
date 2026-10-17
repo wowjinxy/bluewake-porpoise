@@ -9,6 +9,9 @@
 #include "d/actor/d_a_player.h"
 #include "f_op/f_op_actor_mng.h"
 #include "m_Do/m_Do_graphic.h"
+#if TARGET_PC
+#include "pc/pc_progression.h"
+#endif
 
 /* 80071778-8007195C       .text dEvDt_Next_Stage__Fii */
 BOOL dEvDt_Next_Stage(int staffIdx, int wipePrm) {
@@ -790,10 +793,23 @@ void dEvDtStaff_c::specialProcPackage() {
                 const char* demo_arc = dStage_roomControl_c::getDemoArcName();
                 if (demo_arc[0] != '\0')
                     demo_data = dComIfG_getObjectRes(demo_arc, filename);
-                if (demo_data == NULL)
+#if TARGET_PC
+                const char* progressArchive = demo_arc;
+#endif
+                if (demo_data == NULL) {
                     demo_data = dComIfG_getStageRes("Stage", filename);
+#if TARGET_PC
+                    progressArchive = "Stage";
+#endif
+                }
                 JUT_ASSERT(0x42e, demo_data);
+#if TARGET_PC
+                const bool progressCreated = dComIfGp_demo_get()->create((const u8*)demo_data, pOffsetPos, offsetAngY);
+                if (progressCreated)
+                    pc_progress_package_begin(progressArchive, filename, actIdx == ACT_PLAY);
+#else
                 dComIfGp_demo_create((const u8*)demo_data, pOffsetPos, offsetAngY);
+#endif
                 dComIfGp_event_setCullRate(10.0f);
                 int* eventFlag = dComIfGp_evmng_getMyIntegerP(staffIdx, "EventFlag");
                 if (eventFlag != NULL)

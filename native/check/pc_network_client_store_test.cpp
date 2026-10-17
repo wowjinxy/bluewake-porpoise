@@ -185,5 +185,19 @@ int main(){
     store.reset();store=open(braceletDir,compatibility,profile.c_str(),error);CHECK(store);
     CHECK(pc_network_client_copy(store.get(),state.get())&&state->outgoing_count==0&&
         state->reward_count==1&&state->revision==1&&state->facts.values[24]==1);
+    store.reset();const auto shieldDir=base/"shield-outbox";
+    store=open(shieldDir,compatibility,profile.c_str(),error);CHECK(store);
+    GOOD(pc_network_client_stage(store.get(),room.c_str(),&empty,nullptr,0,0,error,sizeof error));
+    const PcNetworkReward shieldClaims[]={{UINT64_C(1)<<56|2302,23,PC_PERMANENT_MAX,2},
+                                        {UINT64_C(6)<<56|2301,23,PC_PERMANENT_MAX,1}};
+    GOOD(pc_network_client_enqueue(store.get(),shieldClaims[0],error,sizeof error));
+    GOOD(pc_network_client_enqueue(store.get(),shieldClaims[1],error,sizeof error));
+    GOOD(pc_network_client_enqueue(store.get(),shieldClaims[0],error,sizeof error));
+    GOOD(pc_network_client_projection(store.get(),&replay,error,sizeof error));
+    CHECK(replay.provisional&&replay.facts.values[23]==2&&replay.facts.values[22]==0);
+    PcNetworkFacts ownedShield{};ownedShield.values[23]=2;
+    GOOD(pc_network_client_stage(store.get(),room.c_str(),&ownedShield,shieldClaims,2,2,error,sizeof error));
+    store.reset();store=open(shieldDir,compatibility,profile.c_str(),error);CHECK(store);
+    CHECK(pc_network_client_copy(store.get(),state.get())&&state->outgoing_count==0&&state->reward_count==2&&state->facts.values[23]==2&&state->revision==2);
     std::printf("native network client journal: PASS checks=%u fixture=%s\n",checks,base.u8string().c_str());return 0;
 }

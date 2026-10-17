@@ -80,6 +80,7 @@ typedef struct PcProgressSnapshot {
     uint32_t pending_claims, recovery_required;
     // Copied apply-settlement observation only. Never a wire fact or earned origin.
     uint32_t bracelets_equipped;
+    uint32_t shield_selected_rank; // copied native selector1, never ownership evidence
 } PcProgressSnapshot;
 
 enum PcProgressClaimState {
@@ -151,6 +152,12 @@ void pc_progress_song_effect(uint32_t player_id, uint32_t melody);
 void pc_progress_song_message_completed(uint32_t player_id, uint32_t melody);
 uint64_t pc_progress_script_item_begin(uint32_t producer_id, uint32_t item_no, uint32_t authored_step);
 void pc_progress_script_item_effect(uint64_t invocation_id);
+// Direct PACKAGE grants have no DemoItem message. A copied accepted package,
+// actual native effect, natural STB end AND natural event end are all required.
+void pc_progress_package_begin(const char* archive, const char* file, int normal_play);
+void pc_progress_package_completed(void);
+void pc_progress_package_removed(void);
+uint64_t pc_progress_package_shield_begin(uint32_t producer_id, uint32_t item_no, uint32_t argument);
 void pc_progress_quest_initialized(void);
 void pc_progress_quest_loaded(int32_t slot, int32_t success);
 void pc_progress_save_prepared(int32_t slot);

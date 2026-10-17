@@ -7,6 +7,7 @@
 #include "network_store.h"
 #include "network_digest.h"
 #include "pc_network_presence_v3_fixture.h"
+#include "pc_network_shield_prior_fixture.h"
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -76,7 +77,7 @@ static void write(const fs::path& path,const Bytes& bytes){CHECK(!fs::exists(pat
 
 static void codec_and_bounds(){
     static_assert(PC_NETWORK_POSE_JOINTS==42,"Native GZLE01 Link hierarchy");
-    static_assert(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==3,"Intentional wire/storage/schema split");
+    static_assert(PC_NETWORK_PROTOCOL==4&&PC_NETWORK_STORAGE_PROTOCOL==3&&PC_NETWORK_SCHEMA==4,"Intentional wire/storage/schema split");
     auto original=pose(32768.5f);CHECK(pc_network_pose_valid(&original));auto body=pose_body(original);
     CHECK(body.size()<2300&&body.size()+42<max_body);Reader reader{body};PcNetworkPose decoded{};
     CHECK(pose_read(reader,decoded)&&reader.done());CHECK(decoded.active==1&&!std::strcmp(decoded.stage,"sea")&&decoded.room==44);
@@ -134,6 +135,61 @@ static void prior_schema_refused(const fs::path& base){
     CHECK(!store);
     CHECK(read(ini)==beforeIni&&read(roomFile)==beforeRoom&&read(clientFile)==beforeClient);
     Pipe wire;wire.input=frame(Ping,0,{});wire.input[5]=3;Frame parsed{};CHECK(wire.next(parsed)==-1);
+}
+
+static void bracelet_schema3_refused(const fs::path& base){
+    // Literal prior wire4/storage3/schema3 bracelet files and Hello were encoded
+    // independently of this candidate codec. Schema4 shields must refuse them
+    // without migrating, overwriting, or silently opening a personal campaign.
+    namespace prior=shield_prior_fixture;
+    CHECK(digest(std::string(reinterpret_cast<const char*>(prior::server),sizeof prior::server))==prior::server_sha256);
+    CHECK(digest(std::string(reinterpret_cast<const char*>(prior::client),sizeof prior::client))==prior::client_sha256);
+    CHECK(digest(std::string(reinterpret_cast<const char*>(prior::hello),sizeof prior::hello))==prior::hello_sha256);
+    Pipe literal;literal.input=Bytes(std::begin(prior::hello),std::end(prior::hello));Frame oldHello{};
+    CHECK(literal.next(oldHello)==1&&literal.input.empty()&&oldHello.type==Hello&&oldHello.sequence==0);
+    Reader body{oldHello.body};PcNetworkConfig old{};std::strcpy(old.server,"127.0.0.1");old.port=49383;
+    CHECK(identity(body,old.compatibility)&&body.text(old.room,sizeof old.room)&&
+        body.text(old.player_id,sizeof old.player_id)&&body.text(old.player_name,sizeof old.player_name)&&
+        body.text(old.room_password,sizeof old.room_password));
+    old.create_room=body.byte()!=0;CHECK(body.done()&&old.create_room);
+    CHECK(old.compatibility.progression_schema==3&&old.compatibility.disc_revision==0&&
+        !std::strcmp(old.compatibility.semantic_digest,prior::semantic)&&!std::strcmp(old.compatibility.rules_digest,prior::rules)&&
+        !std::strcmp(old.room,prior::room));
+    CHECK(!pc_network_config_valid(&old,nullptr,0));
+    const auto folder=base/"prior-bracelet-schema3";fs::create_directories(folder);
+    const auto iniPath=folder/"network.ini";write(iniPath,Bytes(prior::ini,prior::ini+std::strlen(prior::ini)));
+    const auto beforeIni=read(iniPath);PcNetworkProfile profile{};char error[256]{};
+    CHECK(!pc_network_profile_load(iniPath.u8string().c_str(),true,&profile,error,sizeof error));
+    const auto host=folder/"server",journal=folder/"journal";fs::create_directories(host);fs::create_directories(journal);
+    const auto roomFile=host/(std::string(prior::key)+".bwroom"),clientFile=journal/"client.bwjournal";
+    write(roomFile,Bytes(std::begin(prior::server),std::end(prior::server)));
+    write(clientFile,Bytes(std::begin(prior::client),std::end(prior::client)));
+    const auto beforeRoom=read(roomFile),beforeClient=read(clientFile);std::string detail;
+    {RoomStore store;CHECK(!store.open(host.u8string().c_str(),detail));}
+    PcNetworkCompatibility current{};pc_network_native_compatibility(&current);CHECK(current.progression_schema==4);
+    auto journalStore=std::unique_ptr<PcNetworkClientStore,decltype(&pc_network_client_close)>(
+        pc_network_client_open(journal.u8string().c_str(),&current,prior::route,error,sizeof error),pc_network_client_close);
+    CHECK(!journalStore);
+    CHECK(read(iniPath)==beforeIni&&read(roomFile)==beforeRoom&&read(clientFile)==beforeClient);
+
+    // Framing remains wire4: send the complete prior Hello to a real candidate
+    // server. Its explicit rejection must precede any campaign publication.
+    Server running(pc_network_server_start("127.0.0.1",0),pc_network_server_stop);CHECK(running);
+    Pipe raw;raw.socket=connect("127.0.0.1",pc_network_server_port(running.get()));CHECK(raw.socket!=invalid);
+    send(raw,Hello,0,oldHello.body);const auto rejected=receive(raw,Reject);
+    Reader reason{rejected.body};char message[128]{};
+    CHECK(rejected.sequence==0&&reason.text(message,sizeof message)&&reason.done()&&
+        !std::strcmp(message,"Invalid Wind Waker handshake"));raw.reset();
+    // A subsequent valid campaign starts empty, rather than inheriting the
+    // refused prior client's bracelet fact/ledger/revision.
+    auto accepted=session();join(accepted.get(),config(pc_network_server_port(running.get()),'d',prior::room,true));
+    CHECK(until([&]{return status(accepted.get()).peer_count==1;}));
+    const auto live=status(accepted.get());CHECK(live.server_revision==0&&live.pending_incoming==0&&live.pending_outgoing==0);
+    PcNetworkFacts facts{};unsigned count=99;
+    CHECK(pc_network_copy_state(accepted.get(),&facts,nullptr,0,&count,nullptr)&&count==0);
+    for(auto value:facts.values)CHECK(value==0);
+    pc_network_leave(accepted.get());
+    CHECK(read(iniPath)==beforeIni&&read(roomFile)==beforeRoom&&read(clientFile)==beforeClient);
 }
 
 static void sessions_and_durable_fairness(const fs::path& folder){
@@ -352,6 +408,6 @@ static void socket_backpressure(){
 int main(){
     const auto base=fs::absolute(fs::temp_directory_path())/("BlueWake-presence-"+std::to_string(Clock::now().time_since_epoch().count()));
     CHECK(!fs::exists(base));fs::create_directories(base);std::printf("synthetic presence fixtures: %s\n",base.u8string().c_str());std::fflush(stdout);
-    CHECK(init());codec_and_bounds();prior_schema_refused(base);sessions_and_durable_fairness(base/"durable");raw_authority_stale_expiry();late_join_replays_fresh_pose();incomplete_welcome_no_publication();client_decoder_stale_and_clear();socket_backpressure();
+    CHECK(init());codec_and_bounds();prior_schema_refused(base);bracelet_schema3_refused(base);sessions_and_durable_fairness(base/"durable");raw_authority_stale_expiry();late_join_replays_fresh_pose();incomplete_welcome_no_publication();client_decoder_stale_and_clear();socket_backpressure();
     std::printf("native transient presence transport: PASS checks=%u (no game/render qualification)\n",checks);return 0;
 }

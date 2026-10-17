@@ -156,7 +156,7 @@ void pendingView() {
         const auto value = (s.projectionValid ? s.projection.facts : s.canonical).values[key];
         const auto owned = pc::network::effectiveFact(static_cast<uint16_t>(key), s.view.progress.facts[key]);
         if (value && !pc::progression::factSettled(key, value, owned,
-            s.view.progress.bracelets_equipped != 0)) {
+            s.view.progress.bracelets_equipped != 0, s.view.progress.shield_selected_rank)) {
             s.view.pending_remote = true;
             break;
         }
@@ -252,6 +252,15 @@ extern "C" int pc_network_game_native_save_prepare(const PcProgressIdentity* ide
          !pc::progression::factSettled(PC_PERMANENT_POWER_BRACELETS, 1,
             live.facts[PC_PERMANENT_POWER_BRACELETS], live.bracelets_equipped != 0))) {
         say("Let the received equipment finish before retrying the game save.");
+        return 0;
+    }
+    if (frozen[PC_PERMANENT_SHIELD] &&
+        (!live.facts_valid || live.identity.epoch != identity->epoch ||
+         !pc::progression::sameQuest(live.identity, *identity) ||
+         live.facts[PC_PERMANENT_SHIELD] != frozen[PC_PERMANENT_SHIELD] ||
+         !pc::progression::factSettled(PC_PERMANENT_SHIELD, frozen[PC_PERMANENT_SHIELD],
+            live.facts[PC_PERMANENT_SHIELD], false, live.shield_selected_rank))) {
+        say("Let the received shield finish before retrying the game save.");
         return 0;
     }
     PcNetworkFacts facts{};
@@ -557,7 +566,7 @@ extern "C" void pc_network_game_frame() {
         const uint32_t value = s.projection.facts.values[key];
         const uint32_t owned = pc::network::effectiveFact(static_cast<uint16_t>(key), s.view.progress.facts[key]);
         if (!value || claimedKeys[key] || pc::progression::factSettled(key, value, owned,
-            s.view.progress.bracelets_equipped != 0)) continue;
+            s.view.progress.bracelets_equipped != 0, s.view.progress.shield_selected_rank)) continue;
         const int applied = pc_progress_apply(key, value, s.view.progress.identity.epoch);
         if (applied == PC_PROGRESS_APPLIED) receivedEffect(key, value, pendingOperationFor(key));
         else if (applied == PC_PROGRESS_REJECTED) {

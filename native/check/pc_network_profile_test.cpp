@@ -138,13 +138,21 @@ void preferences(const fs::path& root, const PcNetworkProfile& p) {
     CHECK(pc_network_profile_load(utf8(file).c_str(), true, &loaded, error, sizeof error));
     CHECK(loaded.enabled && std::strcmp(loaded.config.player_id, p.config.player_id) == 0);
     const auto original = read(file);
-    auto schema2=original;const auto schemaAt=schema2.find("progression_schema=3\n");
+    auto schema2=original;const auto schemaAt=schema2.find("progression_schema=4\n");
     CHECK(schemaAt!=std::string::npos);
     if(schemaAt!=std::string::npos) {
-        schema2.replace(schemaAt,std::strlen("progression_schema=3\n"),"progression_schema=2\n");
+        schema2.replace(schemaAt,std::strlen("progression_schema=4\n"),"progression_schema=2\n");
         const auto prior=root/"schema2.ini";write(prior,schema2);
         CHECK(!pc_network_profile_load(utf8(prior).c_str(),true,&loaded,error,sizeof error));
         CHECK(read(prior)==schema2); // refusal preserves existing preferences
+    }
+    auto schema3=original;const auto schema3At=schema3.find("progression_schema=4\n");
+    CHECK(schema3At!=std::string::npos);
+    if(schema3At!=std::string::npos){
+        schema3.replace(schema3At,std::strlen("progression_schema=4\n"),"progression_schema=3\n");
+        const auto prior=root/"schema3.ini";write(prior,schema3);
+        CHECK(!pc_network_profile_load(utf8(prior).c_str(),true,&loaded,error,sizeof error));
+        CHECK(read(prior)==schema3);
     }
     auto bad = p; std::strcpy(bad.config.room, "../personal");
     CHECK(!pc_network_profile_save(utf8(file).c_str(), &bad, error, sizeof error));

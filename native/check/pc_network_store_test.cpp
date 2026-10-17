@@ -89,6 +89,7 @@ int main(){
     invalid=saved;invalid[11]=1;checksum(invalid);reject(invalid); // legacy protocol 1
     invalid=saved;invalid[15]=1;checksum(invalid);reject(invalid); // prior fact schema
     invalid=saved;invalid[15]=2;checksum(invalid);reject(invalid); // schema2 is not migrated
+    invalid=saved;invalid[15]=3;checksum(invalid);reject(invalid); // schema3 shield rules are not reused
     invalid=saved;invalid.back()^=1;reject(invalid);
     invalid=saved;invalid.push_back(0);reject(invalid);
     invalid=saved;invalid.resize(80);reject(invalid);
@@ -138,6 +139,17 @@ int main(){
         StoredRoom loaded;bool found=false;STORE(reopened.load(entry.compatibility,"bracelets",loaded,found,error));
         CHECK(found&&loaded.revision==1&&loaded.rewards.size()==1&&loaded.progress.values[24]==1);
         CHECK(loaded.clients.begin()->second.sequence==2&&pc_net::same_reward(loaded.rewards.begin()->second,reward));
+    }
+    {
+        const auto folder=base/"shield-ledger";auto entry=room("shields");
+        const PcNetworkReward mirror{UINT64_C(1)<<56|2302,23,PC_PERMANENT_MAX,2};
+        const PcNetworkReward hero{UINT64_C(6)<<56|2301,23,PC_PERMANENT_MAX,1};
+        {RoomStore store;STORE(store.open(folder.u8string().c_str(),error));STORE(store.save(entry,error));
+         claim(entry,mirror);STORE(store.save(entry,error));claim(entry,hero);STORE(store.save(entry,error));
+         claim(entry,mirror);STORE(store.save(entry,error));}
+        RoomStore reopened;STORE(reopened.open(folder.u8string().c_str(),error));StoredRoom loaded;bool found=false;
+        STORE(reopened.load(entry.compatibility,"shields",loaded,found,error));
+        CHECK(found&&loaded.revision==2&&loaded.rewards.size()==2&&loaded.progress.values[23]==2&&loaded.progress.values[22]==0);
     }
     std::printf("native network durable store: PASS checks=%u fixture=%s\n",checks,base.u8string().c_str());
     return 0;

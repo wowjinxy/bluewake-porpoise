@@ -6,10 +6,12 @@ baseline, not completion of that objective. This checklist records missing
 evidence as missing; implementation, standalone tests and real game acceptance
 remain separate columns.
 
-The latest source adds Power Bracelets sharing with progression schema 3.
-It rejects schema-2 campaigns without rewriting their files. The retained
-schema-2 binaries and their native results below remain separate checkpoints;
-they do not qualify the new equipment behavior.
+The latest source adds Hero's Shield and Mirror Shield sharing with progression
+schema 4, following the schema-3 Power Bracelets work. It rejects earlier
+campaign schemas without rewriting their files. The retained schema-2 binaries
+and their native results below remain separate checkpoints; they do not qualify
+the new equipment behavior. Shield source still needs its standalone suites,
+full game build and native acceptance.
 
 The accepted model is independent exploration with shared permanent progress
 over an owned TCP service. Each player keeps local movement, camera, cutscenes
@@ -20,23 +22,23 @@ must not control another simulation.
 ## Requirements and current evidence
 
 Native results are checkpoint-specific: `80489913` and `7d418a51` use schema 2.
-The current `6b98216e` schema-3 source, standalone checks and asset metadata do
-not inherit that native qualification. The detailed sections below preserve
+The current schema-4 source does not inherit that native qualification.
+The detailed sections below preserve
 both completed cases and failed attempts.
 
 | Requirement | Current authoritative evidence | Remaining work |
 | --- | --- | --- |
 | Room setup, host/join/leave, stable identities and roster | Pilot `8636102f` has actual Host-menu/two-process proof; expanded `80489913` and `7d418a51` have focused owned-service native pairs | External-machine LAN, usable errors, and current-schema lifecycle/restart/leave/rejoin regression |
 | Independent scenes and timing | `80489913` genuine Telescope gift/receive runs independently in different scenes, with local identity, XYZ and resources preserved | Extended current-schema play, simultaneous rewards and scene transitions; no shared cutscene or movement authority |
-| Shared permanent inventory | Native Telescope and one wallet-fairy source qualified at `7d418a51`; broader tools/bags/songs/capacities/pearls/shards and schema-3 bracelets have source implementations | Qualify every intended native producer/effect, including weapons/derived equipment, bags, songs, capacities, pearls/shards and other permanent progression; bracelet lifting/wrist display/save/reload remain unqualified |
+| Shared permanent inventory | Native Telescope and one wallet-fairy source qualified at `7d418a51`; broader tools/bags/songs/capacities/pearls/shards, bracelets and shields have source implementations | Qualify every intended native producer/effect, including weapons/derived equipment, bags, songs, capacities, pearls/shards and other permanent progression; shield grants/display and bracelet lifting/wrist display/save/reload remain unqualified |
 | Once-only progressive rewards | `7d418a51`: both players genuinely complete one `Fairy01` wallet source; the receiver's native tier-2 item reconciles to tier 1, with one authored ledger entry and revision 1 | Other fairy sources, ammo and heart rewards, offline/unsent STEP replay and overlapping claims; the zero-rupee wallet fixture does not cover over-capacity correction |
 | Shared world/dungeon progression | No qualified shared world/dungeon implementation | Explicit reward identities and reconciliation before synchronizing chest/boss-heart or other reward-suppressing flags; coherent key/dungeon and story progression policies; no stranded rewards |
-| Safe game-thread application | `80489913` proves 12 paused native frames of Telescope deferral; `7d418a51` proves focused Telescope/wallet application with XYZ/resources preserved and CARD-failure authorization/retry | Broader effects, ordinary Save-menu navigation/refusal/retry, menus/cutscenes/loading/player replacement, borrowed/recollection inventory, cancellation and stale work |
+| Safe game-thread application | Focused Telescope/wallet application preserves XYZ/resources; `494407af` additionally passes genuine PAD Save-menu deferral/refusal, real read/replacement denial and recovery, and one native UI save | Broader effects, menus/cutscenes/loading/player replacement, borrowed/recollection inventory, cancellation/stale work and current-schema regression |
 | Durable player saves and receipts | `7d418a51`: real read/replacement denial and retry; ordinary receipt for the Telescope receiver and both wallet participants. The Telescope sender's post-CARD intent is separately recovered by a fresh offline native load. Both reward fixtures pass fresh file-select loads with unchanged GCIs | Unsent/offline authored rewards, further interrupted-save/receipt windows, provisional reconciliation, host loss and current-schema regression; a recovered receipt does not establish ordinary publication |
 | Reconnect and host restoration | `80489913`: actual owning-quest native load/rejoin with bind `127.0.0.2` distinct from endpoint `127.0.0.1`, unchanged room/GCI and no new award/apply; standalone replay/reconnect tests are separate | Retained unsent rewards, native late join, duplicate delivery, host termination/restart during pending claims, explicit rejoin and full server-state reconciliation |
 | Save/room isolation | Pilot routes both CARD slots before initialization; focused expanded private-card failure/retry and offline-copy cases preserve original GCIs/room ledger. Standalone profile/store checks exercise compatibility and unsafe-route refusal | Populated multi-slot/photo preservation, both CARD channels in actual gameplay, personal/other-room isolation across failure/recovery, and current schema-3 regression |
 | Remote player presence | Wire-4 copied-pose transport and body-policy/asset standalone checks pass at their documented checkpoints. The `6b98216e` native body attempt passed private allocation and pointer isolation, but submitted no body; both inspected images contain only local Link. A queued-draw lighting timing correction is awaiting a new build and native run | Actual rendered geometry/material/graphics isolation, skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in two-game visual acceptance; full seven-peer budget and no remote simulation authority |
-| Player-facing multiplayer UI | Pilot Network tab; current source adds progress/recovery status and ordinary Save-menu recovery. The `494407af` UI attempt passed baseline/card admission, then correctly refused a missing room before menu qualification | Complete genuine PAD-driven Save refusal/read/write recovery, recollection teardown/cancellation, broader shared-progress/presence status and usable compatibility/error messages |
+| Player-facing multiplayer UI | Pilot Network tab; `494407af` now passes genuine PAD-driven Save refusal/read/write recovery and an ordinary durable receipt. The earlier missing-room fixture failure remains preserved | Nonzero recollection teardown/cancellation, populated slots/Card B, broader shared-progress/presence status, compatibility/error messages and current-schema regression |
 | Build, regression and tester provenance | Retained `7d418a51` build has the focused native proofs above; `6b98216e` full Windows game/headless build and schema-3 standalone suites passed. The EF84 pilot tester remains preserved | Complete current-schema native regression, retain failures, verify actual body images and packaged title/archive contents before replacing the tester; compile/metadata alone are not gameplay proof |
 
 The detailed pilot evidence and known edges remain in [Native LAN pilot](NATIVE_NETWORK.md).
@@ -334,8 +336,8 @@ passed no-output clang-cl checks on 2026-10-16. Protected build metadata and
 2,535 source/header pins stayed unchanged. The complete `494407af` candidate
 compiled and linked in
 [Windows run 38977449016](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38977449016).
-Genuine ordinary PAD navigation, failure/retry and
-nonzero recollection teardown/cancellation acceptance remain pending. Console
+Genuine ordinary PAD navigation and failure/retry subsequently passed below;
+nonzero recollection teardown/cancellation acceptance remains pending. Console
 paths are preserved under the TARGET_PC guards.
 
 The off-by-default `network-save-ui` diagnostic drives native PAD navigation
@@ -350,7 +352,30 @@ The first other-slot checks cover blank slots, not populated three-slot saves.
 The first native attempt created its genuine baseline and passed existing-GCI
 admission, then stopped before menu navigation because the persistent service
 had no pre-created room. Join correctly refused that missing room. The fixture
-needs explicit empty-room creation; complete native UI qualification is pending.
+needed explicit empty-room creation; that failed attempt remains preserved.
+
+A fresh `494407af` attempt then created and acknowledged an empty owned room
+before starting its native peers. The bootstrap published no fact, reward or
+pose. A real native baseline GCI was created and saved before its private clone
+was used by the receiver. Genuine PAD navigation reached the paused collection
+Save question. A second native process completed Aryll's actual gift; the
+receiver deferred it for 12 paused frames and refused the exact pending save
+ticket without changing the GCI. After normal unpause/application, real backend
+read denial at offset 8192 and replacement-write denial at offset 0 each exposed
+CARD status 8. Explicit recovery reads preserved the active quest, followed by
+one successful native UI save and comparison with both GCI copies. X/Y/Z,
+resources, position and the blank other-slot bytes stayed unchanged.
+
+The three native game processes exited normally; the owned service was
+intentionally stopped only after both peer proofs, and all four jobs drained.
+The receiver's ordinary, nonrecovered, nonprovisional receipt has token 6 and
+revision 1, hashes the actual final GCI
+`63f62f9114f42a6e00955b0d446b836da05493377e6842ce3d277a9bdd86d6e9`,
+and retains no outgoing reward or active save intent. Independent decoding
+confirmed the host's sole Aryll ledger entry and revision 1. This qualifies this
+schema-2 normal-menu case; populated slots, Card B, nonzero recollection,
+fresh reload, physical-controller, audiovisual and current-schema acceptance
+remain separate.
 
 ## Transient player-pose transport
 
@@ -501,6 +526,35 @@ copied settlement rules. The full game build passed at `6b98216e` as recorded ab
 Genuine authored collection, receipt/replay, lifting heavy objects, wrist
 display and save/reload still require native qualification. Sword and shield
 facts 22/23 remain reserved.
+
+## Shield source checkpoint
+
+Permanent MAX fact 23 now represents Hero's Shield rank 1 and Mirror Shield
+rank 2. Native collection bits establish ownership, including a mirror-first
+save with only the higher bit. Remote application calls the original shield
+item effects and settles selector 1 to the highest owned rank. Empty hands,
+no guarding or upper animation, and the existing event/menu/recollection gates
+are required before repair. The same quest/epoch, frozen ownership and selected
+effect must agree before a CARD write. Sword selector 0 is untouched.
+
+The Hero's Shield scripted grant bypasses DemoItem messages. Its explicit
+Demo00 ID 5/argument 7 hook therefore correlates a copied accepted named normal
+PLAY package, the actual native item effect, natural STB completion and natural
+event completion. Visual hand commands cannot earn a reward. They can set native
+collection bits before the real grant, so that one authenticated direct grant
+may begin despite prior ownership; generic fixed-item origins retain their
+ownership check. One invocation per package and a stable authored source bound
+repeated commands. Package replacement/removal is cancellation, not completion.
+Mirror Shield's normal chest uses the existing presentation/effect/end hooks.
+
+Schema 4 and new semantic/rules digests reject prior schema-3 profiles, journals,
+room stores and sockets without importing or rewriting their campaigns. Wire 4
+and storage framing 3 remain unchanged. Standalone schema, settlement, transport,
+store/journal and literal prior-schema refusal cases are extended but have not
+yet run for this source. Real Grandma and Mirror chest ordering, cancellation,
+rendered equipment and save/load still need native qualification. Sword fact 22
+remains unsupported: FF1 temporarily clears its native collection/selection,
+so canonical earned rank and local availability need separate handling.
 
 ## Next implementation boundaries
 

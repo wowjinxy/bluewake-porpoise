@@ -109,6 +109,44 @@ void braceletSettlement() {
     CHECK(pc::progression::applyReadiness(24,1,8,8,true,true)==PC_PROGRESS_ALREADY);
 }
 
+void shieldSettlement() {
+    using namespace pc::progression;
+    CHECK(fixedAwardEligible(23,0,1,false));
+    CHECK(!fixedAwardEligible(23,1,1,false)&&!fixedAwardEligible(23,2,1,false));
+    CHECK(fixedAwardEligible(23,1,1,true)&&fixedAwardEligible(23,2,1,true)); // genuine grant after visual/preowned rank
+    CHECK(!fixedAwardEligible(23,2,2,true)&&!fixedAwardEligible(23,3,1,true));
+    CHECK(!fixedAwardEligible(22,1,1,true)&&!fixedAwardEligible(24,1,1,true)); // no generic/sword bypass
+    CHECK(!fixedAwardEligible(65559,1,1,true));
+    CHECK(shieldOwnedRank(false,false)==0&&shieldOwnedRank(true,false)==1);
+    CHECK(shieldOwnedRank(false,true)==2&&shieldOwnedRank(true,true)==2); // mirror-first does not need hero bit
+    CHECK(shieldSelectedRank(0x3b)==1&&shieldSelectedRank(0x3c)==2);
+    CHECK(shieldSelectedRank(0xff)==0&&shieldSelectedRank(0x1003b)==0&&shieldSelectedRank(0x28)==0);
+    CHECK(!factSettled(23,1,0,false,1)); // selector is not ownership
+    CHECK(!factSettled(23,1,1,false,0)); // bit without native selected effect is not settled
+    CHECK(factSettled(23,1,1,false,1)&&factSettled(23,2,2,false,2));
+    CHECK(!factSettled(23,2,2,false,1)&&!factSettled(23,1,2,false,1)); // repair stale lower selector
+    CHECK(factSettled(23,1,2,false,2)&&!factSettled(23,3,2,false,2));
+    CHECK(!factSettled(22,1,1,false,1)&&!factSettled(65559,1,1,false,1));
+    CHECK(shieldEffectRank(1,0)==1&&shieldEffectRank(2,0)==2&&shieldEffectRank(2,1)==2);
+    CHECK(shieldEffectRank(1,2)==2&&shieldEffectRank(2,2)==2); // never down-rank an owned mirror
+    CHECK(shieldEffectRank(0,0)==0&&shieldEffectRank(3,2)==0&&shieldEffectRank(1,3)==0);
+    for(unsigned mask=0;mask<8;++mask)
+        CHECK(shieldApplySafe(mask&1,mask&2,mask&4)==(mask==1));
+    Award direct;direct.begin(10,12,7,1);direct.item=10;direct.directScript=true;
+    CHECK(!direct.message&&!direct.ready(7,true)); // direct grants never invent a message
+    CHECK(!direct.effectApplied(11,7)&&!direct.effectApplied(10,8));
+    CHECK(direct.effectApplied(10,7));
+    CHECK(direct.eventEnded(10,7,100)&&!direct.ready(7,true)); // natural event alone is insufficient
+    direct.scriptFinished=true; // actual adapter sets this only at forward(1)==false
+    CHECK(direct.ready(7,true)&&!direct.ready(8,true)&&!direct.ready(7,false));
+    direct.begin(10,12,7,2);direct.item=10;direct.directScript=true;
+    CHECK(direct.effectApplied(10,7));direct.scriptFinished=true;
+    CHECK(!direct.ready(7,true)&&direct.mustCancel(7,false,-1,100)); // no natural event completion
+    direct.begin(10,12,7,3);direct.item=10;direct.directScript=true;direct.scriptFinished=true;
+    CHECK(direct.eventEnded(10,7,100)&&!direct.ready(7,true));
+    CHECK(direct.effectApplied(10,7)&&direct.ready(7,true)); // final native paragraph may apply after STB end
+}
+
 void correctionPolicy() {
     using pc::progression::canonicalCorrection;
     uint32_t value = 0;
@@ -258,7 +296,7 @@ void journalRetirementPolicy() {
 } // namespace
 
 int main() {
-    correlation(); applyGate(); braceletSettlement(); correctionPolicy(); saveCorrelation(); localDurabilityPolicy(); journalRetirementPolicy();
+    correlation(); applyGate(); braceletSettlement(); shieldSettlement(); correctionPolicy(); saveCorrelation(); localDurabilityPolicy(); journalRetirementPolicy();
     std::printf("native progression correlation: %u checks passed (no gameplay/save proof)\n", checks);
     return 0;
 }

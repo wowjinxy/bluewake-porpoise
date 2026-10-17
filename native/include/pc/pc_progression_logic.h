@@ -14,6 +14,7 @@ struct Award {
     unsigned endedFrame = 0;
     unsigned graceFrames = 8;
     bool effectBeforeMessage = false;
+    bool directScript = false, scriptFinished = false;
 
     bool same(uint32_t who, int32_t nativeEvent, uint64_t currentEpoch) const {
         return active && producer == who && event == nativeEvent && epoch == currentEpoch;
@@ -30,7 +31,7 @@ struct Award {
         return true;
     }
     bool effectApplied(uint32_t actor, uint64_t currentEpoch) {
-        if (!active || (!message && !effectBeforeMessage) || actor != item || epoch != currentEpoch) return false;
+        if (!active || (!message && !effectBeforeMessage && !directScript) || actor != item || epoch != currentEpoch) return false;
         effect = true;
         return true;
     }
@@ -40,7 +41,7 @@ struct Award {
         return true;
     }
     bool ready(uint64_t currentEpoch, bool nativeOwned) const {
-        return active && message && effect && ended && epoch == currentEpoch && nativeOwned;
+        return active && (directScript ? scriptFinished : message) && effect && ended && epoch == currentEpoch && nativeOwned;
     }
     bool mustCancel(uint64_t currentEpoch, bool eventRunning, int32_t currentEvent, unsigned frame) const {
         return active && (epoch != currentEpoch ||
@@ -112,14 +113,31 @@ inline bool canonicalCorrection(uint32_t key, uint32_t& value) {
 // A permanent collection bit alone does not prove the native equipment effect
 // settled. This is an apply/recovery predicate, NEVER an earned-item producer.
 inline bool factSettled(uint32_t key, uint32_t required, uint32_t owned,
-                        bool braceletsEquipped) {
+                        bool braceletsEquipped, uint32_t shieldSelectedRank = 0) {
     if (key > UINT16_MAX) return false;
     if (key == PC_PERMANENT_WALLET && required == 0) return owned == 0;
     if (!pc_permanent_fact_valid(static_cast<uint16_t>(key), required)) return false;
     if (key == PC_PERMANENT_POWER_BRACELETS)
         return owned >= required && braceletsEquipped;
+    if (key == PC_PERMANENT_SHIELD)
+        return owned >= required && owned <= 2 && shieldSelectedRank == owned;
     return pc_permanent_server_authoritative(static_cast<uint16_t>(key))
         ? owned == required : owned >= required;
+}
+inline bool fixedAwardEligible(uint32_t key, uint32_t before, uint32_t required, bool directAuthoredShield) {
+    if (key > UINT16_MAX || !pc_permanent_fact_valid(static_cast<uint16_t>(key), required)) return false;
+    if (before < required) return true;
+    // Only the real accepted Demo00 HeroShield grant may already be owned from
+    // its visual hand command. A selection/bit change alone remains no origin.
+    return directAuthoredShield && key == PC_PERMANENT_SHIELD && required == 1 && before <= 2;
+}
+inline uint32_t shieldOwnedRank(bool hero, bool mirror) { return mirror ? 2u : hero ? 1u : 0u; }
+inline uint32_t shieldSelectedRank(uint32_t item) { return item == 0x3c ? 2u : item == 0x3b ? 1u : 0u; }
+inline uint32_t shieldEffectRank(uint32_t required, uint32_t owned) {
+    return required >= 1 && required <= 2 && owned <= 2 ? (required > owned ? required : owned) : 0;
+}
+inline bool shieldApplySafe(bool emptyHands, bool guarding, bool upperAnimation) {
+    return emptyHands && !guarding && !upperAnimation;
 }
 inline bool braceletsApplySafe(bool grabMode, bool carryAction, bool grabAnimation, bool retainedActor) {
     return !grabMode && !carryAction && !grabAnimation && !retainedActor;

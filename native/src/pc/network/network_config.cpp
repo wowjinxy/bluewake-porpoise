@@ -30,8 +30,8 @@ extern "C" void pc_network_native_compatibility(PcNetworkCompatibility* out) {
     std::strcpy(out->build_id, "bluewake-native-gzle01-r0");
     out->progression_schema = PC_NETWORK_SCHEMA;
     out->disc_revision = 0;
-    const auto semantics = pc_net::digest("BlueWake.Native.GZLE01.rev0.CXX.NativeItems.RewardOperations.Bracelets.v3");
-    const auto rules = pc_net::digest("permanent-facts:v3;sparse128;tools1-14,19-21;gear24:bracelets1;reserved22-23;ranks9:1-2,13:1-3;songs32-37;wallet48:step2;magic49:16,32;arrow50,bomb51:step30,60,99;pearls64-66;shards72-79;producer-ledger4096;native-equipment24;no-local-resources-XYZ-selectors");
+    const auto semantics = pc_net::digest("BlueWake.Native.GZLE01.rev0.CXX.NativeItems.RewardOperations.Bracelets.Shields.v4");
+    const auto rules = pc_net::digest("permanent-facts:v4;sparse128;tools1-14,19-21;gear23:shield1-2,24:bracelets1;reserved22;ranks9:1-2,13:1-3;songs32-37;wallet48:step2;magic49:16,32;arrow50,bomb51:step30,60,99;pearls64-66;shards72-79;producer-ledger4096;native-equipment23-24;no-local-resources-XYZ-selectors");
     std::strcpy(out->semantic_digest, semantics.c_str());
     std::strcpy(out->rules_digest, rules.c_str());
 }

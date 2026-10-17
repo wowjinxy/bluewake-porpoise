@@ -25,7 +25,8 @@ constexpr uint32_t kAbsent=UINT32_MAX;
 constexpr unsigned kQueueSize=64, kAwards=8;
 struct ItemSpec { u8 item; u16 key; u32 value; int slot; };
 // Explicit permanent catalogue. No consumables, training gear, bottles,
-// sword/shield, chest flags, small keys or boss-heart suppression.
+// swords, chest flags, small keys or boss-heart suppression. Shield availability
+// is local; fixed rank23 uses native collection1 and selector1 settlement.
 const ItemSpec kItems[]={
  {0x20,1,1,0},{0x78,2,1,1},{0x22,3,1,2},{0x25,4,1,3},
  {0x24,5,1,4},{0x2d,6,1,5},{0x34,7,1,6},{0x21,8,1,7},
@@ -33,6 +34,7 @@ const ItemSpec kItems[]={
  {0x2c,12,1,11},{0x27,13,1,12},{0x35,13,2,12},{0x36,13,3,12},
  {0x31,14,1,13},{0x30,19,1,18},{0x2f,20,1,19},{0x33,21,1,20},
  {0x28,PC_PERMANENT_POWER_BRACELETS,1,-1},
+ {0x3b,PC_PERMANENT_SHIELD,1,-1},{0x3c,PC_PERMANENT_SHIELD,2,-1},
  {0x6d,32,1,-1},{0x6e,33,1,-1},{0x6f,34,1,-1},
  {0x70,35,1,-1},{0x71,36,1,-1},{0x72,37,1,-1},
  {0xab,48,1,-1},{0xac,48,2,-1},{0xb2,49,32,-1},
@@ -56,8 +58,14 @@ struct NativeAward {
  u32 sourceKind=0,sourceSlot=0,itemNo=0;
  uint64_t authored=0;
  bool aryll=false;
+ uint64_t package=0;
 };
 NativeAward sAwards[kAwards];
+struct Package {
+ uint64_t id=0,epoch=0,shieldInvocation=0; int event=-1; bool active=false,natural=false;
+ char archive[65]={},file[65]={};
+} sPackage;
+uint64_t sPackageSerial=0;
 PcProgressClaim sClaims[PC_PROGRESS_MAX_PENDING_CLAIMS]={};
 bool sClaimUsed[PC_PROGRESS_MAX_PENDING_CLAIMS]={};
 struct PreparedSave {
@@ -87,7 +95,8 @@ u32 factValue(u32 key) {
   if(spec.key!=key||spec.slot<0) continue;
   if(dComIfGs_isGetItem(spec.slot,static_cast<u8>(spec.value-1))&&spec.value>value) value=spec.value;
  }
- if(key==PC_PERMANENT_POWER_BRACELETS) value=dComIfGs_isCollect(2,0)?1:0;
+ if(key==PC_PERMANENT_SHIELD) value=pc::progression::shieldOwnedRank(dComIfGs_isCollect(1,0),dComIfGs_isCollect(1,1));
+ else if(key==PC_PERMANENT_POWER_BRACELETS) value=dComIfGs_isCollect(2,0)?1:0;
  else if(key>=32&&key<=37) value=dComIfGs_isTact(key-32)?1:0;
  else if(key==48) value=dComIfGs_getWalletSize();
  else if(key==49) value=dComIfGs_getMaxMagic();
@@ -251,14 +260,14 @@ NativeAward* byInvocation(uint64_t invocation) {
  return nullptr;
 }
 NativeAward* beginAward(u32 actor,u32 item,u32 explicitProducer=kAbsent,u32 explicitKind=0,
-                       u32 explicitSlot=0,int explicitRoom=-1) {
+                       u32 explicitSlot=0,int explicitRoom=-1,uint64_t explicitAuthored=0,bool allowFixedOwned=false) {
  const auto* spec=specFor(item);
  if(sRemote||!spec||!sQuestReady||!sPlayerValid||temporaryInventory()) return nullptr;
  if(auto* existing=byItem(actor)) return existing;
  int eventId=g_dComIfG_gameInfo.play.getEvent()->mEventId;
  if(eventId<0||!dComIfGp_event_runCheck()) return nullptr;
  u32 before=factValue(spec->key); bool step=pc_permanent_server_authoritative(spec->key);
- if(!step&&before>=spec->value) return nullptr;
+ if(!step&&!pc::progression::fixedAwardEligible(spec->key,before,spec->value,allowFixedOwned)) return nullptr;
  NativeAward* result=nullptr;
  // Aryll acceptance precedes item creation. Bind the actual item to that invocation.
  for(auto& award:sAwards) if(award.evidence.active&&award.aryll&&item==0x20&&
@@ -281,6 +290,7 @@ NativeAward* beginAward(u32 actor,u32 item,u32 explicitProducer=kAbsent,u32 expl
     (name&&name[0]&&std::strncmp(name,"DEFAULT_",8)!=0))
   stable=authoredId(kind,slot,profile,parameter,
    kind==PC_PERMANENT_PRODUCER_CHEST||kind==PC_PERMANENT_PRODUCER_FAIRY?nullptr:name,room);
+ if(explicitAuthored) stable=explicitAuthored;
  // An unidentified progressive producer remains a bounded protective claim.
  // Cancellation before its effect releases it; it never becomes a wire reward.
  if(!acceptedAryll) {
@@ -327,15 +337,25 @@ int applyFact(u32 key,u32 value,u64 expected,bool correction=false) {
     player->checkModeFlg(daPy_lk_c::ModeFlg_GRAB)!=0,
     player->checkCarryActionNow()!=0,player->checkGrabAnime()!=0,
     !fpcM_IsErrorID(player->getGrabActorID()))) return PC_PROGRESS_DEFERRED;
+ if(key==PC_PERMANENT_SHIELD&&!pc::progression::shieldApplySafe(
+    player->getPcEquippedItem()==daPy_lk_c::daPyItem_NONE_e,
+    player->checkPlayerGuard()!=0,!player->checkNoUpperAnime())) return PC_PROGRESS_DEFERRED;
  const u32 current=factValue(key);
  const bool braceletsEquipped=dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e;
- if(pc::progression::factSettled(key,value,current,braceletsEquipped)) return PC_PROGRESS_ALREADY;
+ if(pc::progression::factSettled(key,value,current,braceletsEquipped,
+    pc::progression::shieldSelectedRank(dComIfGs_getSelectEquip(1)))) return PC_PROGRESS_ALREADY;
  sRemote=true;
  if(key==48) dComIfGs_setWalletSize(static_cast<u8>(value));
  else if(key==49) dComIfGs_setMaxMagic(static_cast<u8>(value));
  else if(key==50) dComIfGs_setArrowMax(static_cast<u8>(value));
  else if(key==51) dComIfGs_setBombMax(static_cast<u8>(value));
  else if(key==PC_PERMANENT_POWER_BRACELETS) item_func_pwr_groove();
+ else if(key==PC_PERMANENT_SHIELD) {
+  // Mirror-first owns only collect(1,1); never manufacture the lower bit, nor
+  // replay a lower fixed rank over an already owned mirror shield.
+  const u32 rank=pc::progression::shieldEffectRank(value,current);
+  if(rank==2) item_func_mirror_shield(); else item_func_shield();
+ }
  else if(key>=32&&key<=37) dComIfGs_onTact(static_cast<u8>(key-32));
  else if(key>=64&&key<=66) dComIfGs_onSymbol(static_cast<u8>(key-64));
  else if(key>=72&&key<=79) dComIfGs_onTriforce(static_cast<u8>(key-72));
@@ -354,7 +374,8 @@ int applyFact(u32 key,u32 value,u64 expected,bool correction=false) {
  }
  sRemote=false;
  if(!pc::progression::factSettled(key,value,factValue(key),
-    dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e)) return PC_PROGRESS_REJECTED;
+    dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e,
+    pc::progression::shieldSelectedRank(dComIfGs_getSelectEquip(1)))) return PC_PROGRESS_REJECTED;
  auto event=eventValue(PC_NATIVE_FACT_APPLIED,PC_NATIVE_REMOTE);
  event.fact_key=key; event.fact_value=value; push(event);
  return PC_PROGRESS_APPLIED;
@@ -395,6 +416,7 @@ void pc_progress_capture(PcProgressSnapshot* out) {
  if(out->facts_valid) {
   captureFacts(out->facts);
   out->bracelets_equipped=dComIfGs_getSelectEquip(2)==dItemNo_POWER_BRACELETS_e?1:0;
+  out->shield_selected_rank=pc::progression::shieldSelectedRank(dComIfGs_getSelectEquip(1));
  }
  for(unsigned i=0;i<PC_PROGRESS_MAX_PENDING_CLAIMS;++i) if(sClaimUsed[i]) {
   ++out->pending_claims;
@@ -535,6 +557,67 @@ u64 pc_progress_script_item_begin(u32 producer,u32 item,u32 authoredStep) {
 }
 void pc_progress_script_item_effect(u64 invocation) {
  if(auto* award=byInvocation(invocation)) pc_progress_item_effect(award->evidence.item,award->itemNo);
+}
+void pc_progress_package_removed(void) {
+ if(sPackage.active&&!sPackage.natural)
+  for(auto& award:sAwards) if(award.evidence.active&&award.package==sPackage.id) cancelAward(award);
+ sPackage={};
+}
+void pc_progress_package_begin(const char* archive,const char* file,int normalPlay) {
+ pc_progress_package_removed();
+ if(!normalPlay||!pc_network_game_room_mode()||sRemote||!archive||!file) return;
+ const size_t a=std::strlen(archive),f=std::strlen(file);
+ if(!a||a>=sizeof(sPackage.archive)||!f||f>=sizeof(sPackage.file)||sPackageSerial==UINT64_MAX) return;
+ refresh();
+ const int event=g_dComIfG_gameInfo.play.getEvent()->mEventId;
+ const char* name=currentEventName(event);
+ if(!sQuestReady||!sPlayerValid||temporaryInventory()||event<0||!name||!*name||
+    std::strncmp(name,"DEFAULT_",8)==0||!dComIfGp_event_runCheck()) return;
+ sPackage.id=++sPackageSerial; sPackage.epoch=sIdentity.epoch; sPackage.event=event; sPackage.active=true;
+ std::memcpy(sPackage.archive,archive,a); std::memcpy(sPackage.file,file,f);
+}
+void pc_progress_package_completed(void) {
+ if(!sPackage.active||sPackage.natural) return;
+ refresh();
+ if(sPackage.epoch!=sIdentity.epoch||sPackage.event!=g_dComIfG_gameInfo.play.getEvent()->mEventId) {
+  pc_progress_package_removed(); return;
+ }
+ sPackage.natural=true;
+ for(auto& award:sAwards) if(award.evidence.active&&award.package==sPackage.id) {
+  award.evidence.scriptFinished=true; finishAward(award);
+ }
+}
+u64 pc_progress_package_shield_begin(u32 producer,u32 item,u32 argument) {
+ if(!pc_network_game_room_mode()||sRemote||item!=dItemNo_SHIELD_e||argument!=7) return 0;
+ refresh();
+ if(!sPackage.active||sPackage.epoch!=sIdentity.epoch||
+    sPackage.event!=g_dComIfG_gameInfo.play.getEvent()->mEventId) return 0;
+ // One fixed HeroShield semantic command per accepted playback, even when
+ // JStudio repeats it or more than one Demo00 actor sees the same parameter.
+ if(sPackage.shieldInvocation) {
+  auto* existing=byInvocation(sPackage.shieldInvocation);
+  return existing&&existing->evidence.item==producer?existing->evidence.invocation:0;
+ }
+ // A later package may reuse the same Demo00 actor before the event ends.
+ // Never rebind the already correlated earlier package's natural reward.
+ if(auto* existing=byItem(producer))
+  return existing->package==sPackage.id&&existing->itemNo==item?existing->evidence.invocation:0;
+ // A fixed semantic grant in this named package is one source, even if its
+ // persistent JStudio parameter is replayed on multiple native actor frames.
+ uint64_t stable=UINT64_C(14695981039346656037);
+ hashText(stable,"GZLE01.native.shield.package.1"); hashText(stable,dComIfGp_getStartStageName());
+ auto* actor=sourceActor(producer); if(!actor||fpcM_GetName(actor)!=fpcNm_DEMO00_e) return 0;
+ hashWord(stable,static_cast<u32>(fopAcM_GetRoomNo(actor)));
+ hashText(stable,currentEventName(sPackage.event)); hashText(stable,sPackage.archive);
+ hashText(stable,sPackage.file); hashWord(stable,argument);
+ stable&=UINT64_C(0x00ffffffffffffff); if(!stable) stable=1;
+ stable|=static_cast<u64>(PC_PERMANENT_PRODUCER_STORY)<<56;
+ auto* award=beginAward(producer,item,producer,PC_PERMANENT_PRODUCER_STORY,argument,-1,stable,true);
+ if(!award) return 0;
+ sPackage.shieldInvocation=award->evidence.invocation;
+ award->package=sPackage.id; award->evidence.directScript=true;
+ award->evidence.scriptFinished=sPackage.natural; // final STB paragraph may execute after forward() ends
+ return award->evidence.invocation;
 }
 void pc_progress_quest_initialized(void) {
  refresh(); sQuestReady=true; sIdentity.save_generation=0; sWrite={}; sRead={}; revoke(PC_NATIVE_QUEST_INITIALIZED,true);

@@ -11,6 +11,7 @@
 #include "m_Do/m_Do_printf.h"
 #if TARGET_PC
 #include "JSystem/JGadget/binary.h"
+#include "pc/pc_progression.h"
 
 // The parameter block JSGSetData stores (mPrm.mData) is STB paragraph data: big-endian and at
 // odd byte offsets. The GameCube reads its ids raw; the host reads them through the same
@@ -728,6 +729,9 @@ dDemo_manager_c::~dDemo_manager_c() {
 
 /* 8006AFBC-8006B0D4       .text create__15dDemo_manager_cFPCUcP4cXyzf */
 bool dDemo_manager_c::create(const u8* r29, cXyz* r30, f32 f31) {
+#if TARGET_PC
+    pc_progress_package_removed(); // replacement is cancellation, never natural completion
+#endif
     JStudio::TParse sp0C(mControl);
     const void* sp08 = r29;
     if (!sp0C.parse_next(&sp08, 0)) {
@@ -756,6 +760,9 @@ static void dummy() {
 
 /* 8006B0D4-8006B12C       .text remove__15dDemo_manager_cFv */
 void dDemo_manager_c::remove() {
+#if TARGET_PC
+    pc_progress_package_removed();
+#endif
     mControl->destroyObject_all();
     mDemoObj.remove();
     mCurFile = NULL;
@@ -773,6 +780,9 @@ bool dDemo_manager_c::update() {
             mFrameNoMsg++;
         }
     } else {
+#if TARGET_PC
+        pc_progress_package_completed(); // forward(1) ended naturally; remove() alone cannot qualify
+#endif
         mMode = 2;
     }
     return true;

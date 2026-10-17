@@ -24,6 +24,7 @@
 #include "string.h"
 #if TARGET_PC
 #include <cstdio>
+#include "pc/pc_progression.h"
 #endif
 
 struct light_data_s {
@@ -794,7 +795,14 @@ BOOL daDemo00_c::execute() {
                     int argID = *it;
                     JUT_ASSERT(VERSION_SELECT(797, 844, 858, 858), argID < (sizeof(l_itemNo)/sizeof(u8)));
                     if (l_itemNo[argID] != dItemNo_NONE_e) {
+#if TARGET_PC
+                        const u64 progressInvocation = pc_progress_package_shield_begin(
+                            fpcM_GetID(this), l_itemNo[argID], argID);
+#endif
                         execItemGet(l_itemNo[argID]);
+#if TARGET_PC
+                        pc_progress_script_item_effect(progressInvocation);
+#endif
                     }
                 }
             } else if (field_0x29c == 6) {
