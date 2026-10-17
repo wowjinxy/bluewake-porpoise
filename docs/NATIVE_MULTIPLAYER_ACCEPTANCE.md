@@ -19,20 +19,25 @@ must not control another simulation.
 
 ## Requirements and current evidence
 
+Native results are checkpoint-specific: `80489913` and `7d418a51` use schema 2.
+The current `6b98216e` schema-3 source, standalone checks and asset metadata do
+not inherit that native qualification. The detailed sections below preserve
+both completed cases and failed attempts.
+
 | Requirement | Current authoritative evidence | Remaining work |
 | --- | --- | --- |
-| Room setup, host/join/leave, stable identities and roster | Pilot `532ae6d1`, qualified as `8636102f`; actual Host menu and two local game processes | External-machine LAN, usable errors, lifecycle/restart/leave/rejoin regression on the expanded implementation |
-| Independent scenes and timing | Pilot uses Outset and Windfall simultaneously with unchanged local player identity, selections and resources | Extended play and simultaneous rewards/scene transitions in the expanded implementation |
-| Shared permanent inventory | Pilot qualifies genuine Aryll Telescope only | Real producers and native effects for tools, weapons/derived equipment, bags, songs, capacities, pearls/shards and other permanent progression |
-| Once-only progressive rewards | No qualified pilot implementation | Stable authored reward identities; durable host deduplication; fairy, heart and other progressive rewards cannot increment twice when two players claim the same source |
-| Shared world/dungeon progression | No qualified pilot implementation | Explicit reward identities and reconciliation before synchronizing chest/boss-heart or other reward-suppressing flags; coherent key/dungeon and story progression policies; no stranded rewards |
-| Safe game-thread application | Pilot qualifies one Telescope receive and 12 paused native frames of deferral | Broader effects, menus/cutscenes/loading/player replacement, borrowed/recollection inventory, cancellation and stale work |
-| Durable player saves and receipts | Pilot qualifies native saves and fresh offline loads of both Telescope room cards; server durability is separate | Persistent outgoing claims, client receipt journal, interrupted save/receipt recovery, native read/write failures and retry; offline persistence after host loss |
-| Reconnect and host restoration | Pilot standalone transport/replay and restarted host with a fresh native receiver | Native owning-quest reconnect, retained unsent rewards, late join, duplicate delivery, host termination, explicit rejoin and server state reconciliation |
-| Save/room isolation | Pilot routes both CARD slots before initialization and rejects unsafe routes/configuration | Expanded manifest/store compatibility, populated multi-slot/photo preservation, personal/other-room isolation across failure and recovery |
-| Remote player presence | Feature branch has copied-pose transport source; no native rendering or game proof | Bounded transient presence, scene/room filtering, expiry/disconnect, rendering/animation/interpolation and actual two-game visual acceptance; no remote authority over local actions |
-| Player-facing multiplayer UI | Pilot Network tab; Telescope-only status and room setup | Broader shared-progress status, canonical pending effects vs transport queues, save/recovery errors, presence and honest compatibility messages |
-| Build, regression and tester provenance | Qualified EF84 pilot and 34-entry tester at `8636102f` | Build expanded source with named Windows targets, run relevant standalone and native cases, preserve failures, verify packaged title and archive contents before replacing the tester |
+| Room setup, host/join/leave, stable identities and roster | Pilot `8636102f` has actual Host-menu/two-process proof; expanded `80489913` and `7d418a51` have focused owned-service native pairs | External-machine LAN, usable errors, and current-schema lifecycle/restart/leave/rejoin regression |
+| Independent scenes and timing | `80489913` genuine Telescope gift/receive runs independently in different scenes, with local identity, XYZ and resources preserved | Extended current-schema play, simultaneous rewards and scene transitions; no shared cutscene or movement authority |
+| Shared permanent inventory | Native Telescope and one wallet-fairy source qualified at `7d418a51`; broader tools/bags/songs/capacities/pearls/shards and schema-3 bracelets have source implementations | Qualify every intended native producer/effect, including weapons/derived equipment, bags, songs, capacities, pearls/shards and other permanent progression; bracelet lifting/wrist display/save/reload remain unqualified |
+| Once-only progressive rewards | `7d418a51`: both players genuinely complete one `Fairy01` wallet source; the receiver's native tier-2 item reconciles to tier 1, with one authored ledger entry and revision 1 | Other fairy sources, ammo and heart rewards, offline/unsent STEP replay and overlapping claims; the zero-rupee wallet fixture does not cover over-capacity correction |
+| Shared world/dungeon progression | No qualified shared world/dungeon implementation | Explicit reward identities and reconciliation before synchronizing chest/boss-heart or other reward-suppressing flags; coherent key/dungeon and story progression policies; no stranded rewards |
+| Safe game-thread application | `80489913` proves 12 paused native frames of Telescope deferral; `7d418a51` proves focused Telescope/wallet application with XYZ/resources preserved and CARD-failure authorization/retry | Broader effects, ordinary Save-menu navigation/refusal/retry, menus/cutscenes/loading/player replacement, borrowed/recollection inventory, cancellation and stale work |
+| Durable player saves and receipts | `7d418a51`: real read/replacement denial and retry; ordinary receipt for the Telescope receiver and both wallet participants. The Telescope sender's post-CARD intent is separately recovered by a fresh offline native load. Both reward fixtures pass fresh file-select loads with unchanged GCIs | Unsent/offline authored rewards, further interrupted-save/receipt windows, provisional reconciliation, host loss and current-schema regression; a recovered receipt does not establish ordinary publication |
+| Reconnect and host restoration | `80489913`: actual owning-quest native load/rejoin with bind `127.0.0.2` distinct from endpoint `127.0.0.1`, unchanged room/GCI and no new award/apply; standalone replay/reconnect tests are separate | Retained unsent rewards, native late join, duplicate delivery, host termination/restart during pending claims, explicit rejoin and full server-state reconciliation |
+| Save/room isolation | Pilot routes both CARD slots before initialization; focused expanded private-card failure/retry and offline-copy cases preserve original GCIs/room ledger. Standalone profile/store checks exercise compatibility and unsafe-route refusal | Populated multi-slot/photo preservation, both CARD channels in actual gameplay, personal/other-room isolation across failure/recovery, and current schema-3 regression |
+| Remote player presence | Wire-4 copied-pose transport and body-policy/asset standalone checks pass at their documented checkpoints. `6b98216e` has corrected one-slot renderer source; no native body images or rendering acceptance yet | Actual heap/resource/material/graphics isolation, skinning, full models/equipment, interpolation, expiry/disconnect and scene/room/layer filtering in two-game visual acceptance; full seven-peer budget and no remote simulation authority |
+| Player-facing multiplayer UI | Pilot Network tab; current source adds progress/recovery status and ordinary Save-menu recovery. The `494407af` UI attempt passed baseline/card admission, then correctly refused a missing room before menu qualification | Complete genuine PAD-driven Save refusal/read/write recovery, recollection teardown/cancellation, broader shared-progress/presence status and usable compatibility/error messages |
+| Build, regression and tester provenance | Retained `7d418a51` build has the focused native proofs above; `6b98216e` full Windows game/headless build and schema-3 standalone suites passed. The EF84 pilot tester remains preserved | Complete current-schema native regression, retain failures, verify actual body images and packaged title/archive contents before replacing the tester; compile/metadata alone are not gameplay proof |
 
 The detailed pilot evidence and known edges remain in [Native LAN pilot](NATIVE_NETWORK.md).
 Its executable SHA-256 is
@@ -446,6 +451,16 @@ through logical EOF; expecting aligned padding made this archive read fail.
 The 4 MiB retained and 12 MiB scratch budgets, heap admission, lighting and
 pointer-isolation guards remain unchanged. These are source/asset-metadata
 corrections; native allocation and visual acceptance are still pending.
+
+The corrected `6b98216e` compiled and linked in
+[Windows run 38983818566](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38983818566).
+The named game target, PC/SDK headless helpers, Windows long-path helper,
+390 asset-bound checks and 41 copied body-policy checks passed. The SDK helpers
+retain their documented Windows skips for POSIX process/death checks.
+[Network run 38983827161](https://github.com/wowjinxy/bluewake-porpoise/actions/runs/38983827161)
+also passed all eight standalone suites in 18.29 seconds and both independent
+asset/body-policy tests. These builds contain source-only runtime asset stubs;
+they do not supply native rendering, saving or gameplay acceptance for schema 3.
 
 ## Power Bracelets source checkpoint
 
